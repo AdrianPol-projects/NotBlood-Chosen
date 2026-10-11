@@ -101,6 +101,7 @@ struct PKT_STARTGAME {
     char nSpawnWeapon;
     char szRandomizerSeed[9];
     unsigned int uSpriteBannedFlags;
+    char bCoopContinue; // co-op save continue: apply the loadouts sent just before (see coopsave.cpp)
 };
 
 extern PKT_STARTGAME gPacketStartGame;
@@ -182,3 +183,4 @@ void netPlayerQuit(int nPlayer);
 void netUpdate(void);
 void netDeinitialize(void);
 void netBroadcastNewGame(void);
+void netSendPacketAll(char *pBuffer, int nSize);

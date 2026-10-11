@@ -18,7 +18,8 @@ as published by the Free Software Foundation.
 //   NBTEST_SCRIPT="120:shot:menu;150:key:esc;200:renderer:classic;260:shot:classic;300:quit"
 //
 // Actions: shot:<name>  key:<esc|enter|up|down|left|right|space>  renderer:<classic|polymost>
-//          look:<up|down|center>  quit
+//          look:<up|down|center>  osd:<console command>  coopcontinue:<slot>  players
+//          menu:<netstart|coopload|ingame|close>  quit
 
 #include "compat.h"
 
@@ -36,6 +37,11 @@ as published by the Free Software Foundation.
 #include "globals.h"
 #include "player.h"
 #include "view.h"
+#include "coopsave.h"
+#include "mmulti.h"
+#include "network.h"
+#include "osd.h"
+#include "gamemenu.h"
 
 #include <dlfcn.h>
 #include <vector>
@@ -228,6 +234,47 @@ static int keyFromName(std::string const &n)
     return -1;
 }
 
+// one line per player with everything a co-op save carries, to compare machines
+static void logPlayers(void)
+{
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        PLAYER *pPlayer = &gPlayer[p];
+        char weapons[kWeaponMax + 1] = {}, ammo[160] = {};
+        int len = 0;
+        for (int i = 0; i < kWeaponMax; i++)
+            weapons[i] = pPlayer->hasWeapon[i] ? '1' : '0';
+        for (int i = 0; i < 12; i++)
+            len += Bsnprintf(ammo + len, sizeof(ammo) - len, "%s%d", i ? "," : "", pPlayer->ammoCount[i]);
+        LOG_F(INFO, "nbtest: player %d %s health %d weapon %d/%d weapons %s ammo %s armor %d,%d,%d pack %d,%d,%d,%d,%d item %d",
+              p, gProfile[p].name, pPlayer->pXSprite ? pPlayer->pXSprite->health : -1, pPlayer->curWeapon, pPlayer->input.newWeapon,
+              weapons, ammo, pPlayer->armor[0], pPlayer->armor[1], pPlayer->armor[2],
+              pPlayer->packSlots[0].curAmount, pPlayer->packSlots[1].curAmount, pPlayer->packSlots[2].curAmount,
+              pPlayer->packSlots[3].curAmount, pPlayer->packSlots[4].curAmount, pPlayer->packItemId);
+    }
+    LOG_F(INFO, "nbtest: game type %d episode %d level %d difficulty %d friendlyfire %d numplayers %d outofsync %d",
+          gGameOptions.nGameType, gGameOptions.nEpisode, gGameOptions.nLevel, gGameOptions.nDifficulty,
+          gGameOptions.bFriendlyFire, numplayers, bOutOfSync);
+}
+
+extern CGameMenu menuNetStart, menuCoopLoad, menuMainWithSave;
+void SetupCoopLoadMenu(CGameMenuItemChain *);
+
+static void openMenu(std::string const &name)
+{
+    if (name == "netstart")
+        gGameMenuMgr.Push(&menuNetStart, -1);
+    else if (name == "coopload")
+    {
+        SetupCoopLoadMenu(NULL);
+        gGameMenuMgr.Push(&menuCoopLoad, -1);
+    }
+    else if (name == "ingame")
+        gGameMenuMgr.Push(&menuMainWithSave, -1);
+    else if (name == "close")
+        gGameMenuMgr.Deactivate();
+}
+
 static void switchRenderer(bool polymost)
 {
     int const newbpp = polymost ? 32 : 8;
@@ -246,6 +293,13 @@ void nbtest_frame(void)
 {
     parseScript();
     s_frame++;
+
+    static bool s_loggedOutOfSync;
+    if (bOutOfSync && !s_loggedOutOfSync)
+    {
+        LOG_F(ERROR, "nbtest: OUT OF SYNC at frame %d", s_frame);
+        s_loggedOutOfSync = true;
+    }
 
     if (s_releaseKey >= 0)
     {
@@ -278,6 +332,14 @@ void nbtest_frame(void)
             if (gMe)
                 gViewLook = st.arg == "up" ? F16(200) : st.arg == "down" ? F16(-250) : 0;
         }
+        else if (st.action == "osd")
+            OSD_Dispatch(st.arg.c_str());
+        else if (st.action == "coopcontinue")
+            LOG_F(INFO, "nbtest: coopContinueGame -> %d", coopContinueGame(atoi(st.arg.c_str())));
+        else if (st.action == "menu")
+            openMenu(st.arg);
+        else if (st.action == "players")
+            logPlayers();
         else if (st.action == "quit")
         {
             LOG_F(INFO, "nbtest: done");

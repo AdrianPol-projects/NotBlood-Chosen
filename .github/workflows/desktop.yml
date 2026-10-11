@@ -1,0 +1,105 @@
+---
+name: Desktop co-op build
+
+# Linux and Windows builds of this fork (co-op saves), published to the "desktop-latest"
+# prerelease. Every machine in a network game must run the same build.
+
+'on':
+  push:
+    branches: [coop-saves]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    name: Linux x86_64
+    # oldest supported runner, so the binary runs on newer distributions as well
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install libsdl2-dev libgtk2.0-dev
+      - name: Build
+        # FLAC and libvpx sonames differ between distributions; Blood needs neither
+        run: make -j$(nproc) blood HAVE_FLAC=0 USE_LIBVPX=0 LTO=0
+      - name: Show dependencies
+        run: ldd ./notblood
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notblood-linux-x64
+          path: ./notblood
+          if-no-files-found: error
+
+  build-windows:
+    name: Windows x64
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: >-
+          msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
+        with:
+          msystem: mingw64
+          update: true
+          cache: true
+          install: git mingw-w64-x86_64-toolchain make
+      - name: Build
+        run: make -j$(nproc) blood SDLCONFIG= LTO=0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notblood-win64
+          path: ./notblood.exe
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Package
+        run: |
+          for target in linux-x64 win64; do
+            dir="pkg/notblood-$target"
+            mkdir -p "$dir/autoload"
+            cp artifacts/notblood-$target/* "$dir/"
+            cp notblood.pk3 "$dir/"
+            cp package/common/*.txt "$dir/"
+            mv "$dir/addons.txt" "$dir/autoload/"
+            chmod +x "$dir/notblood" 2>/dev/null || true
+            (cd pkg && zip -9 -r "../notblood-$target.zip" "notblood-$target")
+          done
+          ls -l *.zip
+      - name: Publish to "desktop-latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Runs can be queued late; never let an older commit replace a newer build.
+          HEAD_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}" -q .sha)
+          if [ "$HEAD_SHA" != "$GITHUB_SHA" ]; then
+            echo "Branch head is $HEAD_SHA, this run built $GITHUB_SHA - not publishing."
+            exit 0
+          fi
+          TITLE="NotBlood desktop with co-op saves (build ${{ github.run_number }})"
+          NOTES="Linux and Windows builds from ${GITHUB_SHA} (branch ${GITHUB_REF_NAME}). Unzip, copy your Blood files next to the notblood executable and run it. Every player in a network game needs this same build. Co-op saves: in a co-op game open the menu and pick SAVE CO-OP; to continue, host a game, then NEW GAME > LOAD CO-OP."
+          if gh release view desktop-latest >/dev/null 2>&1; then
+            gh release upload desktop-latest notblood-linux-x64.zip notblood-win64.zip --clobber
+            gh release edit desktop-latest --title "$TITLE" --notes "$NOTES" --prerelease
+          else
+            gh release create desktop-latest notblood-linux-x64.zip notblood-win64.zip --target "$GITHUB_SHA" --prerelease --title "$TITLE" --notes "$NOTES"
+          fi

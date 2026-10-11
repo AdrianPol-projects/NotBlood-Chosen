@@ -504,6 +504,7 @@ blood_game_objs := \
 	choke.cpp \
 	common.cpp \
 	config.cpp \
+	coopsave.cpp \
 	controls.cpp \
 	credits.cpp \
 	db.cpp \

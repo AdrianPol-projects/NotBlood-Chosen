@@ -1028,6 +1028,11 @@ inline void playerBackupItems(PLAYER* pPlayer)
         pRestoreInfo->armorCur[i] = pPlayer->armor[i];
 }
 
+void playerRefreshItemBackup(PLAYER* pPlayer)
+{
+    playerBackupItems(pPlayer);
+}
+
 inline void playerRestoreItems(PLAYER* pPlayer)
 {
     if ((gGameOptions.nGameType != kGameTypeCoop) || !gGameOptions.bItemWeaponSettings) // don't restore item/weapon info for non-coop mode/if restore items is off

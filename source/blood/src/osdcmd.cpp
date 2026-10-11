@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "fx_man.h"
 #include "common_game.h"
 #include "config.h"
+#include "coopsave.h"
 #include "blood.h"
 #include "demo.h"
 #include "gamemenu.h"
@@ -227,6 +228,13 @@ static int osdcmd_map(osdcmdptr_t parm)
     viewResizeView(gViewSize);
     gGameMenuMgr.Deactivate();
 
+    return OSDCMD_OK;
+}
+
+static int osdcmd_coop_save(osdcmdptr_t UNUSED(parm))
+{
+    UNREFERENCED_CONST_PARAMETER(parm);
+    coopRequestSave();
     return OSDCMD_OK;
 }
 
@@ -1445,6 +1453,7 @@ int32_t registerosdcommands(void)
     OSD_RegisterFunction("changelevel","changelevel <volume> <level>: warps to the given level", osdcmd_changelevel);
     OSD_RegisterFunction("map","map <mapfile>: loads the given user map", osdcmd_map);
     OSD_RegisterFunction("restartmap","restarts current map", osdcmd_restartmap);
+    OSD_RegisterFunction("coop_save","coop_save: saves co-op progress (weapons, items, level, settings) on every player's machine", osdcmd_coop_save);
     OSD_RegisterFunction("demo","demo <demofile or demonum>: starts the given demo", osdcmd_demo);
 //    }
 //

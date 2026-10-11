@@ -37,6 +37,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "choke.h"
 #include "config.h"
 #include "controls.h"
+#include "coopsave.h"
 #include "credits.h"
 #include "demo.h"
 #include "dude.h"
@@ -941,6 +942,8 @@ void StartLevel(GAMEOPTIONS *pOpt)
                 playerResetWeaponState(pPlayer, false);
         }
     }
+    if (!(pOpt->uGameFlags&kGameFlagContinuing))
+        coopApplyLoadouts(); // continued co-op game: give everybody their saved weapons/items
     pOpt->uGameFlags &= ~(kGameFlagContinuing|kGameFlagEnding);
     scrSetDac();
     PreloadCache();
@@ -970,6 +973,8 @@ void StartLevel(GAMEOPTIONS *pOpt)
     gAutosaveInCurLevel = false;
     if (bTriggerAutosave && !pOpt->bPermaDeath)
         AutosaveGame(true); // create autosave at start of the new level
+    if ((pOpt->nGameType == kGameTypeCoop) && !gDemo.bPlaying && !gDemo.bRecording)
+        coopWriteSave(kCoopSaveAuto, NULL); // every machine keeps a co-op save of the level start
 }
 
 void DoQuickLoad(const bool bIgnoreMenu)

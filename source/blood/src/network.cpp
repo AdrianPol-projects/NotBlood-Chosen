@@ -29,6 +29,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "compat.h"
 #include "callback.h"
 #include "chatpipe.h"
+#include "coopsave.h"
 #include "config.h"
 #include "controls.h"
 #include "eventq.h"
@@ -75,7 +76,7 @@ char gNetAddress[48];
 int gNetPort = kNetDefaultPort;
 int gNetPortLocal = -1;
 
-const short kNetVersion = 0x248;
+const short kNetVersion = 0x248 | 0x4000; // 0x4000: co-op saves (packets 245/246, bCoopContinue)
 
 PKT_STARTGAME gPacketStartGame;
 
@@ -525,6 +526,12 @@ void netGetPackets(void)
             netPlayerQuit(nPlayer);
             netWaitForEveryone(0);
             break;
+        case 245: // another player saved the co-op progress
+            coopReceiveSaveRequest(nPlayer);
+            break;
+        case 246: // loadout for a continued co-op game
+            coopReceiveLoadout(pPacket);
+            break;
         case 248:
         {
             char szMapPath[BMAX_PATH];
@@ -559,6 +566,7 @@ void netGetPackets(void)
             if (gPacketStartGame.version != kNetVersion)
                 ThrowError("\nThese versions of Blood cannot play together.\n");
             gStartNewGame = 1;
+            coopStartPacketReceived(gPacketStartGame.bCoopContinue != 0);
             SetGameVanillaMode(0); // turn off vanilla mode for multiplayer so menus don't get bugged
             gPlayerRoundEnding = 0;
             break;

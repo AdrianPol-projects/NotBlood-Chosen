@@ -180,6 +180,7 @@
     <ClCompile Include="..\..\source\blood\src\choke.cpp" />
     <ClCompile Include="..\..\source\blood\src\common.cpp" />
     <ClCompile Include="..\..\source\blood\src\config.cpp" />
+    <ClCompile Include="..\..\source\blood\src\coopsave.cpp" />
     <ClCompile Include="..\..\source\blood\src\controls.cpp" />
     <ClCompile Include="..\..\source\blood\src\credits.cpp" />
     <ClCompile Include="..\..\source\blood\src\db.cpp" />
@@ -293,6 +294,7 @@
     <ClInclude Include="..\..\source\blood\src\choke.h" />
     <ClInclude Include="..\..\source\blood\src\common_game.h" />
     <ClInclude Include="..\..\source\blood\src\config.h" />
+    <ClInclude Include="..\..\source\blood\src\coopsave.h" />
     <ClInclude Include="..\..\source\blood\src\controls.h" />
     <ClInclude Include="..\..\source\blood\src\credits.h" />
     <ClInclude Include="..\..\source\blood\src\db.h" />
