@@ -1,0 +1,3 @@
+Add-on episodes go here, one folder each.
+Cryptic Passage: a folder "cryptic" with CRYPTIC.INI, the CP*.MAP maps and CPART07.AR_ / CPART15.AR_.
+Choose them in the main menu: MODS.

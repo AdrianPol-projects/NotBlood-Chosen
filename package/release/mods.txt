@@ -1,0 +1,2 @@
+Mods go here: a folder each (maps, .def texture packs, voxels, an episode .ini, ...) or .zip, .grp and .pk3 files.
+Choose them in the main menu: MODS.

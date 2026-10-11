@@ -1,0 +1,192 @@
+---
+name: Release builds
+
+# Ready-to-play builds of NotBlood Chosen (co-op saves, online lobbies, mods menu, ...) for
+# Windows, Linux and macOS, published to the "latest" release of AdrianPol-projects/NotBlood-Chosen.
+# Every machine in a network game needs the same version (CHOSEN_VERSION in source/blood/src/chosen.h).
+# The iPad build comes from ios.yml in AdrianPol-projects/NotBlood-iOS.
+
+'on':
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'server/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SDL_VERSION: 2.32.10
+
+jobs:
+  build-linux:
+    name: Linux x86_64
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install libsdl2-dev libgtk2.0-dev libasound2-dev
+      - name: Build
+        # FLAC and libvpx sonames differ between distributions; Blood needs neither
+        run: make -j$(nproc) blood HAVE_FLAC=0 USE_LIBVPX=0 LTO=0
+      - name: Check dependencies
+        run: |
+          readelf -d ./notblood | grep NEEDED
+          if readelf -d ./notblood | grep -E 'libFLAC|libvpx'; then
+            echo "binary depends on a library with a distribution specific soname"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notblood-linux-x64
+          path: ./notblood
+          if-no-files-found: error
+
+  build-windows:
+    name: Windows x64
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: >-
+          msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
+        with:
+          msystem: mingw64
+          update: true
+          cache: true
+          install: git mingw-w64-x86_64-toolchain make
+      - name: Build
+        run: make -j$(nproc) blood SDLCONFIG= LTO=0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notblood-win64
+          path: ./notblood.exe
+          if-no-files-found: error
+
+  build-macos:
+    name: macOS (Apple Silicon + Intel)
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    runs-on: macos-14
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build SDL2 (universal, static)
+        run: |
+          curl -fsSL -o sdl.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-${SDL_VERSION}.tar.gz"
+          tar xf sdl.tar.gz
+          cmake -S "SDL2-${SDL_VERSION}" -B sdlbuild -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF -DCMAKE_INSTALL_PREFIX="$PWD/sdl"
+          cmake --build sdlbuild -j4
+          cmake --install sdlbuild
+          # the makefile asks for --libs; a static SDL needs its frameworks too
+          printf '#!/bin/sh\nif [ "$1" = "--libs" ]; then exec "%s/sdl/bin/sdl2-config" --static-libs; fi\nexec "%s/sdl/bin/sdl2-config" "$@"\n' "$PWD" "$PWD" > sdl2-config-static
+          chmod +x sdl2-config-static
+          ./sdl2-config-static --libs
+      - name: Build (arm64)
+        run: |
+          make -j4 blood ARCH=arm64 SDLCONFIG="$PWD/sdl2-config-static" HAVE_FLAC=0 USE_LIBVPX=0 LTO=0
+          mv notblood notblood-arm64
+          make clean
+      - name: Build (x86_64)
+        run: |
+          make -j4 blood ARCH=x86_64 SDLCONFIG="$PWD/sdl2-config-static" HAVE_FLAC=0 USE_LIBVPX=0 LTO=0
+          mv notblood notblood-x86_64
+      - name: Make the app
+        run: |
+          rm -rf NotBlood.app
+          lipo -create -output notblood-universal notblood-arm64 notblood-x86_64
+          lipo -info notblood-universal
+          cp -R platform/Apple/bundles/NotBlood.app .
+          mkdir -p NotBlood.app/Contents/MacOS
+          cp notblood-universal NotBlood.app/Contents/MacOS/NotBlood
+          cp notblood.pk3 NotBlood.app/Contents/Resources/
+          plist=NotBlood.app/Contents/Info.plist
+          version=$(sed -n 's/#define CHOSEN_VERSION "\(.*\)"/\1/p' source/blood/src/chosen.h)
+          plutil -replace CFBundleIdentifier -string com.adrianpol.notblood-chosen "$plist"
+          plutil -replace CFBundleName -string "NotBlood" "$plist"
+          plutil -replace CFBundleShortVersionString -string "$version" "$plist"
+          plutil -replace CFBundleVersion -string "${{ github.run_number }}" "$plist"
+          plutil -replace LSMinimumSystemVersion -string "11.0" "$plist"
+          plutil -replace NSHighResolutionCapable -bool true "$plist"
+          plutil -lint "$plist"
+          codesign --force --deep -s - NotBlood.app
+          codesign --verify --verbose NotBlood.app
+          ditto -c -k --keepParent NotBlood.app NotBlood.app.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notblood-macos
+          path: ./NotBlood.app.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Package
+        run: |
+          version=$(sed -n 's/#define CHOSEN_VERSION "\(.*\)"/\1/p' source/blood/src/chosen.h)
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          for target in linux-x64 win64; do
+            dir="pkg/$target/NotBlood"
+            mkdir -p "$dir/autoload" "$dir/addons" "$dir/mods" "$dir/movie"
+            cp artifacts/notblood-$target/* "$dir/"
+            cp notblood.pk3 "$dir/"
+            cp package/common/*.txt "$dir/"
+            mv "$dir/addons.txt" "$dir/autoload/"
+            cp package/release/README.txt "$dir/README - NotBlood Chosen.txt"
+            cp package/release/addons.txt "$dir/addons/Put add-on episodes here.txt"
+            cp package/release/mods.txt "$dir/mods/Put mods here.txt"
+            cp package/release/movie.txt "$dir/movie/Put the movie files here.txt"
+            chmod +x "$dir/notblood" 2>/dev/null || true
+            (cd "pkg/$target" && zip -9 -r "../../NotBlood-Chosen-$version-$target.zip" NotBlood)
+          done
+          dir=pkg/macos/NotBlood
+          mkdir -p "$dir/addons" "$dir/mods" "$dir/movie"
+          (cd "$dir" && unzip -q ../../../artifacts/notblood-macos/NotBlood.app.zip)
+          cp package/release/README.txt "$dir/README - NotBlood Chosen.txt"
+          cp package/release/addons.txt "$dir/addons/Put add-on episodes here.txt"
+          cp package/release/mods.txt "$dir/mods/Put mods here.txt"
+          cp package/release/movie.txt "$dir/movie/Put the movie files here.txt"
+          (cd pkg/macos && zip -9 -r -y "../../NotBlood-Chosen-$version-macos.zip" NotBlood)
+          ls -l *.zip
+      - name: Publish to the "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Runs can be queued late; never let an older commit replace a newer build.
+          HEAD_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}" -q .sha)
+          if [ "$HEAD_SHA" != "$GITHUB_SHA" ]; then
+            echo "Branch head is $HEAD_SHA, this run built $GITHUB_SHA - not publishing."
+            exit 0
+          fi
+          TITLE="NotBlood Chosen $VERSION (build ${{ github.run_number }})"
+          files=$(ls NotBlood-Chosen-*.zip)
+          if gh release view latest >/dev/null 2>&1; then
+            # drop the zips of the previous build, their names carry the version
+            for a in $(gh release view latest --json assets -q '.assets[].name'); do
+              gh release delete-asset latest "$a" -y
+            done
+            gh release upload latest $files --clobber
+            gh release edit latest --title "$TITLE" --notes-file package/release/NOTES.md --prerelease
+          else
+            gh release create latest $files --target "$GITHUB_SHA" --prerelease --title "$TITLE" --notes-file package/release/NOTES.md
+          fi

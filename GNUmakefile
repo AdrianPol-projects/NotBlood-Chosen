@@ -422,16 +422,21 @@ endif
 
 #### Depends
 
+# only with FLAC support (HAVE_FLAC=0 builds don't need the library at all)
+ifneq (0,$(HAVE_FLAC))
+    FLAC_LIB := -lFLAC
+endif
+
 ifeq ($(SUBPLATFORM),LINUX)
-    LIBS += -lFLAC -lasound
+    LIBS += $(FLAC_LIB) -lasound
 endif
 
 ifeq ($(PLATFORM),BSD)
-    LIBS += -lFLAC -lexecinfo
+    LIBS += $(FLAC_LIB) -lexecinfo
 endif
 
 ifeq ($(PLATFORM),DARWIN)
-    LIBS += -lFLAC \
+    LIBS += $(FLAC_LIB) \
             -Wl,-framework,Cocoa -Wl,-framework,Carbon \
             -Wl,-framework,CoreMIDI -Wl,-framework,AudioUnit \
             -Wl,-framework,AudioToolbox -Wl,-framework,IOKit
@@ -441,7 +446,7 @@ ifeq ($(PLATFORM),DARWIN)
 endif
 
 ifeq ($(PLATFORM),WINDOWS)
-    LIBS += -lFLAC -ldsound
+    LIBS += $(FLAC_LIB) -ldsound
 endif
 
 

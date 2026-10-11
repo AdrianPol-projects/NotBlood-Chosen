@@ -111,12 +111,70 @@ void G_ExtPreInit(int32_t argc,char const * const * argv)
 #endif
 }
 
+#if defined EDUKE32_OSX
+static bool G_SetupMacGameFolder(void)
+{
+    char folder[BMAX_PATH];
+    char *appdir = Bgetappdir();  // .../NotBlood.app/Contents/Resources
+    folder[0] = '\0';
+    if (appdir)
+    {
+        Bstrncpyz(folder, appdir, sizeof(folder));
+        Xfree(appdir);
+        if (char *pApp = Bstrstr(folder, ".app/"))
+        {
+            *pApp = '\0';
+            if (char *pSlash = Bstrrchr(folder, '/'))
+                *pSlash = '\0';
+            else
+                folder[0] = '\0';
+        }
+        else
+            folder[0] = '\0';
+    }
+
+    if (Bstrstr(folder, "/AppTranslocation/"))
+    {
+        // a quarantined app is started from a random read-only copy: its folder is unknown
+        wm_msgbox(APPNAME, "macOS started NotBlood from a temporary copy, so it can't see the folder it is in.\n\n"
+                  "Open Terminal and run this once (no administrator needed), then start NotBlood again:\n\n"
+                  "xattr -dr com.apple.quarantine <the NotBlood folder>\n\n"
+                  "Until then the game files go in Documents/NotBlood.");
+        folder[0] = '\0';
+    }
+
+    if (folder[0] && !access(folder, W_OK))
+    {
+        addsearchpath(folder);
+        if (!Bchdir(folder))
+        {
+            LOG_F(INFO, "Game folder: %s", folder);
+            return true;
+        }
+    }
+
+    char *homedir = Bgethomedir();
+    if (!homedir)
+        return false;
+    Bsnprintf(folder, sizeof(folder), "%s/Documents/" APPNAME, homedir);
+    Xfree(homedir);
+    Bmkdir(folder, S_IRWXU);
+    if (addsearchpath(folder) == 0 && !Bchdir(folder))
+    {
+        LOG_F(INFO, "Game folder: %s", folder);
+        return true;
+    }
+    return false;
+}
+#endif
+
 void G_ExtInit(void)
 {
     char cwd[BMAX_PATH];
 
-#if defined EDUKE32_OSX || defined EDUKE32_IOS
-    // iOS: notblood.pk3 ships inside the app bundle
+#if defined EDUKE32_OSX || defined EDUKE32_IOS || defined __linux__
+    // iOS/macOS: notblood.pk3 ships inside the app bundle; Linux: the game files can be next to
+    // the program even when it is started from somewhere else
     char *appdir = Bgetappdir();
     addsearchpath(appdir);
     Xfree(appdir);
@@ -145,6 +203,13 @@ void G_ExtInit(void)
         }
     }
 
+#if defined EDUKE32_OSX
+    // macOS: the game files, settings and saves go in the folder NotBlood.app is in (any folder in
+    // your home folder: no administrator needed), like the exe folder on Windows; if that can't be
+    // used, in Documents/NotBlood
+    if (g_useCwd == 0 && G_SetupMacGameFolder())
+        return;
+#endif
 #if defined(_WIN32)
     if (!access("user_profiles_enabled", F_OK))
 #else

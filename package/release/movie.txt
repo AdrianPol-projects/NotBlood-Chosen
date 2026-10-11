@@ -1,0 +1,2 @@
+Copy the files from the MOVIE folder of the Blood CD here for the cutscenes:
+CS1.SMK to CS6.SMK with their .WAV files, GTI.SMK and LOGO.SMK.
