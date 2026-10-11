@@ -1,0 +1,24 @@
+# NotBlood online relay + live dashboard.
+# The key goes in server.env next to this file:  BLOOD_KEY=<your secret key>
+services:
+  notblood-relay:
+    build: .
+    image: notblood-relay
+    container_name: notblood-relay
+    restart: unless-stopped
+    env_file: server.env
+    ports:
+      - "127.0.0.1:8099:8080"
+    volumes:
+      - relay-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "3"}
+volumes:
+  relay-data:

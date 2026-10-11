@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NotBlood Live</title>
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0d0b0b">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2C16 2 6 15 6 21a10 10 0 0 0 20 0C26 15 16 2 16 2z' fill='%23b3121b'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<div id="login" class="screen hidden">
+  <form id="login-form" class="login-box" autocomplete="on">
+    <div class="brand big"><span class="drop"></span>NOTBLOOD <em>LIVE</em></div>
+    <p class="muted">Live view of the games on this server.</p>
+    <label for="key">Server key</label>
+    <input id="key" name="password" type="password" autocomplete="current-password" required spellcheck="false">
+    <label class="check"><input id="remember" type="checkbox" checked> Remember on this device</label>
+    <button type="submit">Open</button>
+    <p id="login-error" class="error" role="alert"></p>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header class="topbar">
+    <div class="brand"><span class="drop"></span>NOTBLOOD <em>LIVE</em></div>
+    <nav id="tabs" class="tabs" aria-label="Games"></nav>
+    <div class="actions">
+      <span id="conn" class="conn" title="Connection"></span>
+      <button id="btn-settings" class="icon" title="What to show" aria-label="What to show">&#9881;</button>
+      <button id="btn-full" class="icon" title="Full screen" aria-label="Full screen">&#x26F6;</button>
+    </div>
+  </header>
+
+  <main id="overview" class="overview">
+    <section>
+      <h2>Games</h2>
+      <div id="lobby-list" class="lobby-list"></div>
+      <p id="no-lobbies" class="muted hidden">No games right now. Host one from the game: MULTIPLAYER &rsaquo; ONLINE.</p>
+    </section>
+    <section>
+      <h2>Recent games</h2>
+      <div id="history" class="history"></div>
+    </section>
+  </main>
+
+  <main id="game" class="game hidden">
+    <div id="levelbar" class="levelbar"></div>
+    <div class="game-grid">
+      <div id="map-wrap" class="map-wrap">
+        <canvas id="map"></canvas>
+        <div class="map-tools">
+          <select id="follow" aria-label="Follow"></select>
+          <button id="zoom-in" class="icon small" aria-label="Zoom in">+</button>
+          <button id="zoom-out" class="icon small" aria-label="Zoom out">&minus;</button>
+        </div>
+        <div id="map-empty" class="map-empty muted">Waiting for the level map&hellip;</div>
+      </div>
+      <div id="players" class="players"></div>
+      <div id="feed-wrap" class="feed-wrap">
+        <h3>Events</h3>
+        <ol id="feed" class="feed"></ol>
+      </div>
+    </div>
+  </main>
+</div>
+
+<aside id="settings" class="settings hidden" aria-label="What to show">
+  <div class="settings-head">
+    <h2>What to show</h2>
+    <button id="settings-close" class="icon" aria-label="Close">&times;</button>
+  </div>
+  <div id="settings-body"></div>
+  <button id="logout" class="ghost">Forget the key on this device</button>
+</aside>
+
+<script src="static/app.js"></script>
+</body>
+</html>
