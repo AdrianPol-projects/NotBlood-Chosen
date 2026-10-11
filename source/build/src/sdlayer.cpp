@@ -524,7 +524,10 @@ int sdlayer_mobilefilter(void *userdata, SDL_Event *event)
 
     UNREFERENCED_PARAMETER(userdata);
 }
+#endif
 
+#ifdef __ANDROID__
+// exit() (see compat.h) returns from the game's main instead, so Android can finish the activity
 # include <setjmp.h>
 static jmp_buf eduke32_exit_jmp_buf;
 static int eduke32_return_value;
