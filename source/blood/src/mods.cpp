@@ -181,8 +181,42 @@ const char *modCurrentName(void)
     return "";
 }
 
+#ifdef EDUKE32_IOS
+// iPad/Android: there is no download folder that brings these along, so make them (with a note
+// saying what goes in) where the player copies the game files
+static void makeGameFolders(void)
+{
+    static const struct { const char *pzFolder, *pzNote, *pzText; } folders[] = {
+        { "movie", "movie/Put the movie files here.txt",
+          "Copy the files from the MOVIE folder of the Blood CD here for the cutscenes:\n"
+          "CS1.SMK to CS6.SMK with their .WAV files, GTI.SMK and LOGO.SMK.\n" },
+        { "addons", "addons/Put add-on episodes here.txt",
+          "Add-on episodes go here, one folder each.\n"
+          "Cryptic Passage: a folder \"cryptic\" with CRYPTIC.INI, the CP*.MAP maps and CPART07.AR_ / CPART15.AR_.\n"
+          "Choose them in the main menu: MODS.\n" },
+        { "mods", "mods/Put mods here.txt",
+          "Mods go here: a folder each (maps, .def texture packs, voxels, an episode .ini, ...) or .zip, .grp and .pk3 files.\n"
+          "Choose them in the main menu: MODS.\n" },
+    };
+    for (auto const &f : folders)
+    {
+        if (isDir(f.pzFolder))
+            continue;
+        Bmkdir(f.pzFolder, S_IRWXU);
+        if (FILE *fp = fopen(f.pzNote, "w"))
+        {
+            fputs(f.pzText, fp);
+            fclose(fp);
+        }
+    }
+}
+#endif
+
 void modApplySelection(bool bCommandLine)
 {
+#ifdef EDUKE32_IOS
+    makeGameFolders();
+#endif
     FILE *fp = fopen(kTryingFile, "r");
     if (fp)
     {
