@@ -28,12 +28,18 @@ jobs:
       - name: Install prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get -y install libsdl2-dev libgtk2.0-dev
+          sudo apt-get -y install libsdl2-dev libgtk2.0-dev libflac-dev libasound2-dev
       - name: Build
-        # FLAC and libvpx sonames differ between distributions; Blood needs neither
+        # FLAC and libvpx sonames differ between distributions; Blood needs neither (the makefile
+        # still passes -lFLAC, which --as-needed drops)
         run: make -j$(nproc) blood HAVE_FLAC=0 USE_LIBVPX=0 LTO=0
-      - name: Show dependencies
-        run: ldd ./notblood
+      - name: Check dependencies
+        run: |
+          readelf -d ./notblood | grep NEEDED
+          if readelf -d ./notblood | grep -E 'libFLAC|libvpx'; then
+            echo "binary depends on a library with a distribution specific soname"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: notblood-linux-x64
