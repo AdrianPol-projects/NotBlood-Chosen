@@ -121,6 +121,9 @@ struct Settings
     bool  alwaysRun = true;
     bool  fireAims = true;
     bool  autoHide = true;
+    bool  hideForController = true; // hide while a controller is connected (a touch shows them for a while)
+    bool  gyroAim = false;           // turn and look by moving the iPad
+    float gyroSens = 1.0f;
 };
 
 // Menu-mode helpers (not editable)
@@ -269,6 +272,16 @@ int g_tapKeyRelease = -1;
 // auto-hide when keyboard/mouse is in use
 bool g_hiddenByHardware;
 
+// hidden while a controller is connected, except for a while after each touch
+bool g_controllerConnected;
+uint32_t g_touchShowUntil;
+const uint32_t kTouchShowTime = 10000;
+
+// gyro aiming
+SDL_Sensor *g_gyro;
+bool g_gyroTried;
+uint32_t g_gyroLast;
+
 // layout editor
 int   g_editSelected = -1;
 float g_pinchStartDist, g_pinchStartR;
@@ -392,6 +405,9 @@ void saveConfig(void)
     fprintf(fp, "alwaysRun %d\n", s.alwaysRun);
     fprintf(fp, "fireAims %d\n", s.fireAims);
     fprintf(fp, "autoHide %d\n", s.autoHide);
+    fprintf(fp, "hideForController %d\n", s.hideForController);
+    fprintf(fp, "gyroAim %d\n", s.gyroAim);
+    fprintf(fp, "gyroSens %f\n", s.gyroSens);
     fprintf(fp, "stick %f %f %f\n", g_stick.x, g_stick.y, g_stick.r);
 
     for (auto const &b : g_buttons)
@@ -454,6 +470,9 @@ void loadConfig(void)
             else if (!strcmp(key, "alwaysRun")) s.alwaysRun = f1 != 0.f;
             else if (!strcmp(key, "fireAims")) s.fireAims = f1 != 0.f;
             else if (!strcmp(key, "autoHide")) s.autoHide = f1 != 0.f;
+            else if (!strcmp(key, "hideForController")) s.hideForController = f1 != 0.f;
+            else if (!strcmp(key, "gyroAim")) s.gyroAim = f1 != 0.f;
+            else if (!strcmp(key, "gyroSens")) s.gyroSens = clamp(f1, 0.2f, 3.f);
         }
     }
 
@@ -916,9 +935,16 @@ void gameFingerUp(Finger &f)
     }
 }
 
-void renderGame(void)
+bool overlayHidden(void)
 {
     if (g_hiddenByHardware)
+        return true;
+    return g_controllerConnected && g_settings.hideForController && (int32_t)(SDL_GetTicks() - g_touchShowUntil) > 0;
+}
+
+void renderGame(void)
+{
+    if (overlayHidden())
         return;
 
     float const alpha = g_settings.opacity;
@@ -1086,7 +1112,7 @@ void menuFingerUp(Finger &f)
 
 void renderMenu(void)
 {
-    if (g_hiddenByHardware)
+    if (overlayHidden())
         return;
 
     float const alpha = max(g_settings.opacity * 0.8f, 0.25f);
@@ -1129,6 +1155,7 @@ void buildSettingsWidgets(Widget *w, int *pCount, int maxCount)
         add({ WT_SLIDER, { margin, y, colW, rowH * 0.8f }, "STICK DEAD ZONE", &s.deadZone, nullptr, 0.f, 0.5f, WA_NONE, false }); y += rowH;
         add({ WT_SLIDER, { margin, y, colW, rowH * 0.8f }, "OPACITY", &s.opacity, nullptr, 0.1f, 1.f, WA_NONE, false }); y += rowH;
         add({ WT_SLIDER, { margin, y, colW, rowH * 0.8f }, "BUTTON SIZE", &s.buttonScale, nullptr, 0.6f, 1.6f, WA_NONE, false }); y += rowH;
+        add({ WT_SLIDER, { margin, y, colW, rowH * 0.8f }, "GYRO SPEED", &s.gyroSens, nullptr, 0.2f, 3.f, WA_NONE, false }); y += rowH;
 
         float const x2 = W * 0.53f, col2W = W * 0.42f;
         y = top;
@@ -1137,6 +1164,8 @@ void buildSettingsWidgets(Widget *w, int *pCount, int maxCount)
         add({ WT_TOGGLE, { x2, y, col2W, rowH * 0.8f }, "ALWAYS RUN", nullptr, &s.alwaysRun, 0, 0, WA_NONE, false }); y += rowH;
         add({ WT_TOGGLE, { x2, y, col2W, rowH * 0.8f }, "DRAG FIRE TO AIM", nullptr, &s.fireAims, 0, 0, WA_NONE, false }); y += rowH;
         add({ WT_TOGGLE, { x2, y, col2W, rowH * 0.8f }, "HIDE FOR KEYBOARD/MOUSE", nullptr, &s.autoHide, 0, 0, WA_NONE, false }); y += rowH;
+        add({ WT_TOGGLE, { x2, y, col2W, rowH * 0.8f }, "HIDE FOR CONTROLLER", nullptr, &s.hideForController, 0, 0, WA_NONE, false }); y += rowH;
+        add({ WT_TOGGLE, { x2, y, col2W, rowH * 0.8f }, "GYRO AIM", nullptr, &s.gyroAim, 0, 0, WA_NONE, false }); y += rowH;
     }
     else
     {
@@ -1592,6 +1621,7 @@ bool touch_handleEvent(SDL_Event const *ev)
         case SDL_FINGERDOWN:
         {
             g_hiddenByHardware = false;
+            g_touchShowUntil = SDL_GetTicks() + kTouchShowTime;
 
             Finger *f = allocFinger(ev->tfinger.fingerId);
             if (!f)
@@ -1668,6 +1698,56 @@ void touch_releaseAll(void)
         f.active = false;
 }
 
+void touch_notifyController(bool bConnected)
+{
+    if (bConnected && !g_controllerConnected)
+        g_touchShowUntil = SDL_GetTicks();  // hide right away
+    g_controllerConnected = bConnected;
+}
+
+// angular speed of the device (gyro) turned into game turning/looking: the game follows the iPad
+// held in landscape, like a window into the level
+static void gyroInput(float *pYaw, float *pPitch)
+{
+    if (!g_settings.gyroAim)
+    {
+        if (g_gyro)
+        {
+            SDL_SensorClose(g_gyro);
+            g_gyro = NULL;
+        }
+        g_gyroTried = false;
+        return;
+    }
+    if (!g_gyro && !g_gyroTried)
+    {
+        g_gyroTried = true;
+        if (SDL_WasInit(SDL_INIT_SENSOR) || !SDL_InitSubSystem(SDL_INIT_SENSOR))
+            for (int i = 0; i < SDL_NumSensors() && !g_gyro; i++)
+                if (SDL_SensorGetDeviceType(i) == SDL_SENSOR_GYRO)
+                    g_gyro = SDL_SensorOpen(i);
+        g_gyroLast = SDL_GetTicks();
+        LOG_F(INFO, "Touch: gyro aiming %s", g_gyro ? "on" : "unavailable (no gyroscope)");
+    }
+    if (!g_gyro)
+        return;
+    SDL_SensorUpdate();
+    float rate[3] = {};
+    if (SDL_SensorGetData(g_gyro, rate, 3))
+        return;
+    uint32_t const now = SDL_GetTicks();
+    float const dt = min((now - g_gyroLast) / 1000.f, 0.1f);
+    g_gyroLast = now;
+    // device axes (portrait): x right, y up, z out of the screen; in landscape with the right side
+    // up, x points up and y left (flipped landscape: the other way round)
+    float const sign = SDL_GetDisplayOrientation(0) == SDL_ORIENTATION_LANDSCAPE_FLIPPED ? 1.f : -1.f;
+    float const kDeg = 57.29578f, kNoise = 0.015f;
+    float const yawRate = fabsf(rate[0]) > kNoise ? rate[0] : 0.f;
+    float const pitchRate = fabsf(rate[1]) > kNoise ? rate[1] : 0.f;
+    *pYaw += sign * yawRate * dt * kDeg * g_settings.gyroSens;
+    *pPitch += sign * pitchRate * dt * kDeg * 2.5f * g_settings.gyroSens * (g_settings.invertY ? -1.f : 1.f);
+}
+
 void touch_notifyHardwareInput(void)
 {
     if (g_settings.autoHide)
@@ -1727,6 +1807,7 @@ void touch_getInput(TouchInput *pInput)
     pInput->yaw = nx * 180.f * g_settings.lookSensX;
     pInput->pitch = -ny * 600.f * g_settings.lookSensY * (g_settings.invertY ? -1.f : 1.f);
     pInput->run = g_settings.alwaysRun;
+    gyroInput(&pInput->yaw, &pInput->pitch);
 
     g_lookDX = g_lookDY = 0.f;
 }

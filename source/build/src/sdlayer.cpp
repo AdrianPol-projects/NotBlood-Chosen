@@ -1559,11 +1559,15 @@ void videoGetModes(int display)
 # ifdef USE_OPENGL
         if (!nogl)
         {
-            // GL output always fills the drawable; lower classic-renderer resolutions use the upscale option
-            int32_t rw, rh;
-            ios_getrendersize(&rw, &rh);
-            SDL_ADDMODE(rw, rh, 8, 1);
-            SDL_ADDMODE(rw, rh, 32, 1);
+            // GL output always fills the screen: lower resolutions render fewer pixels and the
+            // iPad scales them up (ios_setrenderscale); the classic renderer also has its upscale option
+            for (int const pct : ios_renderscales)
+            {
+                int32_t rw, rh;
+                ios_scaledsize(pct, &rw, &rh);
+                SDL_ADDMODE(rw, rh, 8, 1);
+                SDL_ADDMODE(rw, rh, 32, 1);
+            }
         }
         else
 # endif
@@ -2047,7 +2051,23 @@ int32_t videoSetMode(int32_t x, int32_t y, int32_t c, int32_t fs)
     VLOG_F(LOG_GFX, "Setting video mode %dx%d (%d-bpp %s).", x, y, c, ((fs & 1) ? "fullscreen" : "windowed"));
 
     if (sdl_window)
+    {
+#if defined EDUKE32_IOS && defined USE_OPENGL
+        if (!nogl && sdl_context)
+        {
+            // another resolution from the list: the GL view renders that part of the panel's pixels
+            ios_setrenderscale(sdl_window, ios_scaleforsize(x));
+            int dw = 0, dh = 0;
+            SDL_GL_GetDrawableSize(sdl_window, &dw, &dh);
+            if (dw > 0 && dh > 0)
+            {
+                x = dw;
+                y = dh;
+            }
+        }
+#endif
         return setvideomode_sdlcommonpost(x, y, c, fs, regrab);
+    }
 
     int const display = r_displayindex < SDL_GetNumVideoDisplays() ? r_displayindex : 0;
 
@@ -2100,6 +2120,7 @@ int32_t videoSetMode(int32_t x, int32_t y, int32_t c, int32_t fs)
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
         LOG_F(INFO, "iOS: creating OpenGL ES 2.0 window (%dx%d)", x, y);
+        ios_setrenderscale(NULL, ios_scaleforsize(x)); // applied by ios_initgl4es() once the view exists
         sdl_window = SDL_CreateWindow("", 0, 0, x, y,
                                       SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_BORDERLESS);
 
@@ -2861,6 +2882,9 @@ int32_t handleevents_sdlcommon(SDL_Event *ev)
         case SDL_CONTROLLERDEVICEREMOVED:
             if (g_controllerHotplugCallback && SDL_NumJoysticks() != numjoysticks)
                 g_controllerHotplugCallback();
+#ifdef EDUKE32_IOS
+            touch_notifyController(SDL_NumJoysticks() > 0);
+#endif
             break;
 #endif
         case SDL_JOYAXISMOTION:

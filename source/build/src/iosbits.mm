@@ -76,6 +76,65 @@ void ios_getscreensize(int32_t *pixelw, int32_t *pixelh, int32_t *pointw, int32_
     }
 }
 
+static int s_renderScale = 100;
+
+static UIView *ios_gameview(SDL_Window *window)
+{
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!window || !SDL_GetWindowWMInfo(window, &info) || info.subsystem != SDL_SYSWM_UIKIT)
+        return nil;
+    return info.info.uikit.window.rootViewController.view;
+}
+
+void ios_scaledsize(int pct, int32_t *w, int32_t *h)
+{
+    @autoreleasepool
+    {
+        UIScreen *screen = [UIScreen mainScreen];
+        CGRect const points = [screen bounds];
+        CGFloat const pw = max(points.size.width, points.size.height), ph = min(points.size.width, points.size.height);
+        CGFloat const scale = screen.nativeScale * clamp(pct, 25, 100) / 100.0;
+        // SDL's view: backing size = (int)(bounds * contentScaleFactor)
+        *w = (int32_t)(pw * scale);
+        *h = (int32_t)(ph * scale);
+    }
+}
+
+int const ios_renderscales[kIosRenderScales] = { 100, 90, 80, 75, 66, 60, 50, 40, 33, 25 };
+
+int ios_scaleforsize(int32_t w)
+{
+    // only the sizes from the list: anything else (an old config, a desktop resolution) is full size
+    for (int const pct : ios_renderscales)
+    {
+        int32_t sw, sh;
+        ios_scaledsize(pct, &sw, &sh);
+        if (abs(sw - w) <= 2)
+            return pct;
+    }
+    return 100;
+}
+
+void ios_setrenderscale(SDL_Window *window, int pct)
+{
+    s_renderScale = clamp(pct, 25, 100);
+    @autoreleasepool
+    {
+        UIView *view = ios_gameview(window);
+        if (!view)
+            return;
+        CGFloat const want = view.window.screen.nativeScale * s_renderScale / 100.0;
+        if (want > 0 && fabs(view.contentScaleFactor - want) > 0.0001)
+        {
+            view.contentScaleFactor = want;
+            [view setNeedsLayout];
+            [view layoutIfNeeded];
+            printf("iOS GL view: render scale %d%% (contentScaleFactor %.3f)\n", s_renderScale, view.contentScaleFactor);
+        }
+    }
+}
+
 #ifdef USE_OPENGL
 //
 // gl4es glue: the engine talks desktop GL 2.1 to gl4es, gl4es talks GLES 2.0 to iOS.
@@ -113,22 +172,14 @@ int ios_initgl4es(SDL_Window *window)
     if (!SDL_GetWindowWMInfo(window, &info) || info.subsystem != SDL_SYSWM_UIKIT)
         return -1;
 
-    // Make sure the GL view renders at the panel's native resolution (Retina), not in points.
+    // Make sure the GL view renders at the panel's resolution (Retina, or the chosen part of it),
+    // not in points.
     UIWindow *uiwindow = info.info.uikit.window;
     UIView *view = uiwindow.rootViewController.view;
-    CGFloat const nativeScale = uiwindow.screen.nativeScale;
-
     printf("iOS GL view: %s bounds %.0fx%.0f scale %.2f, screen nativeScale %.2f\n",
            view ? object_getClassName(view) : "(none)", view.bounds.size.width, view.bounds.size.height,
-           view.contentScaleFactor, nativeScale);
-
-    if (view && nativeScale > 0 && view.contentScaleFactor != nativeScale)
-    {
-        view.contentScaleFactor = nativeScale;
-        [view setNeedsLayout];
-        [view layoutIfNeeded];
-        printf("iOS GL view: contentScaleFactor forced to %.2f\n", view.contentScaleFactor);
-    }
+           view.contentScaleFactor, uiwindow.screen.nativeScale);
+    ios_setrenderscale(window, s_renderScale);
 
     s_glWindow = window;
     s_defaultFramebuffer = info.info.uikit.framebuffer;

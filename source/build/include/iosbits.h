@@ -44,6 +44,17 @@ void ios_getrendersize(int32_t *w, int32_t *h);
 // Landscape screen size: physical pixels and UIKit points.
 void ios_getscreensize(int32_t *pixelw, int32_t *pixelh, int32_t *pointw, int32_t *pointh);
 
+// Render resolution as a percentage of the panel's: the GL view renders that many pixels and
+// the iPad scales them up to the screen for free (fewer pixels: cooler, longer battery).
+// ios_scaledsize() is the drawable size the view gets for a percentage (same math as UIKit/SDL);
+// ios_setrenderscale() switches the view to it.
+void ios_scaledsize(int pct, int32_t *w, int32_t *h);
+void ios_setrenderscale(SDL_Window *window, int pct);
+// the percentages the video mode list offers, and the one a listed size stands for
+#define kIosRenderScales 10
+extern int const ios_renderscales[kIosRenderScales];
+int ios_scaleforsize(int32_t w);
+
 #ifdef __cplusplus
 }
 #endif
@@ -55,6 +66,7 @@ void touch_render(SDL_Renderer *renderer, SDL_Rect const *gameRect); // draw ove
 void touch_renderGL(int outw, int outh);                         // same, on the GL path (before swap)
 void touch_updateGameFunctions(int32_t *flags, int32_t numFlags); // OR in on-screen button states
 void touch_notifyHardwareInput(void);                            // keyboard/mouse activity seen
+void touch_notifyController(bool connected);                     // a game controller is (dis)connected
 void touch_releaseAll(void);                                     // drop all fingers (app was suspended)
 #endif
 
