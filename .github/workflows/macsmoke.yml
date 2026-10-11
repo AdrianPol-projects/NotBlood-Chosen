@@ -14,28 +14,12 @@ jobs:
     env:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
     steps:
-      - uses: actions/checkout@v4
-      - name: Build SDL2 (arm64, static)
+      - name: Get release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -fsSL -o sdl.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-${SDL_VERSION}.tar.gz"
-          tar xf sdl.tar.gz
-          cmake -S "SDL2-${SDL_VERSION}" -B sdlbuild -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_ARCHITECTURES="arm64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF -DCMAKE_INSTALL_PREFIX="$PWD/sdl" > /dev/null
-          cmake --build sdlbuild -j4 > /dev/null
-          cmake --install sdlbuild > /dev/null
-          printf '#!/bin/sh\nif [ "$1" = "--libs" ]; then exec "%s/sdl/bin/sdl2-config" --static-libs; fi\nexec "%s/sdl/bin/sdl2-config" "$@"\n' "$PWD" "$PWD" > sdl2-config-static
-          chmod +x sdl2-config-static
-      - name: Build
-        run: |
-          make -j4 blood ARCH=arm64 SDLCONFIG="$PWD/sdl2-config-static" HAVE_FLAC=0 USE_LIBVPX=0 LTO=0 > build.txt 2>&1 || { tail -50 build.txt; exit 1; }
-          mkdir -p test/NotBlood
-          cp -R platform/Apple/bundles/NotBlood.app test/NotBlood/
-          mkdir -p test/NotBlood/NotBlood.app/Contents/MacOS
-          cp notblood test/NotBlood/NotBlood.app/Contents/MacOS/NotBlood
-          cp notblood.pk3 test/NotBlood/NotBlood.app/Contents/Resources/
-          plutil -replace CFBundleIdentifier -string com.adrianpol.notblood-chosen test/NotBlood/NotBlood.app/Contents/Info.plist
-          codesign --force --deep -s - test/NotBlood/NotBlood.app
+          gh release download latest -R ${{ github.repository }} -p '*macos.zip'
+          mkdir test && cd test && unzip -q ../*.zip && ls -la NotBlood
       - name: Run directly
         run: |
           cd test/NotBlood
@@ -62,7 +46,7 @@ jobs:
         run: |
           sleep 10
           ls -la ~/Library/Logs/DiagnosticReports/ || true
-          for f in ~/Library/Logs/DiagnosticReports/NotBlood*; do echo "== $f"; head -c 12000 "$f"; echo; done
+          for f in ~/Library/Logs/DiagnosticReports/NotBlood*; do [ -e "$f" ] || continue; echo "== $f"; head -c 12000 "$f"; echo; done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
