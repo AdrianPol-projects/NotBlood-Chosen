@@ -487,8 +487,25 @@ async def dash_pusher(app):
     task.cancel()
 
 
+def asset_version():
+    """Changes with the dashboard files, so caches (Cloudflare keeps .js for hours) never serve old ones."""
+    h = hashlib.sha256()
+    for name in ("app.js", "style.css"):
+        h.update((STATIC_DIR / name).read_bytes())
+    return h.hexdigest()[:12]
+
+
+INDEX_HTML = None
+
+
 async def index(request):
-    return web.FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+    global INDEX_HTML
+    if INDEX_HTML is None:
+        v = asset_version()
+        INDEX_HTML = ((STATIC_DIR / "index.html").read_text()
+                      .replace('static/app.js"', 'static/app.js?v=%s"' % v)
+                      .replace('static/style.css"', 'static/style.css?v=%s"' % v))
+    return web.Response(text=INDEX_HTML, content_type="text/html", headers={"Cache-Control": "no-cache"})
 
 
 async def health(request):
@@ -501,6 +518,9 @@ async def security_headers(request, handler):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
     resp.headers.setdefault("X-Frame-Options", "DENY")
+    if request.path.startswith("/static/"):
+        # versioned by the page (?v=...), so they may be kept for long
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable" if request.query.get("v") else "no-cache"
     return resp
 
 
