@@ -425,13 +425,14 @@ CGameMenuItemQAV itemHelp4QAV("", 3, 160, 100, "HELP4", false, true);
 CGameMenuItemQAV itemHelp5QAV("", 3, 160, 100, "HELP5", false, true);
 
 CGameMenuItemTitle itemMainTitle(gGameTitle, 1, 160, 20, 2038);
-CGameMenuItemChain itemMain1("NEW GAME", 1, 0, 45, 320, 1, &menuEpisode, -1, NULL, 0);
-CGameMenuItemChain itemMain2("MULTIPLAYER", 1, 0, 65, 320, 1, &menuNetwork, -1, NULL, 0);
-CGameMenuItemChain itemMain3("OPTIONS", 1, 0, 85, 320, 1, &menuOptions, -1, NULL, 0);
-CGameMenuItemChain itemMain4("LOAD GAME", 1, 0, 105, 320, 1, &menuLoadGame, -1, NULL, 0);
-CGameMenuItemChain itemMain5("HELP", 1, 0, 125, 320, 1, &menuHelp, -1, NULL, 0);
-CGameMenuItemChain itemMain6("CREDITS", 1, 0, 145, 320, 1, &menuCredits, -1, NULL, 0);
-CGameMenuItemChain itemMain7("QUIT", 1, 0, 165, 320, 1, &menuQuit, -1, NULL, 0);
+CGameMenuItemChain itemMain1("NEW GAME", 1, 0, 40, 320, 1, &menuEpisode, -1, NULL, 0);
+CGameMenuItemChain itemMainMods("MODS", 1, 0, 58, 320, 1, &menuMods, -1, SetupModsMenu, 0);
+CGameMenuItemChain itemMain2("MULTIPLAYER", 1, 0, 76, 320, 1, &menuNetwork, -1, NULL, 0);
+CGameMenuItemChain itemMain3("OPTIONS", 1, 0, 94, 320, 1, &menuOptions, -1, NULL, 0);
+CGameMenuItemChain itemMain4("LOAD GAME", 1, 0, 112, 320, 1, &menuLoadGame, -1, NULL, 0);
+CGameMenuItemChain itemMain5("HELP", 1, 0, 130, 320, 1, &menuHelp, -1, NULL, 0);
+CGameMenuItemChain itemMain6("CREDITS", 1, 0, 148, 320, 1, &menuCredits, -1, NULL, 0);
+CGameMenuItemChain itemMain7("QUIT", 1, 0, 166, 320, 1, &menuQuit, -1, NULL, 0);
 
 CGameMenuItemTitle itemMainSaveTitle(gGameTitle, 1, 160, 20, 2038);
 CGameMenuItemChain itemMainSave1("NEW GAME", 1, 0, 45, 320, 1, &menuEpisode, -1, NULL, 0);
@@ -1276,10 +1277,11 @@ char zNetAddressBuffer[48] = "localhost";
 char zNetPortBuffer[6] = "23513";
 
 CGameMenuItemTitle itemNetworkTitle("MULTIPLAYER", 1, 160, 20, 2038);
-CGameMenuItemChain itemNetworkHost("HOST A GAME", 1, 0, 60, 320, 1, &menuNetworkHost, -1, SetupNetworkHostMenu, 0);
-CGameMenuItemChain itemNetworkJoin("JOIN A GAME", 1, 0, 80, 320, 1, &menuNetworkJoin, -1, SetupNetworkJoinMenu, 0);
-CGameMenuItemChain itemNetworkOnline("ONLINE", 1, 0, 100, 320, 1, &menuOnline, -1, SetupOnlineMenu, 0);
-CGameMenuItemChain itemNetworkPlayer("PLAYER SETUP", 1, 0, 120, 320, 1, &menuOptionsPlayer, -1, NULL, 0);
+CGameMenuItemChain itemNetworkHost("HOST A GAME", 1, 0, 55, 320, 1, &menuNetworkHost, -1, SetupNetworkHostMenu, 0);
+CGameMenuItemChain itemNetworkJoin("JOIN A GAME", 1, 0, 73, 320, 1, &menuNetworkJoin, -1, SetupNetworkJoinMenu, 0);
+CGameMenuItemChain itemNetworkFind("FIND LAN GAMES", 1, 0, 91, 320, 1, &menuLanGames, -1, SetupLanGamesMenu, 0);
+CGameMenuItemChain itemNetworkOnline("ONLINE", 1, 0, 109, 320, 1, &menuOnline, -1, SetupOnlineMenu, 0);
+CGameMenuItemChain itemNetworkPlayer("PLAYER SETUP", 1, 0, 127, 320, 1, &menuOptionsPlayer, -1, NULL, 0);
 
 CGameMenuItemTitle itemNetworkHostTitle("HOST A GAME", 1, 160, 20, 2038);
 CGameMenuItemSlider itemNetworkHostPlayerNum("PLAYER NUMBER:", 3, 66, 70, 180, 1, 2, kMaxPlayers, 1, NULL, -1, -1, kMenuSliderValue);
@@ -1567,12 +1569,15 @@ void SetupMainMenu(void)
         itemMain1.at24 = &menuEpisode;
         itemMain1.at28 = -1;
     }
+    menuMain.Add(&itemMainMods, false);
+    itemMainMods.bDisableForNet = 1;
     menuMain.Add(&itemMain2, false);
     menuMain.Add(&itemMain3, false);
     menuMain.Add(&itemMain4, false);
     menuMain.Add(&itemMain5, false);
     menuMain.Add(&itemMain6, false);
     menuMain.Add(&itemMain7, false);
+    menuMain.Add(&itemMainVersion, false);
     menuMain.Add(&itemBloodQAV, false);
 
 #ifdef NETCODE_DISABLE
@@ -4550,6 +4555,7 @@ void SetupNetworkMenu(void)
     menuNetwork.Add(&itemNetworkTitle, false);
     menuNetwork.Add(&itemNetworkHost, true);
     menuNetwork.Add(&itemNetworkJoin, false);
+    menuNetwork.Add(&itemNetworkFind, false);
     menuNetwork.Add(&itemNetworkOnline, false);
     menuNetwork.Add(&itemNetworkPlayer, false);
     menuNetwork.Add(&itemBloodQAV, false);
@@ -4558,6 +4564,8 @@ void SetupNetworkMenu(void)
     menuNetworkHost.Add(&itemNetworkHostPlayerNum, true);
     menuNetworkHost.Add(&itemNetworkHostPort, false);
     menuNetworkHost.Add(&itemNetworkHostHost, false);
+    menuNetworkHost.Add(&itemNetworkHostAddress, false);
+    menuNetworkHost.Add(&itemNetworkHostHelp, false);
     menuNetworkHost.Add(&itemBloodQAV, false);
 
     menuNetworkJoin.Add(&itemNetworkJoinTitle, false);
@@ -4570,6 +4578,7 @@ void SetupNetworkMenu(void)
 void SetupNetworkHostMenu(CGameMenuItemChain *pItem)
 {
     UNREFERENCED_PARAMETER(pItem);
+    SetupNetworkHostAddress();
 }
 
 void SetupNetworkJoinMenu(CGameMenuItemChain *pItem)

@@ -59,6 +59,7 @@ static bool sockWouldBlock(int e) { return e == EWOULDBLOCK || e == EAGAIN || e 
 #include <random>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "netrelay.h"
 
@@ -872,4 +873,210 @@ int relayClientPort(void)
 unsigned relayTraffic(void)
 {
     return g_relay.traffic;
+}
+
+// ---- LAN discovery --------------------------------------------------------------------------
+
+namespace {
+
+struct LanState
+{
+    bool bInit = false;
+    sock_t advertise = kBadSocket;
+    std::string info;
+    sock_t scan = kBadSocket;
+    std::vector<LANGAME> found;
+} g_lan;
+
+void lanInit(void)
+{
+#ifdef _WIN32
+    if (!g_lan.bInit)
+    {
+        WSADATA wsa;
+        WSAStartup(MAKEWORD(2, 2), &wsa);
+    }
+#endif
+    g_lan.bInit = true;
+}
+
+// the source address of a socket connected towards somewhere else: the address of the
+// network interface the system would use, nothing is sent
+bool localAddressTowards(const char *pzTarget, in_addr *pOut)
+{
+    sock_t s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == kBadSocket)
+        return false;
+    sockaddr_in to = {};
+    to.sin_family = AF_INET;
+    to.sin_port = htons(53);
+    to.sin_addr.s_addr = inet_addr(pzTarget);
+    bool bOk = false;
+    if (connect(s, (sockaddr *)&to, sizeof(to)) == 0)
+    {
+        sockaddr_in me = {};
+        socklen_t ml = sizeof(me);
+        bOk = getsockname(s, (sockaddr *)&me, &ml) == 0 && me.sin_addr.s_addr != htonl(INADDR_ANY) &&
+            me.sin_addr.s_addr != htonl(INADDR_LOOPBACK);
+        if (bOk)
+            *pOut = me.sin_addr;
+    }
+    sockClose(s);
+    return bOk;
+}
+
+bool localAddress(in_addr *pOut)
+{
+    lanInit();
+    static const char *const targets[] = { "8.8.8.8", "192.168.1.1", "192.168.0.1", "10.0.0.1", "172.16.0.1" };
+    for (const char *t : targets)
+        if (localAddressTowards(t, pOut))
+            return true;
+    return false;
+}
+
+} // namespace
+
+bool netLocalAddress(char *pzAddress, int nSize)
+{
+    in_addr a;
+    if (!localAddress(&a))
+    {
+        snprintf(pzAddress, nSize, "unknown");
+        return false;
+    }
+    uint32_t const n = ntohl(a.s_addr);
+    snprintf(pzAddress, nSize, "%u.%u.%u.%u", n >> 24, (n >> 16) & 255, (n >> 8) & 255, n & 255);
+    return true;
+}
+
+void lanAdvertiseStart(void)
+{
+    lanAdvertiseStop();
+    lanInit();
+    sock_t s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == kBadSocket)
+        return;
+    int one = 1;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof(one));
+    sockaddr_in a = {};
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_ANY);
+    a.sin_port = htons(kLanDiscoveryPort);
+    if (bind(s, (sockaddr *)&a, sizeof(a)) != 0)
+    {
+        sockClose(s);
+        return;
+    }
+    setNonBlocking(s);
+    g_lan.advertise = s;
+}
+
+void lanAdvertiseUpdate(const char *pzHost, const char *pzVersion, const char *pzMod, int nPort, int nPlayers, int nMaxPlayers)
+{
+    char buf[256];
+    snprintf(buf, sizeof(buf), "NBLD!\t%s\t%s\t%s\t%d\t%d\t%d", pzVersion, pzMod, pzHost, nPort, nPlayers, nMaxPlayers);
+    g_lan.info = buf;
+}
+
+void lanAdvertisePoll(void)
+{
+    if (g_lan.advertise == kBadSocket)
+        return;
+    char buf[64];
+    sockaddr_in from;
+    socklen_t fl = sizeof(from);
+    int n;
+    while ((n = recvfrom(g_lan.advertise, buf, sizeof(buf), 0, (sockaddr *)&from, &fl)) > 0)
+    {
+        if (n >= 5 && !memcmp(buf, "NBLD?", 5) && !g_lan.info.empty())
+            sendto(g_lan.advertise, g_lan.info.data(), (int)g_lan.info.size(), 0, (sockaddr *)&from, fl);
+        fl = sizeof(from);
+    }
+}
+
+void lanAdvertiseStop(void)
+{
+    if (g_lan.advertise != kBadSocket)
+        sockClose(g_lan.advertise);
+    g_lan.advertise = kBadSocket;
+}
+
+void lanScanStart(void)
+{
+    lanScanStop();
+    lanInit();
+    g_lan.found.clear();
+    sock_t s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == kBadSocket)
+        return;
+    int one = 1;
+    setsockopt(s, SOL_SOCKET, SO_BROADCAST, (const char *)&one, sizeof(one));
+    setNonBlocking(s);
+    g_lan.scan = s;
+
+    auto ask = [s](uint32_t nAddress) {
+        sockaddr_in to = {};
+        to.sin_family = AF_INET;
+        to.sin_port = htons(kLanDiscoveryPort);
+        to.sin_addr.s_addr = htonl(nAddress);
+        sendto(s, "NBLD?", 5, 0, (sockaddr *)&to, sizeof(to));
+    };
+    ask(INADDR_BROADCAST);
+    ask(INADDR_LOOPBACK);  // a host on this machine
+    in_addr me;
+    if (localAddress(&me))
+    {
+        uint32_t const nMe = ntohl(me.s_addr), nNet = nMe & 0xffffff00u;
+        ask(nNet | 0xff);
+        for (uint32_t i = 1; i < 255; i++)
+            ask(nNet | i);
+    }
+}
+
+int lanScanPoll(LANGAME *pGames, int nMax)
+{
+    if (g_lan.scan != kBadSocket)
+    {
+        char buf[512];
+        sockaddr_in from;
+        socklen_t fl = sizeof(from);
+        int n;
+        while ((n = recvfrom(g_lan.scan, buf, sizeof(buf) - 1, 0, (sockaddr *)&from, &fl)) > 0)
+        {
+            fl = sizeof(from);
+            buf[n] = 0;
+            if (n < 5 || memcmp(buf, "NBLD!", 5))
+                continue;
+            std::string msg(buf);
+            LANGAME g = {};
+            in_addr src = from.sin_addr;
+            if (src.s_addr == htonl(INADDR_LOOPBACK))
+                localAddress(&src);  // the same host answers on every address: show the real one
+            uint32_t const nSrc = ntohl(src.s_addr);
+            snprintf(g.szAddress, sizeof(g.szAddress), "%u.%u.%u.%u", nSrc >> 24, (nSrc >> 16) & 255, (nSrc >> 8) & 255, nSrc & 255);
+            snprintf(g.szVersion, sizeof(g.szVersion), "%s", field(msg, 1).c_str());
+            snprintf(g.szMod, sizeof(g.szMod), "%s", field(msg, 2).c_str());
+            snprintf(g.szHost, sizeof(g.szHost), "%s", field(msg, 3).c_str());
+            g.nPort = atoi(field(msg, 4).c_str());
+            g.nPlayers = atoi(field(msg, 5).c_str());
+            g.nMaxPlayers = atoi(field(msg, 6).c_str());
+            bool bKnown = false;
+            for (auto const &o : g_lan.found)
+                bKnown |= !strcmp(o.szAddress, g.szAddress) && o.nPort == g.nPort;
+            if (!bKnown)
+                g_lan.found.push_back(g);
+        }
+    }
+    int nCount = std::min((int)g_lan.found.size(), nMax);
+    for (int i = 0; i < nCount; i++)
+        pGames[i] = g_lan.found[i];
+    return nCount;
+}
+
+void lanScanStop(void)
+{
+    if (g_lan.scan != kBadSocket)
+        sockClose(g_lan.scan);
+    g_lan.scan = kBadSocket;
 }

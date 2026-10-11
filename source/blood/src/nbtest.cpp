@@ -263,7 +263,7 @@ static void logPlayers(void)
           gGameOptions.bFriendlyFire, numplayers, bOutOfSync, gLevelTime, gKillMgr.at4, gKillMgr.at0);
 }
 
-extern CGameMenu menuNetStart, menuMainWithSave, menuNetwork;
+extern CGameMenu menuNetStart, menuMainWithSave, menuNetwork, menuMain;
 
 static void openMenu(std::string const &name)
 {
@@ -286,6 +286,24 @@ static void openMenu(std::string const &name)
         SetupOnlineMenu(NULL);
         gGameMenuMgr.Push(&menuOnline, -1);
     }
+    else if (name == "mods")
+    {
+        SetupModsMenu(NULL);
+        gGameMenuMgr.Push(&menuMods, -1);
+    }
+    else if (name == "lan")
+    {
+        SetupLanGamesMenu(NULL);
+        gGameMenuMgr.Push(&menuLanGames, -1);
+    }
+    else if (name == "host")
+    {
+        extern CGameMenu menuNetworkHost;
+        SetupNetworkHostAddress();
+        gGameMenuMgr.Push(&menuNetworkHost, -1);
+    }
+    else if (name == "main")
+        gGameMenuMgr.Push(&menuMain, -1);
     else if (name == "network")
         gGameMenuMgr.Push(&menuNetwork, -1);
     else if (name == "ingame")

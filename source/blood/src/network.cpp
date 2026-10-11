@@ -31,6 +31,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "chatpipe.h"
 #include "coopsave.h"
 #include "online.h"
+#include "netrelay.h"
+#include "mods.h"
 #include "timer.h"
 #include "config.h"
 #include "controls.h"
@@ -117,6 +119,7 @@ struct PKT_CONNECTINFO {
     short connecthead;
     short connectpoint2[kMaxPlayers];
     char szVersion[32]; // NotBlood Chosen: the host's version, so different versions are told apart right away
+    char szMod[40];     // and its mod or add-on ("" for none), which everybody needs too
 };
 
 void netServerDisconnect(void)
@@ -1095,8 +1098,11 @@ void netInitialize(bool bConsole)
             viewLoadingScreen(gMenuPicnum, "Network Game", onlineWaitText(), buffer);
             videoNextPage();
         }
+        lanAdvertiseStart(); // "FIND LAN GAMES" on other machines finds this game while it waits
+        lanAdvertiseUpdate(szPlayerName, onlineVersion(), modCurrentName(), gNetPort, numplayers, gNetPlayers);
         while (numplayers < gNetPlayers)
         {
+            lanAdvertisePoll();
             handleevents();
             if (quitevent)
             {
@@ -1130,6 +1136,7 @@ void netInitialize(bool bConsole)
                     enet_address_get_host_ip(&event.peer->address, ipaddr, sizeof(ipaddr));
                     LOG_F(INFO, "Client connected: %s:%u", ipaddr, event.peer->address.port);
                     numplayers++;
+                    lanAdvertiseUpdate(szPlayerName, onlineVersion(), modCurrentName(), gNetPort, numplayers, gNetPlayers);
                     for (int i = 1; i < kMaxPlayers; i++)
                     {
                         if (gNetPlayerPeer[i] == NULL)
@@ -1154,6 +1161,7 @@ void netInitialize(bool bConsole)
                     enet_address_get_host_ip(&event.peer->address, ipaddr, sizeof(ipaddr));
                     LOG_F(INFO, "Client disconnected: %s:%u", ipaddr, event.peer->address.port);
                     numplayers--;
+                    lanAdvertiseUpdate(szPlayerName, onlineVersion(), modCurrentName(), gNetPort, numplayers, gNetPlayers);
                     for (int i = 1; i < kMaxPlayers; i++)
                     {
                         if (gNetPlayerPeer[i] == event.peer)
@@ -1185,6 +1193,7 @@ void netInitialize(bool bConsole)
             }
             enet_host_service(gNetENetServer, NULL, 0);
         }
+        lanAdvertiseStop();
         LOG_F(INFO, "All clients connected");
 
         dassert(numplayers >= 1);
@@ -1206,6 +1215,7 @@ void netInitialize(bool bConsole)
         for (int i = 0; i < numplayers; i++)
             connectinfo.connectpoint2[i] = connectpoint2[i];
         Bstrncpyz(connectinfo.szVersion, onlineVersion(), sizeof(connectinfo.szVersion));
+        Bstrncpyz(connectinfo.szMod, modCurrentName(), sizeof(connectinfo.szMod));
         PutPacketBuffer(pPacket, &connectinfo, sizeof(connectinfo));
         ENetPacket *pEPacket = enet_packet_create(packet, pPacket-packet, ENET_PACKET_FLAG_RELIABLE);
         enet_host_broadcast(gNetENetServer, BLOOD_ENET_SERVICE, pEPacket);
@@ -1323,12 +1333,19 @@ void netInitialize(bool bConsole)
                         case BLOOD_SERVICE_CONNECTINFO:
                         {
                             PKT_CONNECTINFO *connectinfo = (PKT_CONNECTINFO*)pPacket;
-                            if (event.packet->dataLength < 1 + sizeof(PKT_CONNECTINFO) || strncmp(connectinfo->szVersion, onlineVersion(), sizeof(connectinfo->szVersion)))
+                            bool const bFull = event.packet->dataLength >= 1 + sizeof(PKT_CONNECTINFO);
+                            char hostMod[41] = "";
+                            if (bFull)
+                                Bstrncpyz(hostMod, connectinfo->szMod, sizeof(hostMod));
+                            if (!bFull || strncmp(connectinfo->szVersion, onlineVersion(), sizeof(connectinfo->szVersion)) || Bstrcasecmp(hostMod, modCurrentName()))
                             {
                                 char hostVersion[33] = "another NotBlood version";
-                                if (event.packet->dataLength >= 1 + sizeof(PKT_CONNECTINFO))
+                                if (bFull)
                                     Bstrncpyz(hostVersion, connectinfo->szVersion, sizeof(hostVersion));
-                                Bsnprintf(buffer, sizeof(buffer), "The host runs %s, you have %s", hostVersion, onlineVersion());
+                                if (bFull && !strncmp(connectinfo->szVersion, onlineVersion(), sizeof(connectinfo->szVersion)))
+                                    Bsnprintf(buffer, sizeof(buffer), "The host plays %s, you have %s", hostMod[0] ? hostMod : "the original game", modCurrentName()[0] ? modCurrentName() : "the original game");
+                                else
+                                    Bsnprintf(buffer, sizeof(buffer), "The host runs %s, you have %s", hostVersion, onlineVersion());
                                 LOG_F(ERROR, "%s", buffer);
                                 enet_packet_destroy(event.packet);
                                 netClientDisconnect();
@@ -1339,7 +1356,7 @@ void netInitialize(bool bConsole)
                                     for (uint32_t nStart = timerGetTicks(); timerGetTicks() - nStart < 5000 && !KB_KeyPressed(sc_Escape);)
                                     {
                                         handleevents();
-                                        viewLoadingScreen(gMenuPicnum, "Different versions", buffer, "Everybody needs the same version");
+                                        viewLoadingScreen(gMenuPicnum, "Can't join", buffer, "Everybody needs the same version and mods");
                                         videoNextPage();
                                     }
                                     KB_ClearKeyDown(sc_Escape);
@@ -1382,6 +1399,7 @@ void netInitialize(bool bConsole)
 void netDeinitialize(void)
 {
 #ifndef NETCODE_DISABLE
+    lanAdvertiseStop();
     gNetENetInit = false;
     if (gNetMode != NETWORK_NONE)
     {

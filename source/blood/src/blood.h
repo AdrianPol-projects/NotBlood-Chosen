@@ -40,6 +40,9 @@ struct INICHAIN {
 };
 
 extern INICHAIN *pINIChain;
+
+// display name of a known episode .ini ("Cryptic Passage" for CRYPTIC.INI), NULL if unknown
+const char *INIDescriptionName(const char *pzIni);
 extern INICHAIN const*pINISelected;
 
 enum INPUT_MODE {

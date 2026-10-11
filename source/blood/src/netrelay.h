@@ -52,3 +52,35 @@ void relaySetHostGamePort(int nPort);
 int relayClientPort(void);
 // number of datagrams passed through so far (both ways), for the connection screens
 unsigned relayTraffic(void);
+
+// ---- LAN game discovery and this machine's address -------------------------------------------
+//
+// A host waiting for players answers "NBLD?" datagrams on kLanDiscoveryPort. Finding games
+// sends that to the broadcast addresses and to every address of the local /24 network
+// directly, because iOS only lets apps broadcast with a special permission.
+
+#define kLanDiscoveryPort 23514
+
+struct LANGAME
+{
+    char szAddress[48];
+    int nPort;
+    char szHost[16];     // player name of the host
+    char szVersion[32];
+    char szMod[40];
+    int nPlayers, nMaxPlayers;
+};
+
+// this machine's LAN address ("192.168.1.23"), false if there is none
+bool netLocalAddress(char *pzAddress, int nSize);
+
+// host: answer discovery requests while waiting for players
+void lanAdvertiseStart(void);
+void lanAdvertiseUpdate(const char *pzHost, const char *pzVersion, const char *pzMod, int nPort, int nPlayers, int nMaxPlayers);
+void lanAdvertisePoll(void);
+void lanAdvertiseStop(void);
+
+// looking for games: start, then poll every frame for about a second and a half
+void lanScanStart(void);
+int lanScanPoll(LANGAME *pGames, int nMax);  // games found so far
+void lanScanStop(void);

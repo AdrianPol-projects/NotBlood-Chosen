@@ -294,9 +294,18 @@ bool onlineConnectionLost(void)
 const char *onlineWaitText(void)
 {
     static char buffer[64];
-    if (gOnlineMode != kOnlineHost)
+    if (gOnlineMode == kOnlineHost)
+    {
+        Bsnprintf(buffer, sizeof(buffer), "Lobby: %s", zLobbyName);
+        return buffer;
+    }
+    if (gNetMode != NETWORK_SERVER)
         return NULL;
-    Bsnprintf(buffer, sizeof(buffer), "Lobby: %s", zLobbyName);
+    // LAN host: the address the others type in (or find with FIND LAN GAMES)
+    static char address[32];
+    if (!address[0])
+        netLocalAddress(address, sizeof(address));
+    Bsnprintf(buffer, sizeof(buffer), "Your address: %s", address);
     return buffer;
 }
 

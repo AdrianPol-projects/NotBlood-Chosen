@@ -34,6 +34,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "config.h"
 #include "coopsave.h"
 #include "online.h"
+#include "mods.h"
 #include "blood.h"
 #include "demo.h"
 #include "gamemenu.h"
@@ -235,6 +236,36 @@ static int osdcmd_map(osdcmdptr_t parm)
 static int osdcmd_coop_save(osdcmdptr_t parm)
 {
     coopRequestSave(parm->numparms > 0 ? atoi(parm->parms[0]) - 1 : 0);
+    return OSDCMD_OK;
+}
+
+static int osdcmd_mods(osdcmdptr_t UNUSED(parm))
+{
+    UNREFERENCED_CONST_PARAMETER(parm);
+    int const nCount = modScan();
+    for (int i = 0; i < nCount; i++)
+    {
+        MODENTRY const *pMod = modEntry(i);
+        OSD_Printf("%d: %s%s %s %s\n", i, pMod->szName, modIsActive(pMod) ? " (playing)" : "", pMod->szPath, pMod->szIni);
+    }
+    return OSDCMD_OK;
+}
+
+static int osdcmd_mod_select(osdcmdptr_t parm)
+{
+    if (parm->numparms != 1)
+        return OSDCMD_SHOWHELP;
+    int const nIndex = atoi(parm->parms[0]);
+    if (nIndex >= modScan())
+        return OSDCMD_SHOWHELP;
+    MODENTRY const *pMod = modEntry(nIndex);
+    if (modIsActive(pMod))
+    {
+        OSD_Printf("Already playing %s\n", pMod->szName);
+        return OSDCMD_OK;
+    }
+    if (modSelect(nIndex))
+        modRestart(pMod->szName);
     return OSDCMD_OK;
 }
 
@@ -1477,6 +1508,8 @@ int32_t registerosdcommands(void)
     OSD_RegisterFunction("map","map <mapfile>: loads the given user map", osdcmd_map);
     OSD_RegisterFunction("restartmap","restarts current map", osdcmd_restartmap);
     OSD_RegisterFunction("coop_save","coop_save [1-8]: saves the co-op game to a slot on every player's machine", osdcmd_coop_save);
+    OSD_RegisterFunction("mods","mods: lists the add-ons and mods the MODS menu offers", osdcmd_mods);
+    OSD_RegisterFunction("mod_select","mod_select <number>: plays that mod from the \"mods\" list (restarts the game)", osdcmd_mod_select);
     OSD_RegisterFunction("coop_load","coop_load <mid|carry> <1-8|auto>: host loads a co-op save for everybody (mid: where you saved, carry: restart the level with your gear)", osdcmd_coop_load);
     OSD_RegisterFunction("demo","demo <demofile or demonum>: starts the given demo", osdcmd_demo);
 //    }

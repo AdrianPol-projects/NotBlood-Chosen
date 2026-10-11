@@ -39,6 +39,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "controls.h"
 #include "coopsave.h"
 #include "online.h"
+#include "mods.h"
 #include "credits.h"
 #include "demo.h"
 #include "dude.h"
@@ -103,6 +104,7 @@ char bUseInternalMap = false, bUseInternalE = 0, bUseInternalL = 0;
 bool bNoDemo = false;
 static int nOnlineHostPlayers;
 static bool bOnlineJoin;
+static bool bModCommandLine; // -game_dir, -j or -g: the command line picks the game files, not the MODS menu
 bool bQuickNetStart = false;
 bool bQuickStart = false;
 bool bNoAutoLoad = false;
@@ -1798,11 +1800,13 @@ void ParseOptions(void)
             break;
         }
         case 35:
+            bModCommandLine = true;
             if (OptArgc < 1)
                 ThrowError("Missing argument");
             G_AddGroup(OptArgv[0]);
             break;
         case 36:
+            bModCommandLine = true;
             if (OptArgc < 1)
                 ThrowError("Missing argument");
             Bstrncpyz(g_modDir, OptArgv[0], sizeof(g_modDir));
@@ -1833,6 +1837,7 @@ void ParseOptions(void)
             G_AddDefModule(OptArgv[0]);
             break;
         case 42:
+            bModCommandLine = true;
             if (OptArgc < 1)
                 ThrowError("Missing argument");
             G_AddPath(OptArgv[0]);
@@ -2078,6 +2083,7 @@ int app_main(int argc, char const * const * argv)
 
     if (!g_useCwd)
         G_AddSearchPaths();
+    modApplySelection(bINIOverride || bModCommandLine);
 
     if (gChatPipeUse)
         ChatPipe_Create();
@@ -2317,6 +2323,7 @@ int app_main(int argc, char const * const * argv)
     if (!bQuickStart && !gSetup.quickstart)
         credLogosDos();
     scrSetDac();
+    modStartupFinished();
 RESTART:
     netResetState();
     gViewIndex = myconnectindex;
@@ -3227,6 +3234,14 @@ INIDESCRIPTION gINIDescription[] = {
     { "Cryptic Passage", "CRYPTIC.INI", pzCrypticArts, ARRAY_SSIZE(pzCrypticArts) },
     { "Death Wish", "DW.INI", NULL, 0 },
 };
+
+const char *INIDescriptionName(const char *pzIni)
+{
+    for (int i = 0; i < ARRAY_SSIZE(gINIDescription); i++)
+        if (!Bstrcasecmp(pzIni, gINIDescription[i].pzFilename))
+            return gINIDescription[i].pzName;
+    return NULL;
+}
 
 bool AddINIFile(const char *pzFile, bool bForce = false)
 {

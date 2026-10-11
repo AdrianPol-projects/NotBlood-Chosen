@@ -28,6 +28,11 @@ See the GNU General Public License for more details.
 #include "globals.h"
 #include "menu.h"
 #include "menuchosen.h"
+#include "mods.h"
+#include "netrelay.h"
+#include "keyboard.h"
+#include "timer.h"
+#include "config.h"
 #include "network.h"
 #include "online.h"
 #include "screen.h"
@@ -43,6 +48,7 @@ CGameMenu menuOnline;
 CGameMenu menuOnlineLobbies;
 
 static void OnlineHost(CGameMenuItemChain *);
+static void StartOnlineNetGame(NETWORKMODE nMode);
 static void OnlineJoinByName(CGameMenuItemChain *);
 static void OnlineJoinListed(CGameMenuItemChain *);
 static void SetupOnlineLobbies(CGameMenuItemChain *);
@@ -297,8 +303,175 @@ static void CoopSaveChosen(CGameMenuItemChain *pItem)
     gGameMenuMgr.Deactivate();
 }
 
+// ---- FIND LAN GAMES --------------------------------------------------------------------------
+
+CGameMenu menuLanGames;
+
+static void LanGameChosen(CGameMenuItemChain *);
+void SetupLanGamesMenu(CGameMenuItemChain *);
+
+#define kMaxLanGames 8
+static LANGAME lanGames[kMaxLanGames];
+static char zLanText[kMaxLanGames][40];
+static char zLanInfo[kMaxLanGames][24];
+static char zLanStatus[64];
+
+CGameMenuItemTitle itemLanTitle("LAN GAMES", 1, 160, 20, 2038);
+#define LAN_ITEM(n) CGameMenuItemChain itemLan##n(zLanText[n], 3, 30, 45 + n*12, 260, 0, NULL, -1, LanGameChosen, n, 0, zLanInfo[n]);
+LAN_ITEM(0) LAN_ITEM(1) LAN_ITEM(2) LAN_ITEM(3) LAN_ITEM(4) LAN_ITEM(5) LAN_ITEM(6) LAN_ITEM(7)
+static CGameMenuItemChain *const pLanItems[kMaxLanGames] = { &itemLan0, &itemLan1, &itemLan2, &itemLan3, &itemLan4, &itemLan5, &itemLan6, &itemLan7 };
+CGameMenuItemChain itemLanRefresh("LOOK AGAIN", 3, 0, 150, 320, 1, NULL, -1, SetupLanGamesMenu, 0);
+CGameMenuItemText itemLanStatus(zLanStatus, 3, 160, 168, 1);
+
+void SetupLanGamesMenu(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    lanScanStart();
+    int nCount = 0;
+    for (uint32_t nStart = timerGetTicks(); timerGetTicks() - nStart < 1500;)
+    {
+        handleevents();
+        nCount = lanScanPoll(lanGames, kMaxLanGames);
+        viewLoadingScreen(gMenuPicnum, "Multiplayer", NULL, "Looking for games on this network");
+        videoNextPage();
+    }
+    nCount = lanScanPoll(lanGames, kMaxLanGames);
+    lanScanStop();
+    for (int i = 0; i < kMaxLanGames; i++)
+    {
+        bool const bShow = i < nCount;
+        pLanItems[i]->bNoDraw = !bShow;
+        pLanItems[i]->bEnable = bShow;
+        zLanText[i][0] = zLanInfo[i][0] = 0;
+        if (!bShow)
+            continue;
+        LANGAME const &g = lanGames[i];
+        LOG_F(INFO, "LAN game: %s at %s:%d, %s, mod \"%s\", %d/%d players", g.szHost, g.szAddress, g.nPort, g.szVersion, g.szMod, g.nPlayers, g.nMaxPlayers);
+        bool const bSameVersion = !Bstrcasecmp(g.szVersion, onlineVersion());
+        bool const bSameMod = !Bstrcasecmp(g.szMod, modCurrentName());
+        Bsnprintf(zLanText[i], sizeof(zLanText[i]), "%s  %s", g.szHost, g.szAddress);
+        if (!bSameVersion)
+            Bsnprintf(zLanInfo[i], sizeof(zLanInfo[i]), "OTHER VERSION");
+        else if (!bSameMod)
+            Bsnprintf(zLanInfo[i], sizeof(zLanInfo[i]), "OTHER MOD");
+        else
+            Bsnprintf(zLanInfo[i], sizeof(zLanInfo[i]), "%d/%d", g.nPlayers, g.nMaxPlayers);
+        Bstrupr(zLanText[i]);
+        pLanItems[i]->bEnable = bSameVersion && bSameMod;
+    }
+    char address[32];
+    netLocalAddress(address, sizeof(address));
+    if (nCount)
+        Bsnprintf(zLanStatus, sizeof(zLanStatus), "YOUR ADDRESS: %s", address);
+    else
+        Bsnprintf(zLanStatus, sizeof(zLanStatus), "NO GAMES FOUND - HOST ONE FIRST");
+    menuLanGames.SetFocusItem(nCount && pLanItems[0]->bEnable ? (CGameMenuItem *)pLanItems[0] : (CGameMenuItem *)&itemLanRefresh);
+}
+
+static void LanGameChosen(CGameMenuItemChain *pItem)
+{
+    LANGAME const &g = lanGames[ClipRange(pItem->at30, 0, kMaxLanGames-1)];
+    Bstrncpyz(gNetAddress, g.szAddress, sizeof(gNetAddress));
+    gNetPort = g.nPort ? g.nPort : kNetDefaultPort;
+    StartOnlineNetGame(NETWORK_CLIENT);
+}
+
+// HOST A GAME: the address the others need
+static char zHostAddress[48];
+CGameMenuItemText itemNetworkHostAddress(zHostAddress, 3, 160, 125, 1);
+CGameMenuItemText itemNetworkHostHelp("OTHERS FIND THIS GAME WITH FIND LAN GAMES", 3, 160, 137, 1);
+
+void SetupNetworkHostAddress(void)
+{
+    char address[32];
+    netLocalAddress(address, sizeof(address));
+    Bsnprintf(zHostAddress, sizeof(zHostAddress), "YOUR ADDRESS: %s", address);
+}
+
+// main menu: which build this is
+static char zVersionText[48];
+CGameMenuItemText itemMainVersion(zVersionText, 3, 160, 186, 1);
+
+// ---- MODS ----------------------------------------------------------------------------------
+
+CGameMenu menuMods;
+
+static void ModChosen(CGameMenuItemChain *);
+
+static char zModText[kMaxModEntries][40];
+static char zModInfo[kMaxModEntries][16];
+
+CGameMenuItemTitle itemModsTitle("MODS", 1, 160, 20, 2038);
+#define MOD_ITEM(n) CGameMenuItemChain itemMod##n(zModText[n], 3, 30, 38 + n*11, 260, 0, NULL, -1, ModChosen, n, 0, zModInfo[n]);
+MOD_ITEM(0) MOD_ITEM(1) MOD_ITEM(2) MOD_ITEM(3) MOD_ITEM(4) MOD_ITEM(5)
+MOD_ITEM(6) MOD_ITEM(7) MOD_ITEM(8) MOD_ITEM(9) MOD_ITEM(10) MOD_ITEM(11)
+static CGameMenuItemChain *const pModItems[kMaxModEntries] = { &itemMod0, &itemMod1, &itemMod2, &itemMod3, &itemMod4, &itemMod5,
+    &itemMod6, &itemMod7, &itemMod8, &itemMod9, &itemMod10, &itemMod11 };
+CGameMenuItemText itemModsHelp1("ADD-ONS GO IN THE ADDONS FOLDER, MODS IN MODS", 3, 160, 175, 1);
+CGameMenuItemText itemModsHelp2("CHOOSING ONE RESTARTS THE GAME", 3, 160, 185, 1);
+
+void SetupModsMenu(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    int const nCount = modScan();
+    int nFocus = 0;
+    for (int i = 0; i < kMaxModEntries; i++)
+    {
+        MODENTRY const *pMod = i < nCount ? modEntry(i) : NULL;
+        pModItems[i]->bEnable = pMod != NULL;
+        pModItems[i]->bNoDraw = pMod == NULL;
+        zModText[i][0] = zModInfo[i][0] = 0;
+        if (!pMod)
+            continue;
+        Bstrncpyz(zModText[i], pMod->szName, sizeof(zModText[i]));
+        Bstrupr(zModText[i]);
+        if (modIsActive(pMod))
+        {
+            Bstrncpyz(zModInfo[i], "PLAYING", sizeof(zModInfo[i]));
+            nFocus = i;
+        }
+        else
+            Bstrncpyz(zModInfo[i], pMod->nKind == kModFolder ? (pMod->szIni[0] ? "EPISODES" : "FOLDER") :
+                pMod->nKind == kModGroup ? "PACK" : pMod->nKind == kModIni ? "EPISODES" : "", sizeof(zModInfo[i]));
+    }
+    menuMods.SetFocusItem(pModItems[nFocus]);
+}
+
+static void ModChosen(CGameMenuItemChain *pItem)
+{
+    MODENTRY const *pMod = modEntry(pItem->at30);
+    if (!pMod)
+        return;
+    if (modIsActive(pMod))
+    {
+        gGameMenuMgr.Deactivate();
+        return;
+    }
+    if (modSelect(pItem->at30))
+        modRestart(pMod->szName);
+    else
+        viewSetMessage("Could not save the mod choice");
+}
+
 void SetupChosenMenus(void)
 {
+    menuLanGames.Add(&itemLanTitle, false);
+    for (int i = 0; i < kMaxLanGames; i++)
+        menuLanGames.Add(pLanItems[i], i == 0);
+    menuLanGames.Add(&itemLanRefresh, false);
+    menuLanGames.Add(&itemLanStatus, false);
+    menuLanGames.Add(&itemBloodQAV, false);
+
+    Bstrncpyz(zVersionText, onlineVersion(), sizeof(zVersionText));
+    Bstrupr(zVersionText);
+
+    menuMods.Add(&itemModsTitle, false);
+    for (int i = 0; i < kMaxModEntries; i++)
+        menuMods.Add(pModItems[i], i == 0);
+    menuMods.Add(&itemModsHelp1, false);
+    menuMods.Add(&itemModsHelp2, false);
+    menuMods.Add(&itemBloodQAV, false);
+
     menuCoopLoad.Add(&itemCoopLoadTitle, false);
     menuCoopLoad.Add(&itemCoopLoadMid, true);
     menuCoopLoad.Add(&itemCoopLoadMidHelp, false);

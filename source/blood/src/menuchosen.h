@@ -22,9 +22,19 @@ class CGameMenuItemChain;
 extern CGameMenu menuOnline;
 extern CGameMenu menuCoopLoad;
 extern CGameMenu menuCoopSave;
+extern CGameMenu menuMods;
+extern CGameMenu menuLanGames;
 
 void SetupChosenMenus(void);
 void SetupOnlineMenu(CGameMenuItemChain *pItem);
 void SetupCoopLoadMenu(CGameMenuItemChain *pItem);
 void SetupCoopSaveMenu(CGameMenuItemChain *pItem);
 void OpenCoopSlotsMenu(int nType);
+void SetupModsMenu(CGameMenuItemChain *pItem);
+void SetupNetworkHostAddress(void);
+
+class CGameMenuItemText;
+extern CGameMenuItemText itemMainVersion;
+extern CGameMenuItemText itemNetworkHostAddress;
+extern CGameMenuItemText itemNetworkHostHelp;
+void SetupLanGamesMenu(CGameMenuItemChain *pItem);

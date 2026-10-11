@@ -152,6 +152,45 @@ void credReset(void)
     DoUnFade(1);
 }
 
+// "movie/CS1.SMK" when the folder is called "Movie" and the file "cs1.smk" (the game only tries
+// the name as written, all lower case and all upper case): finds the names on disk, ignoring case,
+// and fixes pzFile in place (same length)
+static bool credFixCase(char *pzFile)
+{
+    char dir[BMAX_PATH] = "/";
+    char *pName = pzFile;
+    char *pSlash = strrchr(pzFile, '/');
+    if (pSlash)
+    {
+        *pSlash = '\0';
+        bool bFound = false;
+        BUILDVFS_FIND_REC *pDirs = klistpath("/", "*", BUILDVFS_FIND_DIR);
+        for (auto pIter = pDirs; pIter && !bFound; pIter = pIter->next)
+            if (!Bstrcasecmp(pIter->name, pzFile) && Bstrlen(pIter->name) == Bstrlen(pzFile))
+            {
+                Bstrcpy(dir, pIter->name);
+                bFound = true;
+            }
+        klistfree(pDirs);
+        *pSlash = '/';
+        if (!bFound)
+            return false;
+        pName = pSlash + 1;
+    }
+    bool bFound = false;
+    BUILDVFS_FIND_REC *pFiles = klistpath(dir, "*", BUILDVFS_FIND_FILE);
+    for (auto pIter = pFiles; pIter && !bFound; pIter = pIter->next)
+        if (!Bstrcasecmp(pIter->name, pName) && Bstrlen(pIter->name) == Bstrlen(pName))
+        {
+            if (pSlash)
+                memcpy(pzFile, dir, pSlash - pzFile);
+            Bstrcpy(pName, pIter->name);
+            bFound = true;
+        }
+    klistfree(pFiles);
+    return bFound;
+}
+
 int credKOpen4Load(char *&pzFile)
 {
     int nLen = strlen(pzFile);
@@ -169,6 +208,8 @@ int credKOpen4Load(char *&pzFile)
             pzFile += 3;
             nHandle = kopen4loadfrommod(pzFile, 0);
         }
+        if (nHandle == -1 && credFixCase(pzFile))
+            nHandle = kopen4loadfrommod(pzFile, 0);
     }
     return nHandle;
 }
