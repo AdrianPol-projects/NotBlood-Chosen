@@ -351,6 +351,12 @@ template <typename... Args> static inline void SILENCE_UNUSED(Args const & ...) 
 # endif
 #endif
 
+// NotBlood's Android port runs the iPad code: gl4es on OpenGL ES 2.0, the touch controls and a
+// game folder the player can reach (source/build/src/androidbits.cpp implements iosbits.h)
+#if defined __ANDROID__ && defined NOTBLOOD_ANDROID
+# define EDUKE32_IOS
+#endif
+
 
 ////////// Architecture detection //////////
 
@@ -1540,8 +1546,9 @@ static inline void maybe_grow_buffer(char ** const buffer, int32_t * const buffe
 # define EDUKE32_TOUCH_DEVICES
 #endif
 
-// iOS renders through gl4es, which exposes desktop OpenGL 2.1 on top of OpenGL ES 2.0
-#if defined __ANDROID__
+// iOS (and NotBlood's Android port) render through gl4es, which exposes desktop OpenGL 2.1 on
+// top of OpenGL ES 2.0
+#if defined __ANDROID__ && !defined NOTBLOOD_ANDROID
 # define EDUKE32_GLES
 #endif
 

@@ -132,9 +132,48 @@ jobs:
           path: ./NotBlood.app.zip
           if-no-files-found: error
 
+  build-android:
+    name: Android
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;26.3.11579264" "cmake;3.22.1" "platforms;android-34" "build-tools;34.0.0" > /dev/null
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Fetch SDL2 and gl4es
+        run: platform/Android/fetch-deps.sh
+      - name: Build
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          NOTBLOOD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          # the same signing key every time, so new versions install over old ones
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            export NOTBLOOD_KEYSTORE="$RUNNER_TEMP/release.keystore"
+          fi
+          gradle -p platform/Android assembleRelease --no-daemon \
+            -PversionCode=${{ github.run_number }} -Pabis=arm64-v8a,armeabi-v7a,x86_64
+          cp platform/Android/app/build/outputs/apk/release/app-release.apk NotBlood.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs NotBlood.apk | head -3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notblood-android
+          path: ./NotBlood.apk
+          if-no-files-found: error
+
   publish:
     name: Publish
-    needs: [build-linux, build-windows, build-macos]
+    needs: [build-linux, build-windows, build-macos, build-android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -167,7 +206,8 @@ jobs:
           cp package/release/mods.txt "$dir/mods/Put mods here.txt"
           cp package/release/movie.txt "$dir/movie/Put the movie files here.txt"
           (cd pkg/macos && zip -9 -r -y "../../NotBlood-Chosen-$version-macos.zip" NotBlood)
-          ls -l *.zip
+          cp artifacts/notblood-android/NotBlood.apk "NotBlood-Chosen-$version-android.apk"
+          ls -l *.zip *.apk
       - name: Publish to the "latest" release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -179,7 +219,7 @@ jobs:
             exit 0
           fi
           TITLE="NotBlood Chosen $VERSION (build ${{ github.run_number }})"
-          files=$(ls NotBlood-Chosen-*.zip)
+          files=$(ls NotBlood-Chosen-*.zip NotBlood-Chosen-*.apk)
           if gh release view latest >/dev/null 2>&1; then
             # drop the zips of the previous build, their names carry the version
             for a in $(gh release view latest --json assets -q '.assets[].name'); do

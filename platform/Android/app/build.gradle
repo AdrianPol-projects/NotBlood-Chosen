@@ -1,0 +1,79 @@
+// NotBlood for Android. Needs the SDL2 and gl4es sources: run ./fetch-deps.sh first (or pass
+// -PsdlDir=... -Pgl4esDir=...). Build: gradle assembleRelease (see README.md).
+plugins {
+    id 'com.android.application'
+}
+
+def sdlDir = project.findProperty('sdlDir') ?: "${rootDir}/third_party/SDL2"
+def gl4esDir = project.findProperty('gl4esDir') ?: "${rootDir}/third_party/gl4es"
+def abis = (project.findProperty('abis') ?: 'arm64-v8a,x86_64').split(',')
+def chosenVersion = file("${rootDir}/../../source/blood/src/chosen.h").text.find(/CHOSEN_VERSION "([^"]+)"/) { m, v -> v } ?: '1.0'
+
+android {
+    namespace 'com.adrianpol.notblood'
+    compileSdk 34
+    ndkVersion '26.3.11579264'
+
+    defaultConfig {
+        applicationId 'com.adrianpol.notblood'
+        minSdk 21
+        targetSdk 34
+        versionCode((project.findProperty('versionCode') ?: '1') as int)
+        versionName chosenVersion
+        externalNativeBuild {
+            cmake {
+                arguments "-DSDL2_SOURCE_DIR=${sdlDir}", "-DGL4ES_SOURCE_DIR=${gl4esDir}", '-DANDROID_STL=c++_static'
+            }
+        }
+        ndk {
+            abiFilters(*abis)
+        }
+    }
+
+    // the same key for every build, so new versions install over old ones (keystore from the
+    // environment in CI; without it a debug key)
+    signingConfigs {
+        release {
+            def ks = System.getenv('NOTBLOOD_KEYSTORE')
+            if (ks && file(ks).exists()) {
+                storeFile file(ks)
+                storePassword System.getenv('NOTBLOOD_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('NOTBLOOD_KEY_ALIAS') ?: 'notblood'
+                keyPassword System.getenv('NOTBLOOD_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release.storeFile ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'jni/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs = ['src/main/java', "${sdlDir}/android-project/app/src/main/java"]
+            assets.srcDirs = ["${buildDir}/generated/notblood-assets"]
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+// notblood.pk3 (menus, fonts, fixes) goes into the APK's assets; the game copies it out at startup
+tasks.register('copyGameAssets', Copy) {
+    from "${rootDir}/../../notblood.pk3"
+    into "${buildDir}/generated/notblood-assets"
+}
+preBuild.dependsOn copyGameAssets

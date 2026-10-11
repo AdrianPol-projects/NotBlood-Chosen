@@ -569,7 +569,12 @@ void sdlayer_sethints()
     SDL_SetHint(SDL_HINT_IOS_HIDE_HOME_INDICATOR, "2");
     SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "playback");
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#ifdef __ANDROID__
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengles2");
+    SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1"); // the back button is Escape (menu)
+#else
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "metal");
+#endif
     SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
 #endif
 }
@@ -3058,6 +3063,10 @@ int32_t handleevents_pollsdl(void)
             {
                 auto const &sc = ev.key.keysym.scancode;
                 code = keytranslation[sc];
+#ifdef __ANDROID__
+                if (sc == SDL_SCANCODE_AC_BACK) // Android's back button opens/closes the menu
+                    code = keytranslation[SDL_SCANCODE_ESCAPE];
+#endif
 
                 // Modifiers that have to be held down to be effective
                 // (excludes KMOD_NUM, for example).
