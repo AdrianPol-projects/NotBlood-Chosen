@@ -42,6 +42,9 @@ as published by the Free Software Foundation.
 #include "network.h"
 #include "osd.h"
 #include "gamemenu.h"
+#include "menuchosen.h"
+#include "levels.h"
+#include "endgame.h"
 
 #include <dlfcn.h>
 #include <vector>
@@ -246,19 +249,21 @@ static void logPlayers(void)
             weapons[i] = pPlayer->hasWeapon[i] ? '1' : '0';
         for (int i = 0; i < 12; i++)
             len += Bsnprintf(ammo + len, sizeof(ammo) - len, "%s%d", i ? "," : "", pPlayer->ammoCount[i]);
-        LOG_F(INFO, "nbtest: player %d %s health %d weapon %d/%d weapons %s ammo %s armor %d,%d,%d pack %d,%d,%d,%d,%d item %d",
+        LOG_F(INFO, "nbtest: player %d %s health %d weapon %d/%d weapons %s ammo %s armor %d,%d,%d pack %d,%d,%d,%d,%d item %d sprite %d type %d at %d,%d,%d keys %d%d%d%d%d%d",
               p, gProfile[p].name, pPlayer->pXSprite ? pPlayer->pXSprite->health : -1, pPlayer->curWeapon, pPlayer->input.newWeapon,
               weapons, ammo, pPlayer->armor[0], pPlayer->armor[1], pPlayer->armor[2],
               pPlayer->packSlots[0].curAmount, pPlayer->packSlots[1].curAmount, pPlayer->packSlots[2].curAmount,
-              pPlayer->packSlots[3].curAmount, pPlayer->packSlots[4].curAmount, pPlayer->packItemId);
+              pPlayer->packSlots[3].curAmount, pPlayer->packSlots[4].curAmount, pPlayer->packItemId,
+              pPlayer->nSprite, pPlayer->pSprite ? pPlayer->pSprite->type : -1, pPlayer->pSprite ? pPlayer->pSprite->x : 0,
+              pPlayer->pSprite ? pPlayer->pSprite->y : 0, pPlayer->pSprite ? pPlayer->pSprite->z : 0,
+              pPlayer->hasKey[1], pPlayer->hasKey[2], pPlayer->hasKey[3], pPlayer->hasKey[4], pPlayer->hasKey[5], pPlayer->hasKey[6]);
     }
-    LOG_F(INFO, "nbtest: game type %d episode %d level %d difficulty %d friendlyfire %d numplayers %d outofsync %d",
+    LOG_F(INFO, "nbtest: game type %d episode %d level %d difficulty %d friendlyfire %d numplayers %d outofsync %d leveltime %d kills %d/%d",
           gGameOptions.nGameType, gGameOptions.nEpisode, gGameOptions.nLevel, gGameOptions.nDifficulty,
-          gGameOptions.bFriendlyFire, numplayers, bOutOfSync);
+          gGameOptions.bFriendlyFire, numplayers, bOutOfSync, gLevelTime, gKillMgr.at4, gKillMgr.at0);
 }
 
-extern CGameMenu menuNetStart, menuCoopLoad, menuMainWithSave;
-void SetupCoopLoadMenu(CGameMenuItemChain *);
+extern CGameMenu menuNetStart, menuMainWithSave, menuNetwork;
 
 static void openMenu(std::string const &name)
 {
@@ -269,6 +274,20 @@ static void openMenu(std::string const &name)
         SetupCoopLoadMenu(NULL);
         gGameMenuMgr.Push(&menuCoopLoad, -1);
     }
+    else if (name == "coopsave")
+    {
+        SetupCoopSaveMenu(NULL);
+        gGameMenuMgr.Push(&menuCoopSave, -1);
+    }
+    else if (name == "coopmid" || name == "coopcarry")
+        OpenCoopSlotsMenu(name == "coopmid" ? kCoopSaveMid : kCoopSaveCarry);
+    else if (name == "online")
+    {
+        SetupOnlineMenu(NULL);
+        gGameMenuMgr.Push(&menuOnline, -1);
+    }
+    else if (name == "network")
+        gGameMenuMgr.Push(&menuNetwork, -1);
     else if (name == "ingame")
         gGameMenuMgr.Push(&menuMainWithSave, -1);
     else if (name == "close")

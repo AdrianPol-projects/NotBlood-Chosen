@@ -122,10 +122,8 @@ void NetLoadItemsConfig(void);
 void NetLoadTestMap(void);
 void NetClearUserMap(CGameMenuItemZCycle *);
 void StartNetGame(CGameMenuItemChain *);
-void SetupCoopLoadMenu(CGameMenuItemChain *);
-void ContinueCoopGame(CGameMenuItemChain *);
-void CoopSaveProcess(CGameMenuItemChain *);
 void UpdateMainSaveItem(CGameMenuItem *);
+void UpdateMainLoadItem(CGameMenuItem *);
 void SetupLevelMenuItem(int);
 void SetupVideoModeMenu(CGameMenuItemChain *);
 void SetupViewMenu(CGameMenuItemChain *);
@@ -418,7 +416,6 @@ CGameMenu menuNetworkJoin;
 CGameMenu menuNetworkGameMode;
 CGameMenu menuNetworkGameMonsters;
 CGameMenu menuNetworkGameMutators;
-CGameMenu menuCoopLoad;
 
 CGameMenuItemQAV itemBloodQAV("", 3, 160, 100, "BDRIP", true);
 CGameMenuItemQAV itemCreditsQAV("", 3, 160, 100, "CREDITS", false, true);
@@ -594,18 +591,6 @@ CGameMenuItemChain itemNetStart9("SET MUTATORS", 3, 0, 153, 320, 1, &menuNetwork
 CGameMenuItemChain itemNetStart10("USER MAP", 3, 0, 163, 256, 1, &menuMultiUserMaps, 0, NULL, 0);
 CGameMenuItemChain itemNetStart10Coop("LOAD CO-OP", 3, 0, 163, 384, 1, &menuCoopLoad, -1, SetupCoopLoadMenu, 0);
 
-// co-op saves (see coopsave.h): one save made from the in-game menu, one made at every level start
-char zCoopLoadLevel[kCoopSaveMax][64];
-char zCoopLoadInfo[kCoopSaveMax][64];
-CGameMenuItemTitle itemCoopLoadTitle("CO-OP SAVES", 1, 160, 20, 2038);
-CGameMenuItemChain itemCoopLoadManual("LAST SAVE", 1, 0, 50, 320, 1, NULL, -1, ContinueCoopGame, kCoopSaveManual);
-CGameMenuItemText itemCoopLoadManualLevel(zCoopLoadLevel[kCoopSaveManual], 3, 160, 68, 1);
-CGameMenuItemText itemCoopLoadManualInfo(zCoopLoadInfo[kCoopSaveManual], 3, 160, 78, 1);
-CGameMenuItemChain itemCoopLoadAuto("LEVEL START", 1, 0, 98, 320, 1, NULL, -1, ContinueCoopGame, kCoopSaveAuto);
-CGameMenuItemText itemCoopLoadAutoLevel(zCoopLoadLevel[kCoopSaveAuto], 3, 160, 116, 1);
-CGameMenuItemText itemCoopLoadAutoInfo(zCoopLoadInfo[kCoopSaveAuto], 3, 160, 126, 1);
-CGameMenuItemText itemCoopLoadHelp1("THE LEVEL STARTS OVER, EVERY PLAYER KEEPS THEIR", 3, 160, 150, 1);
-CGameMenuItemText itemCoopLoadHelp2("WEAPONS, AMMO, ARMOR AND ITEMS. SETTINGS ARE RESTORED.", 3, 160, 160, 1);
 CGameMenuItemChain itemNetStart11(zNetStartGame, 1, 0, 175, 320, 1, 0, -1, StartNetGame, 0);
 
 CGameMenuItemTitle itemNetGameTitle("GAME SETTINGS", 1, 160, 20, 2038);
@@ -1624,6 +1609,7 @@ void SetupMainMenuWithSave(void)
     itemMainSave6.bDisableForNet = 1;
     itemMainSave3.bEnable = !gLockManualSaving; // disable save option in main menu if lock saving mode is set
     itemMainSave3.pPreDrawCallback = UpdateMainSaveItem;
+    itemMainSave4.pPreDrawCallback = UpdateMainLoadItem;
 }
 
 void SetupFirstLaunchMenu(void)
@@ -1667,15 +1653,6 @@ void SetupNetStartMenu(void)
     menuNetStart.Add(&itemNetStart10Coop, false);
     menuNetStart.Add(&itemNetStart11, false);
     itemNetStart10Coop.tooltip_pzTextUpper = "Continue a saved co-op game";
-    menuCoopLoad.Add(&itemCoopLoadTitle, false);
-    menuCoopLoad.Add(&itemCoopLoadManual, true);
-    menuCoopLoad.Add(&itemCoopLoadManualLevel, false);
-    menuCoopLoad.Add(&itemCoopLoadManualInfo, false);
-    menuCoopLoad.Add(&itemCoopLoadAuto, false);
-    menuCoopLoad.Add(&itemCoopLoadAutoLevel, false);
-    menuCoopLoad.Add(&itemCoopLoadAutoInfo, false);
-    menuCoopLoad.Add(&itemCoopLoadHelp1, false);
-    menuCoopLoad.Add(&itemCoopLoadHelp2, false);
     menuMultiUserItems.Add(&itemNetStartUserItemTitle, true);
     menuMultiUserItems.Add(&menuMultiUserItem, true);
     menuMultiUserItem.tooltip_pzTextUpper = "Use console cmd cl_banned_item_save <preset_name>";
@@ -4912,37 +4889,15 @@ void NetClearUserMap(CGameMenuItemZCycle *pItem)
     itemNetStart11.m_pzText = zNetStartGame;
 }
 
-void SetupCoopLoadMenu(CGameMenuItemChain *pItem)
-{
-    UNREFERENCED_PARAMETER(pItem);
-    CGameMenuItemChain *pItems[kCoopSaveMax] = { &itemCoopLoadManual, &itemCoopLoadAuto };
-    for (int i = 0; i < kCoopSaveMax; i++)
-        pItems[i]->bEnable = coopDescribeSave(i, zCoopLoadLevel[i], sizeof(zCoopLoadLevel[i]), zCoopLoadInfo[i], sizeof(zCoopLoadInfo[i]));
-    menuCoopLoad.SetFocusItem(itemCoopLoadManual.bEnable ? &itemCoopLoadManual : &itemCoopLoadAuto);
-}
-
-void ContinueCoopGame(CGameMenuItemChain *pItem)
-{
-    if (!coopContinueGame(pItem->at30))
-        viewSetMessage("Could not load the co-op save");
-}
-
-void CoopSaveProcess(CGameMenuItemChain *pItem)
-{
-    UNREFERENCED_PARAMETER(pItem);
-    coopRequestSave();
-    gGameMenuMgr.Deactivate();
-}
-
-// during co-op games the in-game menu saves the co-op progress instead of a regular save
+// during co-op games the in-game menu has co-op saves instead of regular saves
 void UpdateMainSaveItem(CGameMenuItem *pItem)
 {
     CGameMenuItemChain *pChain = (CGameMenuItemChain *)pItem;
     if ((gGameOptions.nGameType == kGameTypeCoop) && gGameStarted && !gDemo.bPlaying)
     {
         pChain->m_pzText = "SAVE CO-OP";
-        pChain->at24 = NULL;
-        pChain->at2c = CoopSaveProcess;
+        pChain->at24 = &menuCoopSave;
+        pChain->at2c = SetupCoopSaveMenu;
         pChain->bDisableForNet = 0;
         pChain->bEnable = 1;
     }
@@ -4953,6 +4908,28 @@ void UpdateMainSaveItem(CGameMenuItem *pItem)
         pChain->at2c = SaveGameProcess;
         pChain->bDisableForNet = 1;
         pChain->bEnable = !gLockManualSaving;
+    }
+}
+
+// the host of a network co-op game can load co-op saves from the in-game menu
+void UpdateMainLoadItem(CGameMenuItem *pItem)
+{
+    CGameMenuItemChain *pChain = (CGameMenuItemChain *)pItem;
+    if ((gGameOptions.nGameType == kGameTypeCoop) && gGameStarted && !gDemo.bPlaying && (numplayers > 1) && (myconnectindex == connecthead))
+    {
+        pChain->m_pzText = "LOAD CO-OP";
+        pChain->at24 = &menuCoopLoad;
+        pChain->at2c = SetupCoopLoadMenu;
+        pChain->bDisableForNet = 0;
+        pChain->bEnable = 1;
+    }
+    else
+    {
+        pChain->m_pzText = "LOAD GAME";
+        pChain->at24 = &menuLoadGame;
+        pChain->at2c = NULL;
+        pChain->bDisableForNet = 1;
+        pChain->bEnable = !(gNetPlayers > 1);
     }
 }
 

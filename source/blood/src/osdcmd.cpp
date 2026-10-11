@@ -232,10 +232,26 @@ static int osdcmd_map(osdcmdptr_t parm)
     return OSDCMD_OK;
 }
 
-static int osdcmd_coop_save(osdcmdptr_t UNUSED(parm))
+static int osdcmd_coop_save(osdcmdptr_t parm)
 {
-    UNREFERENCED_CONST_PARAMETER(parm);
-    coopRequestSave();
+    coopRequestSave(parm->numparms > 0 ? atoi(parm->parms[0]) - 1 : 0);
+    return OSDCMD_OK;
+}
+
+static int osdcmd_coop_load(osdcmdptr_t parm)
+{
+    if (parm->numparms < 2)
+        return OSDCMD_SHOWHELP;
+    int const nSlot = !Bstrcasecmp(parm->parms[1], "auto") ? kCoopSlotAuto : ClipRange(atoi(parm->parms[1]) - 1, 0, kCoopSlots-1);
+    bool bOk;
+    if (!Bstrcasecmp(parm->parms[0], "mid"))
+        bOk = coopLoadMidLevel(nSlot);
+    else if (!Bstrcasecmp(parm->parms[0], "carry"))
+        bOk = coopContinueGame(nSlot);
+    else
+        return OSDCMD_SHOWHELP;
+    if (!bOk)
+        OSD_Printf("Could not load that co-op save\n");
     return OSDCMD_OK;
 }
 
@@ -1373,6 +1389,8 @@ int32_t registerosdcommands(void)
         { "net_online_server","online server for internet games (address or address:port)", (void *)gOnlineServer, CVAR_STRING, 0, sizeof(gOnlineServer) },
         { "net_online_key","secret key of the online server", (void *)gOnlineKey, CVAR_STRING, 0, sizeof(gOnlineKey) },
         { "net_online_lobby","lobby name for online games", (void *)gOnlineLobby, CVAR_STRING, 0, sizeof(gOnlineLobby) },
+        { "coop_matchorder","co-op saves: players not in the save get leftover loadouts instead of the pitchfork", (void *)&gCoopMatchOrder, CVAR_BOOL, 0, 1 },
+        { "coop_autosave_leave","co-op saves: save the game (mid-level) when a player leaves", (void *)&gCoopAutosaveLeave, CVAR_BOOL, 0, 1 },
         { "net_online_lanstats","show LAN games you host on the online server's dashboard", (void *)&gOnlineReportLan, CVAR_BOOL, 0, 1 },
 //
 //        { "osdhightile", "enable/disable hires art replacements for console text", (void *)&osdhightile, CVAR_BOOL, 0, 1 },
@@ -1458,7 +1476,8 @@ int32_t registerosdcommands(void)
     OSD_RegisterFunction("changelevel","changelevel <volume> <level>: warps to the given level", osdcmd_changelevel);
     OSD_RegisterFunction("map","map <mapfile>: loads the given user map", osdcmd_map);
     OSD_RegisterFunction("restartmap","restarts current map", osdcmd_restartmap);
-    OSD_RegisterFunction("coop_save","coop_save: saves co-op progress (weapons, items, level, settings) on every player's machine", osdcmd_coop_save);
+    OSD_RegisterFunction("coop_save","coop_save [1-8]: saves the co-op game to a slot on every player's machine", osdcmd_coop_save);
+    OSD_RegisterFunction("coop_load","coop_load <mid|carry> <1-8|auto>: host loads a co-op save for everybody (mid: where you saved, carry: restart the level with your gear)", osdcmd_coop_load);
     OSD_RegisterFunction("demo","demo <demofile or demonum>: starts the given demo", osdcmd_demo);
 //    }
 //

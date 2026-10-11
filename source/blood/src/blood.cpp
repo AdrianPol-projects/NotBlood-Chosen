@@ -977,7 +977,7 @@ void StartLevel(GAMEOPTIONS *pOpt)
     if (bTriggerAutosave && !pOpt->bPermaDeath)
         AutosaveGame(true); // create autosave at start of the new level
     if ((pOpt->nGameType == kGameTypeCoop) && !gDemo.bPlaying && !gDemo.bRecording)
-        coopWriteSave(kCoopSaveAuto, NULL); // every machine keeps a co-op save of the level start
+        coopWriteLevelStartSave(); // every machine keeps a co-op save of the level start
 }
 
 void DoQuickLoad(const bool bIgnoreMenu)
@@ -2274,6 +2274,7 @@ int app_main(int argc, char const * const * argv)
     LOG_F(INFO, "Initializing network users");
     if (gNetPortOverride) // do this after cfg has loaded
         Bsnprintf(zNetPortBuffer, sizeof(zNetPortBuffer), "%d", gNetPort);
+    coopMigrateOldSaves();
     if (nOnlineHostPlayers && onlineHostLobby(nOnlineHostPlayers, true))
     {
         gNetPlayers = nOnlineHostPlayers;
@@ -2550,6 +2551,7 @@ RESTART:
         //    gStartNewGame = 0;
         //    gQuitGame = 1;
         //}
+        coopFrame(); // a mid-level co-op save is ready to load
         if (gStartNewGame)
             StartLevel(&gGameOptions);
     }

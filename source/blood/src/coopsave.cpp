@@ -15,11 +15,14 @@ See the GNU General Public License for more details.
 //-------------------------------------------------------------------------
 
 #include <time.h>
+#include <vector>
 
 #include "compat.h"
 #include "build.h"
+#include "crc32.h"
 #include "mmulti.h"
 #include "common_game.h"
+#include "actor.h"
 #include "blood.h"
 #include "config.h"
 #include "coopsave.h"
@@ -27,19 +30,42 @@ See the GNU General Public License for more details.
 #include "gamemenu.h"
 #include "globals.h"
 #include "levels.h"
+#include "loadsave.h"
 #include "menu.h"
 #include "network.h"
 #include "player.h"
+#include "screen.h"
+#include "seq.h"
 #include "view.h"
+#ifdef NOONE_EXTENSIONS
+#include "nnexts.h"
+#endif
 
 void playerRefreshItemBackup(PLAYER *pPlayer);
+
+int gCoopMatchOrder = 0;
+int gCoopAutosaveLeave = 1;
 
 namespace
 {
 
 const int kCoopSaveVersion = 1;
 
-const char *const kCoopSaveFiles[kCoopSaveMax] = { "coopsave.txt", "coopsave_levelstart.txt" };
+bool fileExists(const char *pzPath)
+{
+    FILE *fp = fopen(pzPath, "rb");
+    if (fp)
+        fclose(fp);
+    return fp != NULL;
+}
+
+const char *const kTypeDirs[kCoopSaveTypes] = { "coopsaves/carryover", "coopsaves/midlevel" };
+const char *const kAutoNames[kCoopSaveTypes] = { "levelstart", "playerleft" };
+
+enum
+{
+    kMidLevelMatchOrder = 1,  // packet 243 flags
+};
 
 struct COOPLOADOUT
 {
@@ -72,6 +98,14 @@ struct COOPSAVE
 COOPLOADOUT gCoopLoadout[kMaxPlayers];
 bool gCoopPending;
 
+// mid-level load in progress
+std::vector<char> gMidFile;      // the host's save, as it arrives
+bool gMidLoadPending;
+char gMidLoadPath[BMAX_PATH];
+PKT_STARTGAME gMidSettings;
+int gMidFlags;
+char gMidNames[kMaxPlayers][MAXPLAYERNAME];  // saved players by connect index ("" for none)
+
 // every start game setting, by name, so saves survive changes to the packet layout
 #define COOP_SETTINGS(X) \
     X(gameType) X(difficulty) X(monsterSettings) X(weaponSettings) X(itemSettings) X(respawnSettings) \
@@ -82,10 +116,28 @@ bool gCoopPending;
     X(nGoreBehavior) X(nPlayerSpeed) X(nPlayerWater) X(bFriendlyFire) X(bAutoTeams) X(nSpawnProtection) \
     X(nSpawnWeapon) X(uSpriteBannedFlags)
 
-bool coopGetPath(int nSlot, char *pzPath)
+void makeDirs(void)
 {
+    char path[BMAX_PATH];
+    G_ModDirSnprintfLite(path, sizeof(path), "coopsaves");
+    Bmkdir(path, S_IRWXU);
+    for (int i = 0; i < kCoopSaveTypes; i++)
+    {
+        G_ModDirSnprintfLite(path, sizeof(path), kTypeDirs[i]);
+        Bmkdir(path, S_IRWXU);
+    }
+}
+
+// coopsaves/<type>/slot<N>.<ext>, or the type's automatic save for kCoopSlotAuto
+bool coopPath(int nType, int nSlot, const char *pzExt, char *pzPath)
+{
+    char name[64];
+    if (nSlot == kCoopSlotAuto)
+        Bsnprintf(name, sizeof(name), "%s/%s.%s", kTypeDirs[nType], kAutoNames[nType], pzExt);
+    else
+        Bsnprintf(name, sizeof(name), "%s/slot%d.%s", kTypeDirs[nType], nSlot+1, pzExt);
     pzPath[0] = '\0';
-    G_ModDirSnprintfLite(pzPath, BMAX_PATH, kCoopSaveFiles[nSlot]);
+    G_ModDirSnprintfLite(pzPath, BMAX_PATH, name);
     return pzPath[0] != '\0';
 }
 
@@ -140,16 +192,12 @@ void fillLoadout(COOPLOADOUT *pLoadout, int nPlayer)
         pLoadout->packTime[i] = pPlayer->pwUpTime[kPackPowerUps[i]];
 }
 
-bool writeSaveFile(int nSlot, COOPSAVE const *pSave)
+bool writeTextSave(const char *pzPath, COOPSAVE const *pSave)
 {
-    char path[BMAX_PATH];
-    if (!coopGetPath(nSlot, path))
-        return false;
-
-    FILE *fp = fopen(path, "w");
+    FILE *fp = fopen(pzPath, "w");
     if (!fp)
     {
-        LOG_F(ERROR, "Could not write co-op save \"%s\"", path);
+        LOG_F(ERROR, "Could not write co-op save \"%s\"", pzPath);
         return false;
     }
 
@@ -190,15 +238,11 @@ bool writeSaveFile(int nSlot, COOPSAVE const *pSave)
     return true;
 }
 
-bool readSaveFile(int nSlot, COOPSAVE *pSave)
+bool readTextSave(const char *pzPath, COOPSAVE *pSave)
 {
     *pSave = {};
 
-    char path[BMAX_PATH];
-    if (!coopGetPath(nSlot, path))
-        return false;
-
-    FILE *fp = fopen(path, "r");
+    FILE *fp = fopen(pzPath, "r");
     if (!fp)
         return false;
 
@@ -269,14 +313,89 @@ bool readSaveFile(int nSlot, COOPSAVE *pSave)
 
     if (nVersion < 1 || nVersion > kCoopSaveVersion || s.gameType != kGameTypeCoop)
     {
-        LOG_F(WARNING, "Ignoring co-op save \"%s\" (unsupported version or not a co-op game)", path);
+        LOG_F(WARNING, "Ignoring co-op save \"%s\" (unsupported version or not a co-op game)", pzPath);
         return false;
     }
     return true;
 }
 
-// pick the saved loadout for every connected player: same name first, then same slot, then
-// whatever saved loadouts are left over, in order
+bool readSave(int nType, int nSlot, COOPSAVE *pSave)
+{
+    char path[BMAX_PATH];
+    return coopPath(nType, nSlot, "txt", path) && readTextSave(path, pSave);
+}
+
+// the current game as a carry-over save
+void buildSave(COOPSAVE *pSave, const char *pzSavedBy)
+{
+    *pSave = {};
+    pSave->settings = gPacketStartGame;
+    pSave->settings.gameType = kGameTypeCoop;
+    pSave->settings.episodeId = gGameOptions.nEpisode;
+    pSave->settings.levelId = gGameOptions.nLevel;
+
+    time_t const now = time(NULL);
+    strftime(pSave->szSaved, sizeof(pSave->szSaved), "%Y-%m-%d %H:%M", localtime(&now));
+    Bstrncpyz(pSave->szSavedBy, pzSavedBy ? pzSavedBy : "", sizeof(pSave->szSavedBy));
+
+    char const *pzTitle = gGameOptions.zLevelName;
+    if (!gPacketStartGame.userMap && gGameOptions.nEpisode >= 0 && gGameOptions.nEpisode < gEpisodeCount
+        && gEpisodeInfo[gGameOptions.nEpisode].levelsInfo[gGameOptions.nLevel].Title[0])
+        pzTitle = gEpisodeInfo[gGameOptions.nEpisode].levelsInfo[gGameOptions.nLevel].Title;
+    Bstrncpyz(pSave->szTitle, pzTitle, sizeof(pSave->szTitle));
+
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+        if (pSave->nPlayers < kMaxPlayers)
+            fillLoadout(&pSave->players[pSave->nPlayers++], p);
+}
+
+// positions and health of everything in the level, to compare saves and loads in the log
+uint32_t worldHash(void)
+{
+    uint32_t crc = 0;
+    for (int i = 0; i < kMaxSprites; i++)
+    {
+        spritetype const *pSprite = &sprite[i];
+        if (pSprite->statnum >= kMaxStatus)
+            continue;
+        int const data[6] = { i, pSprite->x, pSprite->y, pSprite->z, pSprite->type,
+                              pSprite->extra > 0 ? xsprite[pSprite->extra].health : 0 };
+        crc = Bcrc32(data, sizeof(data), crc);
+    }
+    return crc;
+}
+
+bool canSave(void)
+{
+    return gGameOptions.nGameType == kGameTypeCoop && gGameStarted && !gDemo.bPlaying;
+}
+
+// writes slot nSlot: the carry-over save, and the mid-level save with a copy of it for the menu
+bool writeSlot(int nSlot, const char *pzSavedBy, bool bCarry, bool bMid)
+{
+    if (!canSave())
+        return false;
+    makeDirs();
+
+    static COOPSAVE save;
+    buildSave(&save, pzSavedBy);
+    bool bOk = true;
+    char path[BMAX_PATH];
+    if (bCarry)
+        bOk &= coopPath(kCoopSaveCarry, nSlot, "txt", path) && writeTextSave(path, &save);
+    if (bMid && coopPath(kCoopSaveMid, nSlot, "sav", path))
+    {
+        LoadSave::SaveGame(path);
+        bOk &= coopPath(kCoopSaveMid, nSlot, "txt", path) && writeTextSave(path, &save);
+    }
+    if (bOk)
+        LOG_F(INFO, "Wrote co-op save %s %d (E%dM%d, %d players, level time %d, world %08x)", nSlot == kCoopSlotAuto ? "auto" : "slot", nSlot+1,
+              save.settings.episodeId+1, save.settings.levelId+1, save.nPlayers, gLevelTime, worldHash());
+    return bOk;
+}
+
+// pick the saved loadout for every connected player: same name; with gCoopMatchOrder, players
+// without one get the loadouts nobody took, in order
 void matchLoadouts(COOPSAVE const *pSave)
 {
     bool bUsed[kMaxPlayers] = {};
@@ -294,27 +413,20 @@ void matchLoadouts(COOPSAVE const *pSave)
                 break;
             }
 
-    for (int p = connecthead; p >= 0; p = connectpoint2[p])
-        for (int i = 0; i < pSave->nPlayers && !bAssigned[p]; i++)
-            if (!bUsed[i] && pSave->players[i].nSlot == p)
-            {
-                gCoopLoadout[p] = pSave->players[i];
-                bUsed[i] = bAssigned[p] = true;
-            }
-
-    for (int p = connecthead; p >= 0; p = connectpoint2[p])
-        for (int i = 0; i < pSave->nPlayers && !bAssigned[p]; i++)
-            if (!bUsed[i])
-            {
-                gCoopLoadout[p] = pSave->players[i];
-                bUsed[i] = bAssigned[p] = true;
-            }
+    if (gCoopMatchOrder)
+        for (int p = connecthead; p >= 0; p = connectpoint2[p])
+            for (int i = 0; i < pSave->nPlayers && !bAssigned[p]; i++)
+                if (!bUsed[i])
+                {
+                    gCoopLoadout[p] = pSave->players[i];
+                    bUsed[i] = bAssigned[p] = true;
+                }
 
     for (int p = connecthead; p >= 0; p = connectpoint2[p])
         if (bAssigned[p])
             LOG_F(INFO, "Co-op continue: player %d (%s) gets the loadout saved for \"%s\"", p, gProfile[p].name, gCoopLoadout[p].szName);
         else
-            LOG_F(INFO, "Co-op continue: player %d (%s) has no saved loadout, starts fresh", p, gProfile[p].name);
+            LOG_F(INFO, "Co-op continue: player %d (%s) is not in the save, starts with the pitchfork", p, gProfile[p].name);
 }
 
 void broadcastLoadout(int nPlayer)
@@ -339,80 +451,285 @@ void broadcastLoadout(int nPlayer)
     netSendPacketAll(packet, pPacket - packet);
 }
 
-} // namespace
+// ---- mid-level saves -----------------------------------------------------------------------
 
-bool coopWriteSave(int nSlot, const char *pzSavedBy)
+// header written by MyLoadSave::Save(): 'VSBN', BYTEVERSION, CRC of the INI name
+bool checkSaveHeader(const char *pData, int nSize, char *pzError, int nErrorSize)
 {
-    if (gGameOptions.nGameType != kGameTypeCoop || !gGameStarted || gDemo.bPlaying)
+    if (nSize < 10)
+    {
+        Bsnprintf(pzError, nErrorSize, "The save is damaged");
         return false;
-
-    static COOPSAVE save;
-    save = {};
-    save.settings = gPacketStartGame;
-    save.settings.gameType = kGameTypeCoop;
-    save.settings.episodeId = gGameOptions.nEpisode;
-    save.settings.levelId = gGameOptions.nLevel;
-
-    time_t const now = time(NULL);
-    strftime(save.szSaved, sizeof(save.szSaved), "%Y-%m-%d %H:%M", localtime(&now));
-    Bstrncpyz(save.szSavedBy, pzSavedBy ? pzSavedBy : "", sizeof(save.szSavedBy));
-
-    char const *pzTitle = gGameOptions.zLevelName;
-    if (!gPacketStartGame.userMap && gGameOptions.nEpisode >= 0 && gGameOptions.nEpisode < gEpisodeCount
-        && gEpisodeInfo[gGameOptions.nEpisode].levelsInfo[gGameOptions.nLevel].Title[0])
-        pzTitle = gEpisodeInfo[gGameOptions.nEpisode].levelsInfo[gGameOptions.nLevel].Title;
-    Bstrncpyz(save.szTitle, pzTitle, sizeof(save.szTitle));
-
-    for (int p = connecthead; p >= 0; p = connectpoint2[p])
-        if (save.nPlayers < kMaxPlayers)
-            fillLoadout(&save.players[save.nPlayers++], p);
-
-    bool const bOk = writeSaveFile(nSlot, &save);
-    if (bOk)
-        LOG_F(INFO, "Wrote co-op save \"%s\" (E%dM%d, %d players)", kCoopSaveFiles[nSlot], save.settings.episodeId+1, save.settings.levelId+1, save.nPlayers);
-    return bOk;
+    }
+    int id;
+    short version;
+    uint32_t uINICRC;
+    memcpy(&id, pData, 4);
+    memcpy(&version, pData + 4, 2);
+    memcpy(&uINICRC, pData + 6, 4);
+    if (id != 0x5653424e || version != BYTEVERSION)
+    {
+        Bsnprintf(pzError, nErrorSize, "The save is from another NotBlood version");
+        return false;
+    }
+    if (uINICRC != Bcrc32(pINISelected->zName, (unsigned int)BMAX_PATH, 0))
+    {
+        Bsnprintf(pzError, nErrorSize, "The save is from another episode or add-on");
+        return false;
+    }
+    return true;
 }
 
-void coopRequestSave(void)
+void killSpriteNow(int nSprite)
 {
-    if (gGameOptions.nGameType != kGameTypeCoop || !gGameStarted)
+    if (nSprite < 0 || nSprite >= kMaxSprites || sprite[nSprite].statnum >= kMaxStatus)
+        return;
+    if (sprite[nSprite].extra > 0)
+        seqKill(3, sprite[nSprite].extra);
+    sprite[nSprite].type = 0;  // no longer a player, whatever happens before it is gone
+    actPostSprite(nSprite, kStatFree);
+    actPostProcess();
+}
+
+// After loading the host's save every machine runs this with the same input: saved players
+// are moved to the connect index of the player with the same name; saved players nobody is
+// playing leave, new players start at the level start.
+void remapPlayers(PROFILE const *pSession, char const (*pNames)[MAXPLAYERNAME], bool bMatchOrder)
+{
+    static PLAYER saved[kMaxPlayers];
+    memcpy(saved, gPlayer, sizeof(saved));
+    int scores[kMaxPlayers];
+    memcpy(scores, gPlayerScores, sizeof(scores));
+#ifdef NOONE_EXTENSIONS
+    static TRPLAYERCTRL ctrl[kMaxPlayers];
+    memcpy(ctrl, gPlayerCtrl, sizeof(ctrl));
+#endif
+    // the names come from the save's description: LoadGame() has already put this machine's own
+    // name into its gProfile entry
+    char names[kMaxPlayers][MAXPLAYERNAME];
+    bool bSaved[kMaxPlayers];
+    for (int i = 0; i < kMaxPlayers; i++)
     {
-        viewSetMessage("Co-op progress can only be saved in co-op games");
+        Bstrncpyz(names[i], pNames[i], MAXPLAYERNAME);
+        int const nSprite = saved[i].nSprite;  // the save has the saving machine's pointers, use the index
+        bSaved[i] = names[i][0] && nSprite >= 0 && nSprite < kMaxSprites && sprite[nSprite].statnum < kMaxStatus
+            && sprite[nSprite].type == kDudePlayer1 + i;
+    }
+
+    int map[kMaxPlayers], inv[kMaxPlayers];
+    for (int i = 0; i < kMaxPlayers; i++)
+        map[i] = inv[i] = -1;
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+        for (int i = 0; i < kMaxPlayers; i++)
+            if (bSaved[i] && inv[i] < 0 && !Bstrcasecmp(names[i], pSession[p].name))
+            {
+                map[p] = i;
+                inv[i] = p;
+                break;
+            }
+    if (bMatchOrder)
+        for (int p = connecthead; p >= 0; p = connectpoint2[p])
+            for (int i = 0; i < kMaxPlayers && map[p] < 0; i++)
+                if (bSaved[i] && inv[i] < 0)
+                {
+                    map[p] = i;
+                    inv[i] = p;
+                }
+
+    // saved players nobody plays now leave the level
+    for (int i = 0; i < kMaxPlayers; i++)
+    {
+        if (!bSaved[i] || inv[i] >= 0)
+            continue;
+        int const nSprite = saved[i].nSprite;
+        LOG_F(INFO, "Co-op load: \"%s\" is not here, removed from the level", names[i]);
+        for (int s = headspritestat[kStatDude]; s >= 0; s = nextspritestat[s])
+            if (sprite[s].extra > 0 && xsprite[sprite[s].extra].target == nSprite)
+                xsprite[sprite[s].extra].target = -1;
+        killSpriteNow(nSprite);
+    }
+
+    for (int p = 0; p < kMaxPlayers; p++)
+    {
+        if (map[p] >= 0)
+        {
+            gPlayer[p] = saved[map[p]];
+            gPlayerScores[p] = scores[map[p]];
+#ifdef NOONE_EXTENSIONS
+            gPlayerCtrl[p] = ctrl[map[p]];
+#endif
+            for (int q = 0; q < kMaxPlayers; q++)
+                gPlayer[p].fragInfo[q] = map[q] >= 0 ? saved[map[p]].fragInfo[map[q]] : 0;
+            gPlayer[p].nPlayer = p;
+            spritetype *pSprite = &sprite[gPlayer[p].nSprite];
+            pSprite->type = kDudePlayer1 + p;
+            gPlayer[p].pSprite = pSprite;
+            gPlayer[p].pXSprite = &xsprite[pSprite->extra];
+            gPlayer[p].pDudeInfo = &dudeInfo[pSprite->type - kDudeBase];
+        }
+        else
+        {
+            memset((void *)&gPlayer[p], 0, sizeof(PLAYER));
+            gPlayerScores[p] = 0;
+        }
+    }
+
+    // things owned by a player store its connect index
+    for (int s = 0; s < kMaxSprites; s++)
+    {
+        spritetype *pSprite = &sprite[s];
+        if (pSprite->statnum >= kMaxStatus || pSprite->owner < 0 || !(pSprite->owner & kMaxSprites))
+            continue;
+        int const nOld = pSprite->owner & (kMaxSprites-1);
+        pSprite->owner = (nOld < kMaxPlayers && inv[nOld] >= 0) ? (inv[nOld] | kMaxSprites) : -1;
+    }
+
+    gNetPlayers = numplayers;
+    memcpy(gProfile, pSession, sizeof(gProfile));
+
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        if (map[p] >= 0)
+        {
+            LOG_F(INFO, "Co-op load: player %d (%s) continues as \"%s\"", p, gProfile[p].name, names[map[p]]);
+            continue;
+        }
+        LOG_F(INFO, "Co-op load: player %d (%s) is new, starts at the level start", p, gProfile[p].name);
+        playerInit(p, 0);
+        playerStart(p, 1);
+    }
+
+    gViewIndex = myconnectindex;
+    gMe = gView = &gPlayer[myconnectindex];
+    viewInitializePrediction();
+}
+
+void midLevelExecute(void)
+{
+    gMidLoadPending = false;
+
+    // nobody sends game input from before the load any more once everybody is here
+    netWaitForEveryone(0);
+    if (gRestartGame || gQuitGame)
+        return;
+
+    static PROFILE session[kMaxPlayers];
+    memcpy(session, gProfile, sizeof(session));
+    bool const bWasStarted = gGameStarted;
+    memset(xvel, 0, sizeof(xvel[0])*kMaxSprites);
+    memset(yvel, 0, sizeof(yvel[0])*kMaxSprites);
+    memset(zvel, 0, sizeof(zvel[0])*kMaxSprites);
+
+    viewLoadingScreen(gMenuPicnum, "Loading", "Loading Co-op Game", NULL);
+    videoNextPage();
+
+    // LoadGame() works on the player of this machine (view, prediction) and announces its
+    // profile; a player who isn't in the save has no player there yet, and the profiles belong
+    // to this session. So it runs as one of the saved players, without network.
+    int const nMe = myconnectindex;
+    NETWORKMODE const nNetMode = gNetMode;
+    for (int i = 0; i < kMaxPlayers; i++)
+        if (gMidNames[i][0])
+        {
+            myconnectindex = i;
+            break;
+        }
+    gMe = gView = &gPlayer[myconnectindex];
+    gNetMode = NETWORK_NONE;
+    int const bakpathsearchmode = pathsearchmode;
+    pathsearchmode = 1;
+    gGameStarted = 1;  // LoadGame() would wait for the other players itself otherwise
+    LoadSave::LoadGame(gMidLoadPath);
+    pathsearchmode = bakpathsearchmode;
+    gNetMode = nNetMode;
+    myconnectindex = nMe;
+    gMe = gView = &gPlayer[myconnectindex];
+    if (!bWasStarted)
+        scrLoadPLUs();
+    LOG_F(INFO, "Co-op load: level time %d, world %08x", gLevelTime, worldHash());
+
+    remapPlayers(session, gMidNames, (gMidFlags & kMidLevelMatchOrder) != 0);
+    gPacketStartGame.gameType = kGameTypeCoop;
+    PKT_STARTGAME const prev = gPacketStartGame;
+    gPacketStartGame = gMidSettings;
+    gPacketStartGame.version = prev.version;
+    gPacketStartGame.bCoopContinue = 0;
+    gAutosaveInCurLevel = false;
+
+    netWaitForEveryone(0);
+    totalclock = 0;
+    gNetFifoClock = 0;
+    gPaused = 0;
+    ready2send = 1;
+    gStartNewGame = 0;
+    gGameMenuMgr.Deactivate();
+    viewSetMessage("Co-op game loaded");
+}
+
+} // namespace
+
+void coopWriteLevelStartSave(void)
+{
+    writeSlot(kCoopSlotAuto, NULL, true, false);
+}
+
+void coopRequestSave(int nSlot)
+{
+    if (!canSave())
+    {
+        viewSetMessage("Co-op games can only be saved during a co-op game");
         return;
     }
+    nSlot = ClipRange(nSlot, 0, kCoopSlots-1);
 
     if (numplayers > 1)
     {
         char *pPacket = packet;
         PutPacketByte(pPacket, 245);
+        PutPacketByte(pPacket, nSlot);
         netSendPacketAll(packet, pPacket - packet);
     }
 
-    if (coopWriteSave(kCoopSaveManual, gProfile[myconnectindex].name))
-        viewSetMessage("Co-op progress saved for all players");
-    else
-        viewSetMessage("Could not save co-op progress");
-}
-
-void coopReceiveSaveRequest(int nPlayer)
-{
-    if (nPlayer < 0 || nPlayer >= kMaxPlayers)
-        return;
-
     char buffer[128];
-    if (coopWriteSave(kCoopSaveManual, gProfile[nPlayer].name))
-        Bsnprintf(buffer, sizeof(buffer), "%s saved the co-op progress", gProfile[nPlayer].name);
+    if (writeSlot(nSlot, gProfile[myconnectindex].name, true, true))
+        Bsnprintf(buffer, sizeof(buffer), "Co-op game saved to slot %d for all players", nSlot+1);
     else
-        Bsnprintf(buffer, sizeof(buffer), "%s saved the co-op progress (failed here)", gProfile[nPlayer].name);
+        Bsnprintf(buffer, sizeof(buffer), "Could not save the co-op game");
     viewSetMessage(buffer);
 }
 
-bool coopDescribeSave(int nSlot, char *pzLevel, int nLevelSize, char *pzInfo, int nInfoSize)
+void coopReceiveSaveRequest(int nPlayer, char *pPacket)
+{
+    if (nPlayer < 0 || nPlayer >= kMaxPlayers)
+        return;
+    int const nSlot = ClipRange(GetPacketByte(pPacket), 0, kCoopSlots-1);
+
+    char buffer[128];
+    if (writeSlot(nSlot, gProfile[nPlayer].name, true, true))
+        Bsnprintf(buffer, sizeof(buffer), "%s saved the co-op game (slot %d)", gProfile[nPlayer].name, nSlot+1);
+    else
+        Bsnprintf(buffer, sizeof(buffer), "%s saved the co-op game (failed here)", gProfile[nPlayer].name);
+    viewSetMessage(buffer);
+}
+
+void coopPlayerLeft(int nPlayer)
+{
+    if (!gCoopAutosaveLeave || !canSave() || numplayers < 2)
+        return;
+    if (writeSlot(kCoopSlotAuto, gProfile[nPlayer].name, false, true))
+        LOG_F(INFO, "%s left: co-op game saved (mid-level, \"player left\")", gProfile[nPlayer].name);
+}
+
+bool coopDescribeSave(int nType, int nSlot, char *pzLevel, int nLevelSize, char *pzInfo, int nInfoSize)
 {
     static COOPSAVE save;
-    if (!readSaveFile(nSlot, &save))
+    char path[BMAX_PATH];
+    bool bOk = readSave(nType, nSlot, &save);
+    if (bOk && nType == kCoopSaveMid)
+        bOk = coopPath(kCoopSaveMid, nSlot, "sav", path) && fileExists(path);
+    if (!bOk)
     {
-        Bsnprintf(pzLevel, nLevelSize, "NO SAVE YET");
+        Bsnprintf(pzLevel, nLevelSize, "EMPTY");
         pzInfo[0] = '\0';
         return false;
     }
@@ -421,7 +738,8 @@ bool coopDescribeSave(int nSlot, char *pzLevel, int nLevelSize, char *pzInfo, in
         Bsnprintf(pzLevel, nLevelSize, "%s", save.szTitle);
     else
         Bsnprintf(pzLevel, nLevelSize, "E%dM%d %s", save.settings.episodeId+1, save.settings.levelId+1, save.szTitle);
-    Bsnprintf(pzInfo, nInfoSize, "%s - %d PLAYER%s", save.szSaved, save.nPlayers, save.nPlayers == 1 ? "" : "S");
+    // "10-11 18:42 2P": skip the year
+    Bsnprintf(pzInfo, nInfoSize, "%s %dP", save.szSaved[0] ? save.szSaved + 5 : "", save.nPlayers);
     Bstrupr(pzLevel);
     return true;
 }
@@ -429,7 +747,7 @@ bool coopDescribeSave(int nSlot, char *pzLevel, int nLevelSize, char *pzInfo, in
 bool coopContinueGame(int nSlot)
 {
     static COOPSAVE save;
-    if (!readSaveFile(nSlot, &save))
+    if (!readSave(kCoopSaveCarry, nSlot, &save))
         return false;
 
     PKT_STARTGAME const prev = gPacketStartGame;
@@ -443,7 +761,7 @@ bool coopContinueGame(int nSlot)
             broadcastLoadout(p);
     gCoopPending = true;
 
-    LOG_F(INFO, "Continuing co-op game from \"%s\" (E%dM%d, saved %s)", kCoopSaveFiles[nSlot],
+    LOG_F(INFO, "Continuing co-op game from carry-over slot %d (E%dM%d, saved %s)", nSlot+1,
           gPacketStartGame.episodeId+1, gPacketStartGame.levelId+1, save.szSaved);
 
     SetGameVanillaMode(0); // as StartNetGame()
@@ -451,6 +769,133 @@ bool coopContinueGame(int nSlot)
     gStartNewGame = 1;
     gGameMenuMgr.Deactivate();
     return true;
+}
+
+bool coopLoadMidLevel(int nSlot)
+{
+    static COOPSAVE save;
+    char path[BMAX_PATH];
+    if (!readSave(kCoopSaveMid, nSlot, &save) || !coopPath(kCoopSaveMid, nSlot, "sav", path))
+        return false;
+
+    FILE *fp = fopen(path, "rb");
+    if (!fp)
+        return false;
+    std::vector<char> data;
+    char buf[65536];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), fp)) > 0)
+        data.insert(data.end(), buf, buf + n);
+    fclose(fp);
+
+    char error[96];
+    if (!checkSaveHeader(data.data(), (int)data.size(), error, sizeof(error)))
+    {
+        viewSetMessage(error);
+        LOG_F(ERROR, "Co-op load: %s", error);
+        return false;
+    }
+
+    int const nFlags = gCoopMatchOrder ? kMidLevelMatchOrder : 0;
+    memset(gMidNames, 0, sizeof(gMidNames));
+    for (int i = 0; i < save.nPlayers; i++)
+        if (save.players[i].nSlot >= 0 && save.players[i].nSlot < kMaxPlayers)
+            Bstrncpyz(gMidNames[save.players[i].nSlot], save.players[i].szName[0] ? save.players[i].szName : "?", MAXPLAYERNAME);
+    uint32_t const uCRC = Bcrc32(data.data(), (int)data.size(), 0);
+    if (numplayers > 1)
+    {
+        // 244: offset, then up to 512 bytes of the file
+        int const nChunk = 512;
+        for (int nOffset = 0; nOffset < (int)data.size(); nOffset += nChunk)
+        {
+            int const nLen = ClipHigh(nChunk, (int)data.size() - nOffset);
+            char *pPacket = packet;
+            PutPacketByte(pPacket, 244);
+            PutPacketDWord(pPacket, nOffset);
+            PutPacketWord(pPacket, nLen);
+            PutPacketBuffer(pPacket, data.data() + nOffset, nLen);
+            netSendPacketAll(packet, pPacket - packet);
+        }
+        // 243: size, CRC, flags, the game settings of the save and its players' names
+        static_assert(10 + sizeof(PKT_STARTGAME) + sizeof(gMidNames) <= sizeof(packet), "co-op load packet too big");
+        char *pPacket = packet;
+        PutPacketByte(pPacket, 243);
+        PutPacketDWord(pPacket, (int)data.size());
+        PutPacketDWord(pPacket, (int)uCRC);
+        PutPacketByte(pPacket, nFlags);
+        PutPacketBuffer(pPacket, &save.settings, sizeof(PKT_STARTGAME));
+        PutPacketBuffer(pPacket, gMidNames, sizeof(gMidNames));
+        netSendPacketAll(packet, pPacket - packet);
+    }
+
+    LOG_F(INFO, "Loading co-op game from mid-level slot %d for everybody (%d bytes)", nSlot+1, (int)data.size());
+    Bstrncpyz(gMidLoadPath, path, sizeof(gMidLoadPath));
+    gMidSettings = save.settings;
+    gMidFlags = nFlags;
+    gMidLoadPending = true;
+    gGameMenuMgr.Deactivate();
+    return true;
+}
+
+void coopReceiveFilePart(char *pPacket)
+{
+    int const nOffset = GetPacketDWord(pPacket);
+    int const nLen = (uint16_t)GetPacketWord(pPacket);
+    if (nOffset < 0 || nOffset > (64 << 20) || nLen > 1024)
+        return;
+    if (nOffset == 0)
+        gMidFile.clear();
+    if ((int)gMidFile.size() < nOffset + nLen)
+        gMidFile.resize(nOffset + nLen);
+    memcpy(gMidFile.data() + nOffset, pPacket, nLen);
+}
+
+void coopReceiveLoadNow(char *pPacket)
+{
+    int const nSize = GetPacketDWord(pPacket);
+    uint32_t const uCRC = (uint32_t)GetPacketDWord(pPacket);
+    int const nFlags = GetPacketByte(pPacket);
+    PKT_STARTGAME settings;
+    GetPacketBuffer(pPacket, &settings, sizeof(PKT_STARTGAME));
+    char names[kMaxPlayers][MAXPLAYERNAME];
+    GetPacketBuffer(pPacket, names, sizeof(names));
+    for (int i = 0; i < kMaxPlayers; i++)
+        names[i][MAXPLAYERNAME-1] = '\0';
+
+    char error[96] = "The co-op save didn't arrive completely";
+    bool bOk = nSize == (int)gMidFile.size() && Bcrc32(gMidFile.data(), nSize, 0) == uCRC &&
+        checkSaveHeader(gMidFile.data(), nSize, error, sizeof(error));
+    char path[BMAX_PATH];
+    makeDirs();
+    if (bOk)
+    {
+        G_ModDirSnprintfLite(path, sizeof(path), "coopsaves/midlevel/received.sav");
+        FILE *fp = fopen(path, "wb");
+        bOk = fp && fwrite(gMidFile.data(), 1, nSize, fp) == (size_t)nSize;
+        if (fp)
+            fclose(fp);
+        Bsnprintf(error, sizeof(error), "Could not store the co-op save");
+    }
+    gMidFile.clear();
+    gMidFile.shrink_to_fit();
+    if (!bOk)
+    {
+        // the others are loading: this machine can't continue with them
+        LOG_F(ERROR, "Co-op load: %s", error);
+        ThrowError("%s.\nEverybody else is loading the host's co-op save, this game can't follow.", error);
+        return;
+    }
+    Bstrncpyz(gMidLoadPath, path, sizeof(gMidLoadPath));
+    gMidSettings = settings;
+    gMidFlags = nFlags;
+    memcpy(gMidNames, names, sizeof(gMidNames));
+    gMidLoadPending = true;
+}
+
+void coopFrame(void)
+{
+    if (gMidLoadPending)
+        midLevelExecute();
 }
 
 void coopReceiveLoadout(char *pPacket)
@@ -526,4 +971,20 @@ void coopApplyLoadouts(void)
         gCoopLoadout[p] = {};
 
     viewSetMessage("Co-op game continued");
+}
+
+void coopMigrateOldSaves(void)
+{
+    static const struct { const char *pzOld; int nSlot; } old[] = {
+        { "coopsave.txt", 0 }, { "coopsave_levelstart.txt", kCoopSlotAuto } };
+    for (auto const &o : old)
+    {
+        char from[BMAX_PATH], to[BMAX_PATH];
+        G_ModDirSnprintfLite(from, sizeof(from), o.pzOld);
+        if (!fileExists(from) || !coopPath(kCoopSaveCarry, o.nSlot, "txt", to) || fileExists(to))
+            continue;
+        makeDirs();
+        if (!rename(from, to))
+            LOG_F(INFO, "Moved co-op save \"%s\" to \"%s\"", from, to);
+    }
 }

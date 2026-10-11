@@ -20,6 +20,11 @@ class CGameMenu;
 class CGameMenuItemChain;
 
 extern CGameMenu menuOnline;
+extern CGameMenu menuCoopLoad;
+extern CGameMenu menuCoopSave;
 
 void SetupChosenMenus(void);
 void SetupOnlineMenu(CGameMenuItemChain *pItem);
+void SetupCoopLoadMenu(CGameMenuItemChain *pItem);
+void SetupCoopSaveMenu(CGameMenuItemChain *pItem);
+void OpenCoopSlotsMenu(int nType);

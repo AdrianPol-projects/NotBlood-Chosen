@@ -31,6 +31,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "chatpipe.h"
 #include "coopsave.h"
 #include "online.h"
+#include "timer.h"
 #include "config.h"
 #include "controls.h"
 #include "eventq.h"
@@ -77,7 +78,9 @@ char gNetAddress[48];
 int gNetPort = kNetDefaultPort;
 int gNetPortLocal = -1;
 
-const short kNetVersion = 0x248 | 0x4000; // 0x4000: co-op saves (packets 245/246, bCoopContinue)
+// 0x4000: NotBlood Chosen (co-op saves: packets 243-246, bCoopContinue); bits 10-13: its network
+// protocol number, bumped whenever packets change
+const short kNetVersion = 0x248 | 0x4000 | (1 << 10);
 
 PKT_STARTGAME gPacketStartGame;
 
@@ -90,7 +93,7 @@ ENetPeer *gNetENetPeer;
 ENetPeer *gNetPlayerPeer[kMaxPlayers];
 bool gNetENetInit = false;
 
-#define kENetFifoSize 2048
+#define kENetFifoSize 16384 // room for a mid-level co-op save arriving in one go
 
 //ENetPacket *gNetServerPacketFifo[kENetFifoSize];
 //int gNetServerPacketHead, gNetServerPacketTail;
@@ -113,6 +116,7 @@ struct PKT_CONNECTINFO {
     short numplayers;
     short connecthead;
     short connectpoint2[kMaxPlayers];
+    char szVersion[32]; // NotBlood Chosen: the host's version, so different versions are told apart right away
 };
 
 void netServerDisconnect(void)
@@ -528,8 +532,14 @@ void netGetPackets(void)
             netPlayerQuit(nPlayer);
             netWaitForEveryone(0);
             break;
-        case 245: // another player saved the co-op progress
-            coopReceiveSaveRequest(nPlayer);
+        case 243: // the host's mid-level co-op save is complete: load it
+            coopReceiveLoadNow(pPacket);
+            break;
+        case 244: // part of the host's mid-level co-op save
+            coopReceiveFilePart(pPacket);
+            break;
+        case 245: // another player saved the co-op game
+            coopReceiveSaveRequest(nPlayer, pPacket);
             break;
         case 246: // loadout for a continued co-op game
             coopReceiveLoadout(pPacket);
@@ -1195,6 +1205,7 @@ void netInitialize(bool bConsole)
         connectinfo.connecthead = connecthead;
         for (int i = 0; i < numplayers; i++)
             connectinfo.connectpoint2[i] = connectpoint2[i];
+        Bstrncpyz(connectinfo.szVersion, onlineVersion(), sizeof(connectinfo.szVersion));
         PutPacketBuffer(pPacket, &connectinfo, sizeof(connectinfo));
         ENetPacket *pEPacket = enet_packet_create(packet, pPacket-packet, ENET_PACKET_FLAG_RELIABLE);
         enet_host_broadcast(gNetENetServer, BLOOD_ENET_SERVICE, pEPacket);
@@ -1312,6 +1323,29 @@ void netInitialize(bool bConsole)
                         case BLOOD_SERVICE_CONNECTINFO:
                         {
                             PKT_CONNECTINFO *connectinfo = (PKT_CONNECTINFO*)pPacket;
+                            if (event.packet->dataLength < 1 + sizeof(PKT_CONNECTINFO) || strncmp(connectinfo->szVersion, onlineVersion(), sizeof(connectinfo->szVersion)))
+                            {
+                                char hostVersion[33] = "another NotBlood version";
+                                if (event.packet->dataLength >= 1 + sizeof(PKT_CONNECTINFO))
+                                    Bstrncpyz(hostVersion, connectinfo->szVersion, sizeof(hostVersion));
+                                Bsnprintf(buffer, sizeof(buffer), "The host runs %s, you have %s", hostVersion, onlineVersion());
+                                LOG_F(ERROR, "%s", buffer);
+                                enet_packet_destroy(event.packet);
+                                netClientDisconnect();
+                                netDeinitialize();
+                                netResetToSinglePlayer();
+                                if (!bConsole)
+                                {
+                                    for (uint32_t nStart = timerGetTicks(); timerGetTicks() - nStart < 5000 && !KB_KeyPressed(sc_Escape);)
+                                    {
+                                        handleevents();
+                                        viewLoadingScreen(gMenuPicnum, "Different versions", buffer, "Everybody needs the same version");
+                                        videoNextPage();
+                                    }
+                                    KB_ClearKeyDown(sc_Escape);
+                                }
+                                return;
+                            }
                             gInitialNetPlayers = gNetPlayers = numplayers = connectinfo->numplayers;
                             connecthead = connectinfo->connecthead;
                             for (int i = 0; i < numplayers; i++)
@@ -1500,6 +1534,8 @@ void faketimerhandler(void)
 
 void netPlayerQuit(int nPlayer)
 {
+    if (gGameStarted)
+        coopPlayerLeft(nPlayer); // mid-level co-op save, so the game can go on once they are back
     char buffer[128];
     sprintf(buffer, "\r%s\r left the game with %d frags.", gProfile[nPlayer].name, gPlayer[nPlayer].fragCount);
     int nPalette = gColorMsg && !VanillaMode() ? playerColorPalMessage(gPlayer[nPlayer].teamId) : 0;

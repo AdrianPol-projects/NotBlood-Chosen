@@ -22,6 +22,7 @@ See the GNU General Public License for more details.
 #include "mmulti.h"
 #include "common_game.h"
 #include "blood.h"
+#include "coopsave.h"
 #include "fx_man.h"
 #include "gamemenu.h"
 #include "globals.h"
@@ -32,6 +33,7 @@ See the GNU General Public License for more details.
 #include "screen.h"
 #include "sound.h"
 #include "view.h"
+#include "player.h"
 
 extern CGameMenuItemQAV itemBloodQAV;
 
@@ -174,8 +176,153 @@ void SetupOnlineMenu(CGameMenuItemChain *pItem)
     SetOnlineStatus(onlineStatusText());
 }
 
+// ---- CO-OP SAVES ---------------------------------------------------------------------------
+
+CGameMenu menuCoopLoad;
+CGameMenu menuCoopSlots;
+CGameMenu menuCoopSave;
+
+static void SetupCoopSlots(CGameMenuItemChain *);
+static void CoopSlotChosen(CGameMenuItemChain *);
+static void CoopSaveChosen(CGameMenuItemChain *);
+static void UpdateCoopOptions(CGameMenuItemZBool *);
+
+static int nCoopSlotsType;
+static char zCoopSlotsTitle[24];
+static char zCoopSlotText[kCoopSlots+1][40];
+static char zCoopSlotInfo[kCoopSlots+1][24];
+static char zCoopSaveText[kCoopSlots][40];
+static char zCoopSaveInfo[kCoopSlots][24];
+
+CGameMenuItemTitle itemCoopLoadTitle("LOAD CO-OP", 1, 160, 20, 2038);
+CGameMenuItemChain itemCoopLoadMid("CONTINUE WHERE YOU SAVED", 1, 0, 45, 320, 1, &menuCoopSlots, -1, SetupCoopSlots, kCoopSaveMid);
+CGameMenuItemText itemCoopLoadMidHelp("EVERYTHING AS IT WAS: POSITIONS, KEYS, ENEMIES", 3, 160, 63, 1);
+CGameMenuItemChain itemCoopLoadCarry("RESTART LEVEL WITH YOUR GEAR", 1, 0, 82, 320, 1, &menuCoopSlots, -1, SetupCoopSlots, kCoopSaveCarry);
+CGameMenuItemText itemCoopLoadCarryHelp("THE LEVEL STARTS OVER, EVERYBODY KEEPS WEAPONS AND ITEMS", 3, 160, 100, 1);
+CGameMenuItemZBool itemCoopLoadOrder("NEW PLAYERS GET:", 3, 46, 125, 228, false, UpdateCoopOptions, "LEFTOVER GEAR", "PITCHFORK ONLY");
+CGameMenuItemZBool itemCoopLoadLeave("AUTOSAVE WHEN A PLAYER LEAVES:", 3, 46, 137, 228, true, UpdateCoopOptions, NULL, NULL);
+CGameMenuItemText itemCoopLoadHelp1("PLAYERS GET THEIR GEAR BY NAME. NEW PLAYERS", 3, 160, 157, 1);
+CGameMenuItemText itemCoopLoadHelp2("START AT THE LEVEL START.", 3, 160, 167, 1);
+
+CGameMenuItemTitle itemCoopSlotsTitle(zCoopSlotsTitle, 1, 160, 20, 2038);
+#define COOP_SLOT_ITEM(n) CGameMenuItemChain itemCoopSlot##n(zCoopSlotText[n], 3, 20, 42 + n*13, 280, 0, NULL, -1, CoopSlotChosen, n, 0, zCoopSlotInfo[n]);
+COOP_SLOT_ITEM(0) COOP_SLOT_ITEM(1) COOP_SLOT_ITEM(2) COOP_SLOT_ITEM(3) COOP_SLOT_ITEM(4)
+COOP_SLOT_ITEM(5) COOP_SLOT_ITEM(6) COOP_SLOT_ITEM(7) COOP_SLOT_ITEM(8)
+static CGameMenuItemChain *const pCoopSlotItems[kCoopSlots+1] = { &itemCoopSlot0, &itemCoopSlot1, &itemCoopSlot2, &itemCoopSlot3,
+    &itemCoopSlot4, &itemCoopSlot5, &itemCoopSlot6, &itemCoopSlot7, &itemCoopSlot8 };
+
+CGameMenuItemTitle itemCoopSaveTitle("SAVE CO-OP", 1, 160, 20, 2038);
+#define COOP_SAVE_ITEM(n) CGameMenuItemChain itemCoopSave##n(zCoopSaveText[n], 3, 20, 45 + n*13, 280, 0, NULL, -1, CoopSaveChosen, n, 0, zCoopSaveInfo[n]);
+COOP_SAVE_ITEM(0) COOP_SAVE_ITEM(1) COOP_SAVE_ITEM(2) COOP_SAVE_ITEM(3)
+COOP_SAVE_ITEM(4) COOP_SAVE_ITEM(5) COOP_SAVE_ITEM(6) COOP_SAVE_ITEM(7)
+static CGameMenuItemChain *const pCoopSaveItems[kCoopSlots] = { &itemCoopSave0, &itemCoopSave1, &itemCoopSave2, &itemCoopSave3,
+    &itemCoopSave4, &itemCoopSave5, &itemCoopSave6, &itemCoopSave7 };
+CGameMenuItemText itemCoopSaveHelp("SAVED ON EVERY PLAYER'S MACHINE", 3, 160, 160, 1);
+
+static void UpdateCoopOptions(CGameMenuItemZBool *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    gCoopMatchOrder = itemCoopLoadOrder.at20;
+    gCoopAutosaveLeave = itemCoopLoadLeave.at20;
+}
+
+static void describeSlot(int nType, int nSlot, char *pzText, int nTextSize, char *pzInfo, int nInfoSize)
+{
+    char level[64];
+    bool bSave = coopDescribeSave(nType, nSlot, level, sizeof(level), pzInfo, nInfoSize);
+    const char *pzName = nSlot < kCoopSlots ? NULL : (nType == kCoopSaveCarry ? "LEVEL START" : "PLAYER LEFT");
+    char slot[16];
+    if (pzName)
+        Bsnprintf(slot, sizeof(slot), "%s:", pzName);
+    else
+        Bsnprintf(slot, sizeof(slot), "%d.", nSlot+1);
+    Bsnprintf(pzText, nTextSize, "%s %s", slot, bSave ? level : "EMPTY");
+    if (!bSave)
+        pzInfo[0] = 0;
+    Bstrupr(pzInfo);
+}
+
+void SetupCoopLoadMenu(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    itemCoopLoadOrder.at20 = gCoopMatchOrder != 0;
+    itemCoopLoadLeave.at20 = gCoopAutosaveLeave != 0;
+}
+
+static void SetupCoopSlots(CGameMenuItemChain *pItem)
+{
+    nCoopSlotsType = pItem->at30;
+    Bstrncpyz(zCoopSlotsTitle, nCoopSlotsType == kCoopSaveMid ? "CONTINUE" : "RESTART LEVEL", sizeof(zCoopSlotsTitle));
+    int nFocus = -1;
+    for (int i = 0; i <= kCoopSlots; i++)
+    {
+        describeSlot(nCoopSlotsType, i, zCoopSlotText[i], sizeof(zCoopSlotText[i]), zCoopSlotInfo[i], sizeof(zCoopSlotInfo[i]));
+        pCoopSlotItems[i]->bEnable = zCoopSlotInfo[i][0] != 0;
+        if (nFocus < 0 && pCoopSlotItems[i]->bEnable)
+            nFocus = i;
+    }
+    menuCoopSlots.SetFocusItem(pCoopSlotItems[nFocus < 0 ? 0 : nFocus]);
+}
+
+void OpenCoopSlotsMenu(int nType)
+{
+    CGameMenuItemChain *pItem = nType == kCoopSaveMid ? &itemCoopLoadMid : &itemCoopLoadCarry;
+    SetupCoopSlots(pItem);
+    gGameMenuMgr.Push(&menuCoopSlots, -1);
+}
+
+static void CoopSlotChosen(CGameMenuItemChain *pItem)
+{
+    if (numplayers > 1 && myconnectindex != connecthead)
+    {
+        viewSetMessage("Only the host can load a co-op game");
+        return;
+    }
+    int const nSlot = ClipRange(pItem->at30, 0, kCoopSlots);
+    bool const bOk = nCoopSlotsType == kCoopSaveMid ? coopLoadMidLevel(nSlot) : coopContinueGame(nSlot);
+    if (!bOk)
+        viewSetMessage("Could not load the co-op save");
+}
+
+void SetupCoopSaveMenu(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    for (int i = 0; i < kCoopSlots; i++)
+        describeSlot(kCoopSaveMid, i, zCoopSaveText[i], sizeof(zCoopSaveText[i]), zCoopSaveInfo[i], sizeof(zCoopSaveInfo[i]));
+}
+
+static void CoopSaveChosen(CGameMenuItemChain *pItem)
+{
+    coopRequestSave(ClipRange(pItem->at30, 0, kCoopSlots-1));
+    gGameMenuMgr.Deactivate();
+}
+
 void SetupChosenMenus(void)
 {
+    menuCoopLoad.Add(&itemCoopLoadTitle, false);
+    menuCoopLoad.Add(&itemCoopLoadMid, true);
+    menuCoopLoad.Add(&itemCoopLoadMidHelp, false);
+    menuCoopLoad.Add(&itemCoopLoadCarry, false);
+    menuCoopLoad.Add(&itemCoopLoadCarryHelp, false);
+    menuCoopLoad.Add(&itemCoopLoadOrder, false);
+    menuCoopLoad.Add(&itemCoopLoadLeave, false);
+    menuCoopLoad.Add(&itemCoopLoadHelp1, false);
+    menuCoopLoad.Add(&itemCoopLoadHelp2, false);
+    menuCoopLoad.Add(&itemBloodQAV, false);
+    itemCoopLoadOrder.tooltip_pzTextUpper = "What players who aren't in the save start with";
+    itemCoopLoadLeave.tooltip_pzTextUpper = "Saves the game when somebody leaves, to continue later";
+
+    menuCoopSlots.Add(&itemCoopSlotsTitle, false);
+    for (int i = 0; i <= kCoopSlots; i++)
+        menuCoopSlots.Add(pCoopSlotItems[i], i == 0);
+    menuCoopSlots.Add(&itemBloodQAV, false);
+
+    menuCoopSave.Add(&itemCoopSaveTitle, false);
+    for (int i = 0; i < kCoopSlots; i++)
+        menuCoopSave.Add(pCoopSaveItems[i], i == 0);
+    menuCoopSave.Add(&itemCoopSaveHelp, false);
+    menuCoopSave.Add(&itemBloodQAV, false);
+
     menuOnline.Add(&itemOnlineTitle, false);
     menuOnline.Add(&itemOnlineServer, false);
     menuOnline.Add(&itemOnlineKey, false);
