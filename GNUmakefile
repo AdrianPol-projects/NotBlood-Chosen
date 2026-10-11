@@ -505,6 +505,10 @@ blood_game_objs := \
 	common.cpp \
 	config.cpp \
 	coopsave.cpp \
+	online.cpp \
+	netrelay.cpp \
+	mods.cpp \
+	menuchosen.cpp \
 	controls.cpp \
 	credits.cpp \
 	db.cpp \

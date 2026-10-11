@@ -1,0 +1,875 @@
+//-------------------------------------------------------------------------
+/*
+This file is part of NotBlood.
+
+NotBlood is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License version 2
+as published by the Free Software Foundation.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+See the GNU General Public License for more details.
+*/
+//-------------------------------------------------------------------------
+
+// Online relay connection: WebSocket client (plain ws://), HMAC-SHA256 server key check and
+// the UDP <-> WebSocket tunnel for ENet. See netrelay.h. Self-contained on purpose (only
+// sockets and the C++ standard library), so it builds the same on every platform.
+
+#ifdef _WIN32
+# ifndef WIN32_LEAN_AND_MEAN
+#  define WIN32_LEAN_AND_MEAN
+# endif
+# include <winsock2.h>
+# include <ws2tcpip.h>
+typedef SOCKET sock_t;
+# define kBadSocket INVALID_SOCKET
+# define sockClose closesocket
+static int sockError(void) { return WSAGetLastError(); }
+static bool sockWouldBlock(int e) { return e == WSAEWOULDBLOCK || e == WSAEINPROGRESS || e == WSAEALREADY; }
+#else
+# include <sys/types.h>
+# include <sys/socket.h>
+# include <sys/select.h>
+# include <netinet/in.h>
+# include <netinet/tcp.h>
+# include <arpa/inet.h>
+# include <netdb.h>
+# include <fcntl.h>
+# include <unistd.h>
+# include <errno.h>
+typedef int sock_t;
+# define kBadSocket (-1)
+# define sockClose close
+static int sockError(void) { return errno; }
+static bool sockWouldBlock(int e) { return e == EWOULDBLOCK || e == EAGAIN || e == EINPROGRESS || e == EINTR; }
+#endif
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <deque>
+#include <map>
+#include <mutex>
+#include <random>
+#include <string>
+#include <thread>
+
+#include "netrelay.h"
+
+// ---- SHA-256 / HMAC ------------------------------------------------------------------------
+
+namespace {
+
+struct Sha256
+{
+    uint32_t h[8];
+    uint64_t len = 0;
+    uint8_t buf[64];
+    size_t fill = 0;
+
+    Sha256()
+    {
+        static const uint32_t init[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
+        memcpy(h, init, sizeof(h));
+    }
+
+    static uint32_t ror(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
+
+    void block(const uint8_t *p)
+    {
+        static const uint32_t k[64] = {
+            0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+            0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+            0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+            0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+            0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+            0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+            0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+            0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2 };
+        uint32_t w[64];
+        for (int i = 0; i < 16; i++)
+            w[i] = (uint32_t)p[i*4] << 24 | (uint32_t)p[i*4+1] << 16 | (uint32_t)p[i*4+2] << 8 | p[i*4+3];
+        for (int i = 16; i < 64; i++)
+        {
+            uint32_t s0 = ror(w[i-15], 7) ^ ror(w[i-15], 18) ^ (w[i-15] >> 3);
+            uint32_t s1 = ror(w[i-2], 17) ^ ror(w[i-2], 19) ^ (w[i-2] >> 10);
+            w[i] = w[i-16] + s0 + w[i-7] + s1;
+        }
+        uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+        for (int i = 0; i < 64; i++)
+        {
+            uint32_t t1 = hh + (ror(e, 6) ^ ror(e, 11) ^ ror(e, 25)) + ((e & f) ^ (~e & g)) + k[i] + w[i];
+            uint32_t t2 = (ror(a, 2) ^ ror(a, 13) ^ ror(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
+            hh = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
+        }
+        h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
+    }
+
+    void update(const void *data, size_t n)
+    {
+        const uint8_t *p = (const uint8_t *)data;
+        len += n;
+        while (n--)
+        {
+            buf[fill++] = *p++;
+            if (fill == 64)
+            {
+                block(buf);
+                fill = 0;
+            }
+        }
+    }
+
+    void final(uint8_t out[32])
+    {
+        uint64_t bits = len * 8;
+        uint8_t pad = 0x80;
+        update(&pad, 1);
+        pad = 0;
+        while (fill != 56)
+            update(&pad, 1);
+        for (int i = 7; i >= 0; i--)
+        {
+            uint8_t b = (uint8_t)(bits >> (i * 8));
+            update(&b, 1);
+        }
+        for (int i = 0; i < 8; i++)
+        {
+            out[i*4] = (uint8_t)(h[i] >> 24);
+            out[i*4+1] = (uint8_t)(h[i] >> 16);
+            out[i*4+2] = (uint8_t)(h[i] >> 8);
+            out[i*4+3] = (uint8_t)h[i];
+        }
+    }
+};
+
+std::string hmacSha256Hex(const std::string &key, const std::string &msg)
+{
+    uint8_t k[64] = {}, digest[32];
+    if (key.size() > 64)
+    {
+        Sha256 s;
+        s.update(key.data(), key.size());
+        s.final(k);
+    }
+    else
+        memcpy(k, key.data(), key.size());
+    uint8_t ipad[64], opad[64];
+    for (int i = 0; i < 64; i++)
+    {
+        ipad[i] = k[i] ^ 0x36;
+        opad[i] = k[i] ^ 0x5c;
+    }
+    Sha256 inner;
+    inner.update(ipad, 64);
+    inner.update(msg.data(), msg.size());
+    inner.final(digest);
+    Sha256 outer;
+    outer.update(opad, 64);
+    outer.update(digest, 32);
+    outer.final(digest);
+    std::string hex;
+    for (uint8_t b : digest)
+    {
+        char t[3];
+        snprintf(t, sizeof(t), "%02x", b);
+        hex += t;
+    }
+    return hex;
+}
+
+std::string base64(const uint8_t *p, size_t n)
+{
+    static const char tab[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    for (size_t i = 0; i < n; i += 3)
+    {
+        uint32_t v = p[i] << 16 | (i + 1 < n ? p[i+1] << 8 : 0) | (i + 2 < n ? p[i+2] : 0);
+        out += tab[v >> 18 & 63];
+        out += tab[v >> 12 & 63];
+        out += i + 1 < n ? tab[v >> 6 & 63] : '=';
+        out += i + 2 < n ? tab[v & 63] : '=';
+    }
+    return out;
+}
+
+// ---- sockets -------------------------------------------------------------------------------
+
+void setNonBlocking(sock_t s)
+{
+#ifdef _WIN32
+    u_long one = 1;
+    ioctlsocket(s, FIONBIO, &one);
+#else
+    fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK);
+#endif
+}
+
+sock_t udpLocalSocket(int *pPort)
+{
+    sock_t s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == kBadSocket)
+        return s;
+    sockaddr_in a = {};
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    a.sin_port = 0;
+    socklen_t al = sizeof(a);
+    if (bind(s, (sockaddr *)&a, sizeof(a)) != 0 || getsockname(s, (sockaddr *)&a, &al) != 0)
+    {
+        sockClose(s);
+        return kBadSocket;
+    }
+    setNonBlocking(s);
+    if (pPort)
+        *pPort = ntohs(a.sin_port);
+    return s;
+}
+
+// ---- relay state ---------------------------------------------------------------------------
+
+struct Relay
+{
+    std::mutex lock;
+    std::thread thread;
+    std::atomic<bool> stop { false };
+    std::atomic<int> status { kRelayIdle };
+    std::atomic<int> clientPort { 0 };
+    std::atomic<int> hostGamePort { 23513 };
+    std::atomic<unsigned> traffic { 0 };
+    std::string error;
+    std::deque<std::string> outText;  // main thread -> server
+    std::deque<std::string> inText;   // server -> main thread
+    std::string server, key, version;
+} g_relay;
+
+void setError(const std::string &e)
+{
+    std::lock_guard<std::mutex> l(g_relay.lock);
+    g_relay.error = e;
+}
+
+struct WsClient
+{
+    sock_t s = kBadSocket;
+    std::string in, out, frag;
+    int fragOp = 0;
+    std::mt19937 rng { std::random_device{}() };
+
+    ~WsClient() { if (s != kBadSocket) sockClose(s); }
+
+    void frame(int op, const void *data, size_t n)
+    {
+        std::string f;
+        f += (char)(0x80 | op);
+        if (n < 126)
+            f += (char)(0x80 | n);
+        else if (n < 65536)
+        {
+            f += (char)(0x80 | 126);
+            f += (char)(n >> 8);
+            f += (char)n;
+        }
+        else
+        {
+            f += (char)(0x80 | 127);
+            for (int i = 7; i >= 0; i--)
+                f += (char)((uint64_t)n >> (i * 8));
+        }
+        uint32_t m = rng();
+        uint8_t mask[4] = { (uint8_t)m, (uint8_t)(m >> 8), (uint8_t)(m >> 16), (uint8_t)(m >> 24) };
+        f.append((const char *)mask, 4);
+        size_t base = f.size();
+        f.append((const char *)data, n);
+        for (size_t i = 0; i < n; i++)
+            f[base + i] ^= mask[i & 3];
+        out += f;
+    }
+
+    // false when the connection is gone
+    bool flush(void)
+    {
+        while (!out.empty())
+        {
+            int n = send(s, out.data(), (int)std::min<size_t>(out.size(), 65536), 0
+#ifdef MSG_NOSIGNAL
+                | MSG_NOSIGNAL
+#endif
+            );
+            if (n > 0)
+                out.erase(0, n);
+            else if (n < 0 && sockWouldBlock(sockError()))
+                return true;
+            else
+                return false;
+        }
+        return true;
+    }
+
+    // reads what is available; false when the connection is gone
+    bool receive(void)
+    {
+        char buf[16384];
+        for (;;)
+        {
+            int n = recv(s, buf, sizeof(buf), 0);
+            if (n > 0)
+                in.append(buf, n);
+            else if (n < 0 && sockWouldBlock(sockError()))
+                return true;
+            else
+                return false;
+        }
+    }
+
+    // next complete message: 1 text, 2 binary, 8 close; 0 when none yet
+    int next(std::string &msg)
+    {
+        for (;;)
+        {
+            if (in.size() < 2)
+                return 0;
+            const uint8_t *p = (const uint8_t *)in.data();
+            int op = p[0] & 15;
+            bool fin = p[0] & 0x80;
+            bool masked = p[1] & 0x80;
+            uint64_t len = p[1] & 127;
+            size_t hdr = 2;
+            if (len == 126)
+            {
+                if (in.size() < 4)
+                    return 0;
+                len = p[2] << 8 | p[3];
+                hdr = 4;
+            }
+            else if (len == 127)
+            {
+                if (in.size() < 10)
+                    return 0;
+                len = 0;
+                for (int i = 0; i < 8; i++)
+                    len = len << 8 | p[2 + i];
+                hdr = 10;
+            }
+            size_t maskAt = hdr;
+            if (masked)
+                hdr += 4;
+            if (len > (64u << 20))
+                return 8;
+            if (in.size() < hdr + len)
+                return 0;
+            std::string payload = in.substr(hdr, (size_t)len);
+            if (masked)
+                for (size_t i = 0; i < payload.size(); i++)
+                    payload[i] ^= in[maskAt + (i & 3)];
+            in.erase(0, hdr + (size_t)len);
+            switch (op)
+            {
+            case 9:  // ping
+                frame(10, payload.data(), payload.size());
+                continue;
+            case 10: // pong
+                continue;
+            case 8:
+                return 8;
+            case 0:
+                frag += payload;
+                if (!fin)
+                    continue;
+                msg.swap(frag);
+                frag.clear();
+                return fragOp;
+            case 1:
+            case 2:
+                if (!fin)
+                {
+                    frag = payload;
+                    fragOp = op;
+                    continue;
+                }
+                msg.swap(payload);
+                return op;
+            default:
+                continue;
+            }
+        }
+    }
+};
+
+typedef std::chrono::steady_clock Clock;
+
+bool waitSocket(sock_t s, bool bWrite, int nMs)
+{
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(s, &fds);
+    timeval tv = { nMs / 1000, (nMs % 1000) * 1000 };
+    return select((int)s + 1, bWrite ? NULL : &fds, bWrite ? &fds : NULL, NULL, &tv) > 0;
+}
+
+// "host", "host:port", "ws://host[:port][/path]"
+void parseServer(const std::string &url, std::string &host, std::string &port, std::string &path)
+{
+    std::string u = url;
+    if (u.compare(0, 5, "ws://") == 0)
+        u = u.substr(5);
+    else if (u.compare(0, 7, "http://") == 0)
+        u = u.substr(7);
+    size_t slash = u.find('/');
+    path = slash == std::string::npos ? "/ws" : u.substr(slash);
+    if (path == "/")
+        path = "/ws";
+    u = u.substr(0, slash);
+    size_t colon = u.rfind(':');
+    if (colon != std::string::npos && u.find(':') == colon)
+    {
+        host = u.substr(0, colon);
+        port = u.substr(colon + 1);
+    }
+    else
+    {
+        host = u;
+        port = "80";
+    }
+}
+
+bool connectServer(WsClient &ws, const std::string &url)
+{
+    std::string host, port, path;
+    parseServer(url, host, port, path);
+    if (host.empty())
+    {
+        setError("No server address");
+        return false;
+    }
+    addrinfo hints = {}, *res = NULL;
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host.c_str(), port.c_str(), &hints, &res) != 0 || !res)
+    {
+        setError("Can't find server " + host);
+        return false;
+    }
+    bool bConnected = false;
+    for (addrinfo *a = res; a && !bConnected && !g_relay.stop; a = a->ai_next)
+    {
+        sock_t s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+        if (s == kBadSocket)
+            continue;
+        setNonBlocking(s);
+        int r = connect(s, a->ai_addr, (int)a->ai_addrlen);
+        if (r != 0 && !sockWouldBlock(sockError()))
+        {
+            sockClose(s);
+            continue;
+        }
+        auto t0 = Clock::now();
+        while (!g_relay.stop && Clock::now() - t0 < std::chrono::seconds(8))
+        {
+            if (waitSocket(s, true, 100))
+            {
+                int err = 0;
+                socklen_t el = sizeof(err);
+                getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&err, &el);
+                if (err == 0)
+                    bConnected = true;
+                break;
+            }
+        }
+        if (bConnected)
+            ws.s = s;
+        else
+            sockClose(s);
+    }
+    freeaddrinfo(res);
+    if (!bConnected)
+    {
+        setError("Can't connect to " + host);
+        return false;
+    }
+    int one = 1;
+    setsockopt(ws.s, IPPROTO_TCP, TCP_NODELAY, (const char *)&one, sizeof(one));
+#ifdef SO_NOSIGPIPE
+    setsockopt(ws.s, SOL_SOCKET, SO_NOSIGPIPE, (const char *)&one, sizeof(one));
+#endif
+
+    uint8_t nonce[16];
+    for (auto &b : nonce)
+        b = (uint8_t)ws.rng();
+    std::string req = "GET " + path + " HTTP/1.1\r\nHost: " + host + (port != "80" ? ":" + port : "") +
+        "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: " +
+        base64(nonce, sizeof(nonce)) + "\r\nUser-Agent: NotBlood\r\n\r\n";
+    ws.out = req;
+    auto t0 = Clock::now();
+    size_t end;
+    while ((end = ws.in.find("\r\n\r\n")) == std::string::npos)
+    {
+        if (g_relay.stop || Clock::now() - t0 > std::chrono::seconds(10))
+        {
+            setError("No answer from " + host);
+            return false;
+        }
+        if (!ws.flush() || (waitSocket(ws.s, false, 100) && !ws.receive()))
+        {
+            setError("Connection to " + host + " failed");
+            return false;
+        }
+    }
+    std::string head = ws.in.substr(0, end);
+    ws.in.erase(0, end + 4);
+    if (head.compare(0, 12, "HTTP/1.1 101") != 0)
+    {
+        std::string line = head.substr(0, head.find("\r\n"));
+        if (head.find(" 429") != std::string::npos)
+            setError("Server refused: too many connections or wrong keys");
+        else
+            setError("Not a NotBlood server (" + line + ")");
+        return false;
+    }
+    return true;
+}
+
+// waits for one text message during the login
+bool readText(WsClient &ws, std::string &msg, int nSeconds)
+{
+    auto t0 = Clock::now();
+    for (;;)
+    {
+        int op = ws.next(msg);
+        if (op == 1)
+            return true;
+        if (op == 8)
+            return false;
+        if (op == 2)
+            continue;
+        if (g_relay.stop || Clock::now() - t0 > std::chrono::seconds(nSeconds))
+            return false;
+        if (!ws.flush() || (waitSocket(ws.s, false, 100) && !ws.receive()))
+            return false;
+    }
+}
+
+std::string field(const std::string &s, int n)
+{
+    size_t a = 0;
+    while (n-- > 0)
+    {
+        a = s.find('\t', a);
+        if (a == std::string::npos)
+            return "";
+        a++;
+    }
+    size_t b = s.find('\t', a);
+    return s.substr(a, b == std::string::npos ? std::string::npos : b - a);
+}
+
+void relayThread(void)
+{
+#ifdef _WIN32
+    WSADATA wsa;
+    WSAStartup(MAKEWORD(2, 2), &wsa);
+#endif
+    std::string server, key, version;
+    {
+        std::lock_guard<std::mutex> l(g_relay.lock);
+        server = g_relay.server;
+        key = g_relay.key;
+        version = g_relay.version;
+    }
+
+    WsClient ws;
+    std::map<int, sock_t> peers;  // host: remote player id -> local socket towards the ENet server
+    sock_t client = kBadSocket;    // joining player: socket the local ENet client talks to
+    sockaddr_in clientAddr = {};
+    bool bClientKnown = false;
+    std::string msg;
+    auto lastPing = Clock::now();
+
+    auto finish = [&](const char *pzError) {
+        if (pzError && !g_relay.stop)
+            setError(pzError);
+        g_relay.status = kRelayClosed;
+    };
+
+    if (!connectServer(ws, server))
+    {
+        finish(NULL);
+        goto done;
+    }
+    if (!readText(ws, msg, 10) || field(msg, 0) != "challenge")
+    {
+        finish("The server didn't answer");
+        goto done;
+    }
+    msg = "auth\t" + hmacSha256Hex(key, field(msg, 1)) + "\t1\t" + version;
+    ws.frame(1, msg.data(), msg.size());
+    if (!readText(ws, msg, 10))
+    {
+        finish("The server didn't answer");
+        goto done;
+    }
+    if (field(msg, 0) != "ok")
+    {
+        finish(field(msg, 0) == "error" ? field(msg, 1).c_str() : "The server refused the connection");
+        goto done;
+    }
+    g_relay.status = kRelayOnline;
+
+    while (!g_relay.stop)
+    {
+        {
+            std::lock_guard<std::mutex> l(g_relay.lock);
+            while (!g_relay.outText.empty())
+            {
+                const std::string &t = g_relay.outText.front();
+                if (ws.out.size() < (1u << 20) || t.compare(0, 6, "stats\t") != 0)  // drop stats while the line is slow
+                    ws.frame(1, t.data(), t.size());
+                g_relay.outText.pop_front();
+            }
+        }
+        if (Clock::now() - lastPing > std::chrono::seconds(20))
+        {
+            ws.frame(9, "", 0);  // keeps proxies from closing an idle connection
+            lastPing = Clock::now();
+        }
+        if (!ws.flush())
+        {
+            finish("Lost the connection to the server");
+            break;
+        }
+
+        fd_set rd, wr;
+        FD_ZERO(&rd);
+        FD_ZERO(&wr);
+        sock_t maxfd = ws.s;
+        FD_SET(ws.s, &rd);
+        if (!ws.out.empty())
+            FD_SET(ws.s, &wr);
+        for (auto &p : peers)
+        {
+            FD_SET(p.second, &rd);
+            maxfd = std::max(maxfd, p.second);
+        }
+        if (client != kBadSocket)
+        {
+            FD_SET(client, &rd);
+            maxfd = std::max(maxfd, client);
+        }
+        timeval tv = { 0, 10000 };
+        if (select((int)maxfd + 1, &rd, &wr, NULL, &tv) < 0)
+        {
+#ifndef _WIN32
+            if (errno == EINTR)
+                continue;
+#endif
+            finish("Network error");
+            break;
+        }
+
+        uint8_t dgram[4096];
+        for (auto &p : peers)
+        {
+            if (!FD_ISSET(p.second, &rd))
+                continue;
+            int n;
+            while ((n = recv(p.second, (char *)dgram + 1, sizeof(dgram) - 1, 0)) > 0)
+            {
+                dgram[0] = (uint8_t)p.first;
+                ws.frame(2, dgram, n + 1);
+                g_relay.traffic++;
+            }
+        }
+        if (client != kBadSocket && FD_ISSET(client, &rd))
+        {
+            int n;
+            sockaddr_in from;
+            socklen_t fl = sizeof(from);
+            while ((n = recvfrom(client, (char *)dgram, sizeof(dgram), 0, (sockaddr *)&from, &fl)) > 0)
+            {
+                clientAddr = from;
+                bClientKnown = true;
+                ws.frame(2, dgram, n);
+                g_relay.traffic++;
+                fl = sizeof(from);
+            }
+        }
+
+        if (FD_ISSET(ws.s, &rd) && !ws.receive())
+        {
+            finish("Lost the connection to the server");
+            break;
+        }
+        int op;
+        bool bClosed = false;
+        while ((op = ws.next(msg)) != 0)
+        {
+            if (op == 8)
+            {
+                bClosed = true;
+                break;
+            }
+            if (op == 2)
+            {
+                g_relay.traffic++;
+                if (client != kBadSocket)
+                {
+                    if (bClientKnown)
+                        sendto(client, msg.data(), (int)msg.size(), 0, (sockaddr *)&clientAddr, sizeof(clientAddr));
+                }
+                else if (msg.size() > 1)
+                {
+                    auto it = peers.find((uint8_t)msg[0]);
+                    if (it != peers.end())
+                    {
+                        sockaddr_in to = {};
+                        to.sin_family = AF_INET;
+                        to.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+                        to.sin_port = htons((uint16_t)g_relay.hostGamePort);
+                        sendto(it->second, msg.data() + 1, (int)msg.size() - 1, 0, (sockaddr *)&to, sizeof(to));
+                    }
+                }
+                continue;
+            }
+            std::string cmd = field(msg, 0);
+            if (cmd == "peer_join")
+            {
+                int id = atoi(field(msg, 1).c_str());
+                if (!peers.count(id))
+                {
+                    sock_t s = udpLocalSocket(NULL);
+                    if (s != kBadSocket)
+                        peers[id] = s;
+                }
+            }
+            else if (cmd == "peer_leave")
+            {
+                auto it = peers.find(atoi(field(msg, 1).c_str()));
+                if (it != peers.end())
+                {
+                    sockClose(it->second);
+                    peers.erase(it);
+                }
+            }
+            else if (cmd == "joined" && client == kBadSocket)
+            {
+                int port = 0;
+                client = udpLocalSocket(&port);
+                g_relay.clientPort = port;
+            }
+            std::lock_guard<std::mutex> l(g_relay.lock);
+            if (g_relay.inText.size() < 256)
+                g_relay.inText.push_back(msg);
+        }
+        if (bClosed)
+        {
+            finish("The server closed the connection");
+            break;
+        }
+    }
+    if (g_relay.stop && ws.s != kBadSocket)
+    {
+        ws.frame(8, "", 0);
+        ws.flush();
+    }
+
+done:
+    for (auto &p : peers)
+        sockClose(p.second);
+    if (client != kBadSocket)
+        sockClose(client);
+    g_relay.clientPort = 0;
+    if (g_relay.status != kRelayClosed)
+        g_relay.status = kRelayClosed;
+    if (ws.s != kBadSocket)
+    {
+        sockClose(ws.s);
+        ws.s = kBadSocket;
+    }
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
+
+} // namespace
+
+void relayConnect(const char *pzServer, const char *pzKey, const char *pzGameVersion)
+{
+    relayClose();
+    {
+        std::lock_guard<std::mutex> l(g_relay.lock);
+        g_relay.server = pzServer;
+        g_relay.key = pzKey;
+        g_relay.version = pzGameVersion;
+        g_relay.error.clear();
+        g_relay.outText.clear();
+        g_relay.inText.clear();
+    }
+    g_relay.stop = false;
+    g_relay.clientPort = 0;
+    g_relay.traffic = 0;
+    g_relay.status = kRelayConnecting;
+    g_relay.thread = std::thread(relayThread);
+}
+
+void relayClose(void)
+{
+    if (g_relay.thread.joinable())
+    {
+        g_relay.stop = true;
+        g_relay.thread.join();
+    }
+    g_relay.stop = false;
+    g_relay.status = kRelayIdle;
+    g_relay.clientPort = 0;
+}
+
+int relayStatus(void)
+{
+    return g_relay.status;
+}
+
+const char *relayError(void)
+{
+    static std::string copy;
+    std::lock_guard<std::mutex> l(g_relay.lock);
+    copy = g_relay.error;
+    return copy.c_str();
+}
+
+void relaySendText(const char *pzText)
+{
+    std::lock_guard<std::mutex> l(g_relay.lock);
+    if (g_relay.outText.size() < 512)
+        g_relay.outText.push_back(pzText);
+}
+
+bool relayReadText(char *pBuffer, int nSize)
+{
+    std::lock_guard<std::mutex> l(g_relay.lock);
+    if (g_relay.inText.empty() || nSize <= 0)
+        return false;
+    snprintf(pBuffer, nSize, "%s", g_relay.inText.front().c_str());
+    g_relay.inText.pop_front();
+    return true;
+}
+
+void relaySetHostGamePort(int nPort)
+{
+    g_relay.hostGamePort = nPort;
+}
+
+int relayClientPort(void)
+{
+    return g_relay.clientPort;
+}
+
+unsigned relayTraffic(void)
+{
+    return g_relay.traffic;
+}

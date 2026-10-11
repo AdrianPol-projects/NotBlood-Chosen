@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "callback.h"
 #include "chatpipe.h"
 #include "coopsave.h"
+#include "online.h"
 #include "config.h"
 #include "controls.h"
 #include "eventq.h"
@@ -167,6 +168,7 @@ void netClientDisconnect(void)
 
 void netResetToSinglePlayer(void)
 {
+    onlineGameEnded();
     myconnectindex = connecthead = 0;
     gInitialNetPlayers = gNetPlayers = numplayers = 1;
     connectpoint2[0] = -1;
@@ -1080,7 +1082,7 @@ void netInitialize(bool bConsole)
         {
             char buffer[128];
             sprintf(buffer, "Waiting for players (%i\\%i)", numplayers, gNetPlayers);
-            viewLoadingScreen(gMenuPicnum, "Network Game", NULL, buffer);
+            viewLoadingScreen(gMenuPicnum, "Network Game", onlineWaitText(), buffer);
             videoNextPage();
         }
         while (numplayers < gNetPlayers)
@@ -1093,6 +1095,14 @@ void netInitialize(bool bConsole)
             }
             if (!bConsole && KB_KeyPressed(sc_Escape))
             {
+                netServerDisconnect();
+                netDeinitialize();
+                netResetToSinglePlayer();
+                return;
+            }
+            if (onlineConnectionLost())
+            {
+                LOG_F(ERROR, "Lost the connection to the online server");
                 netServerDisconnect();
                 netDeinitialize();
                 netResetToSinglePlayer();
@@ -1122,7 +1132,7 @@ void netInitialize(bool bConsole)
                     {
                         char buffer[128];
                         sprintf(buffer, "Waiting for players (%i\\%i)", numplayers, gNetPlayers);
-                        viewLoadingScreen(gMenuPicnum, "Network Game", NULL, buffer);
+                        viewLoadingScreen(gMenuPicnum, "Network Game", onlineWaitText(), buffer);
                         videoNextPage();
                     }
                     break;
@@ -1154,7 +1164,7 @@ void netInitialize(bool bConsole)
                     {
                         char buffer[128];
                         sprintf(buffer, "Waiting for players (%i\\%i)", numplayers, gNetPlayers);
-                        viewLoadingScreen(gMenuPicnum, "Network Game", NULL, buffer);
+                        viewLoadingScreen(gMenuPicnum, "Network Game", onlineWaitText(), buffer);
                         videoNextPage();
                     }
                     break;
@@ -1216,7 +1226,7 @@ void netInitialize(bool bConsole)
         LOG_F(INFO, "%s", buffer);
         if (!bConsole)
         {
-            viewLoadingScreen(gMenuPicnum, "Network Game", NULL, buffer);
+            viewLoadingScreen(gMenuPicnum, "Network Game", onlineWaitText(), buffer);
             videoNextPage();
         }
         if (gNetPortLocal != -1)
@@ -1274,6 +1284,14 @@ void netInitialize(bool bConsole)
                 netResetToSinglePlayer();
                 return;
             }
+            if (onlineConnectionLost())
+            {
+                LOG_F(ERROR, "Lost the connection to the online server");
+                netClientDisconnect();
+                netDeinitialize();
+                netResetToSinglePlayer();
+                return;
+            }
             enet_host_service(gNetENetClient, NULL, 0);
             if (enet_host_check_events(gNetENetClient, &event) > 0)
             {
@@ -1320,6 +1338,7 @@ void netInitialize(bool bConsole)
         LOG_F(INFO, "Successfully connected to server");
     }
     gNetENetInit = true;
+    onlineGameStarted();
     gGameOptions.nGameType = kGameTypeBloodBath;
 #else
     netResetToSinglePlayer();

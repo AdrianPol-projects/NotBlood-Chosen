@@ -38,6 +38,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "config.h"
 #include "controls.h"
 #include "coopsave.h"
+#include "online.h"
 #include "credits.h"
 #include "demo.h"
 #include "dude.h"
@@ -100,6 +101,8 @@ bool bCustomName = false;
 char bAddUserMap = false;
 char bUseInternalMap = false, bUseInternalE = 0, bUseInternalL = 0;
 bool bNoDemo = false;
+static int nOnlineHostPlayers;
+static bool bOnlineJoin;
 bool bQuickNetStart = false;
 bool bQuickStart = false;
 bool bNoAutoLoad = false;
@@ -1488,6 +1491,11 @@ SWITCH switches[] = {
     { "netretry", 63, 0 },
     { "clientport", 64, 1 },
     { "chatpipe", 65, 1 },
+    { "online_server", 66, 1 },
+    { "online_key", 67, 1 },
+    { "online_lobby", 68, 1 },
+    { "online_host", 69, 1 },
+    { "online_join", 70, 1 },
     { NULL, 0, 0 }
 };
 
@@ -1554,6 +1562,11 @@ void PrintHelp(void)
 #if defined(_WIN32) // Windows only
         "-chatpipe [0-1]\tSet the chatpipe functionality\n"
 #endif
+        "-online_host [2-8]\tHost an online lobby for that many players\n"
+        "-online_join [lobby]\tJoin an online lobby\n"
+        "-online_server [address]\tOnline server to use\n"
+        "-online_key [key]\tKey of the online server\n"
+        "-online_lobby [name]\tName of the lobby to host\n"
         ;
 #ifdef WM_MSGBOX_WINDOW
     Bsnprintf(tempbuf, sizeof(tempbuf), APPNAME " %s", s_buildRev);
@@ -1933,6 +1946,32 @@ void ParseOptions(void)
             ThrowError("Chatpipe not supported on this platform");
 #endif
             break;
+        case 66: // online_server
+            if (OptArgc < 1)
+                ThrowError("Missing argument");
+            Bstrncpyz(gOnlineServer, OptArgv[0], sizeof(gOnlineServer));
+            break;
+        case 67: // online_key
+            if (OptArgc < 1)
+                ThrowError("Missing argument");
+            Bstrncpyz(gOnlineKey, OptArgv[0], sizeof(gOnlineKey));
+            break;
+        case 68: // online_lobby
+            if (OptArgc < 1)
+                ThrowError("Missing argument");
+            Bstrncpyz(gOnlineLobby, OptArgv[0], sizeof(gOnlineLobby));
+            break;
+        case 69: // online_host
+            if (OptArgc < 1)
+                ThrowError("Missing argument");
+            nOnlineHostPlayers = ClipRange(atoi(OptArgv[0]), 2, kMaxPlayers);
+            break;
+        case 70: // online_join
+            if (OptArgc < 1)
+                ThrowError("Missing argument");
+            Bstrncpyz(gOnlineLobby, OptArgv[0], sizeof(gOnlineLobby));
+            bOnlineJoin = true;
+            break;
         }
     }
 #if 0
@@ -2235,6 +2274,15 @@ int app_main(int argc, char const * const * argv)
     LOG_F(INFO, "Initializing network users");
     if (gNetPortOverride) // do this after cfg has loaded
         Bsnprintf(zNetPortBuffer, sizeof(zNetPortBuffer), "%d", gNetPort);
+    if (nOnlineHostPlayers && onlineHostLobby(nOnlineHostPlayers, true))
+    {
+        gNetPlayers = nOnlineHostPlayers;
+        gNetMode = NETWORK_SERVER;
+    }
+    else if (bOnlineJoin && onlineJoinLobby(gOnlineLobby, true))
+        gNetMode = NETWORK_CLIENT;
+    else if (nOnlineHostPlayers || bOnlineJoin)
+        LOG_F(ERROR, "Online: %s", onlineStatusText());
     netInitialize(true);
     scrSetGameMode(gSetup.fullscreen, gSetup.xdim, gSetup.ydim, gSetup.bpp);
     if (gCustomPalette || gCustomPaletteGrayscale || gCustomPaletteInvert) // load modified palette
@@ -2314,6 +2362,7 @@ RESTART:
     static int nGammaMenu = !gSetup.quickstart ? 0 : 40;
     while (!gQuitGame)
     {
+        onlineFrame();
         bool bDraw;
         if (gGameStarted)
         {

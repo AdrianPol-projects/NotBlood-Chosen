@@ -29,6 +29,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "demo.h"
 #include "config.h"
 #include "coopsave.h"
+#include "menuchosen.h"
 #include "gamemenu.h"
 #include "globals.h"
 #include "loadsave.h"
@@ -1290,9 +1291,10 @@ char zNetAddressBuffer[48] = "localhost";
 char zNetPortBuffer[6] = "23513";
 
 CGameMenuItemTitle itemNetworkTitle("MULTIPLAYER", 1, 160, 20, 2038);
-CGameMenuItemChain itemNetworkHost("HOST A GAME", 1, 0, 70, 320, 1, &menuNetworkHost, -1, SetupNetworkHostMenu, 0);
-CGameMenuItemChain itemNetworkJoin("JOIN A GAME", 1, 0, 90, 320, 1, &menuNetworkJoin, -1, SetupNetworkJoinMenu, 0);
-CGameMenuItemChain itemNetworkPlayer("PLAYER SETUP", 1, 0, 110, 320, 1, &menuOptionsPlayer, -1, NULL, 0);
+CGameMenuItemChain itemNetworkHost("HOST A GAME", 1, 0, 60, 320, 1, &menuNetworkHost, -1, SetupNetworkHostMenu, 0);
+CGameMenuItemChain itemNetworkJoin("JOIN A GAME", 1, 0, 80, 320, 1, &menuNetworkJoin, -1, SetupNetworkJoinMenu, 0);
+CGameMenuItemChain itemNetworkOnline("ONLINE", 1, 0, 100, 320, 1, &menuOnline, -1, SetupOnlineMenu, 0);
+CGameMenuItemChain itemNetworkPlayer("PLAYER SETUP", 1, 0, 120, 320, 1, &menuOptionsPlayer, -1, NULL, 0);
 
 CGameMenuItemTitle itemNetworkHostTitle("HOST A GAME", 1, 160, 20, 2038);
 CGameMenuItemSlider itemNetworkHostPlayerNum("PLAYER NUMBER:", 3, 66, 70, 180, 1, 2, kMaxPlayers, 1, NULL, -1, -1, kMenuSliderValue);
@@ -2676,6 +2678,7 @@ void SetupMenus(void)
     SetupControlsMenu();
     SetupJoystickMenu();
     SetupNetworkMenu();
+    SetupChosenMenus();
 }
 
 void UpdateNetworkMenus(void)
@@ -4570,6 +4573,7 @@ void SetupNetworkMenu(void)
     menuNetwork.Add(&itemNetworkTitle, false);
     menuNetwork.Add(&itemNetworkHost, true);
     menuNetwork.Add(&itemNetworkJoin, false);
+    menuNetwork.Add(&itemNetworkOnline, false);
     menuNetwork.Add(&itemNetworkPlayer, false);
     menuNetwork.Add(&itemBloodQAV, false);
 

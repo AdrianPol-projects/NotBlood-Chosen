@@ -347,12 +347,12 @@ function renderPlayers(l) {
     if (settings.health) {
       const hp = Math.max(0, p.health);
       out.push(`<div class="row2"><span class="lbl">Health</span><b>${p.alive === 0 ? "dead" : hp}</b></div>
-        <div class="bar"><i style="width:${Math.min(100, hp / 2)}%;background:${hp > 100 ? "#3fe0d0" : hp > 50 ? "var(--good)" : hp > 25 ? "var(--warn)" : "var(--bad)"}"></i></div>`);
+        <div class="bar"><i style="width:${Math.min(100, hp)}%;background:${hp > 100 ? "#3fe0d0" : hp > 50 ? "var(--good)" : hp > 25 ? "var(--warn)" : "var(--bad)"}"></i></div>`);
     }
     const ar = p.armor || [0, 0, 0];
     if (settings.armor) {
       const tot = ar[0] + ar[1] + ar[2];
-      out.push(`<div class="row2"><span class="lbl">Armor</span><b>${tot}</b></div><div class="bar armor"><i style="width:${Math.min(100, tot / 6)}%"></i></div>`);
+      out.push(`<div class="row2"><span class="lbl">Armor</span><b>${tot}</b></div><div class="bar armor"><i style="width:${Math.min(100, tot / 2)}%"></i></div>`);
     }
     if (settings.armor3) out.push(`<div class="armor3"><span title="Fire armor">🔥 ${ar[0]}</span><span title="Body armor">🛡 ${ar[1]}</span><span title="Spirit armor">✦ ${ar[2]}</span></div>`);
     if (settings.weapon) out.push(`<div class="row2"><span class="weapon">${esc(p.weapon || WEAPONS[p.wid] || "")}</span><span>${p.ammo >= 0 ? p.ammo + " ammo" : ""}</span></div>`);

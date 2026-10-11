@@ -33,6 +33,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "common_game.h"
 #include "config.h"
 #include "coopsave.h"
+#include "online.h"
 #include "blood.h"
 #include "demo.h"
 #include "gamemenu.h"
@@ -1369,6 +1370,10 @@ int32_t registerosdcommands(void)
         { "net_address","sets network address used for multiplayer", (void *)zNetAddressBuffer, CVAR_STRING|CVAR_FUNCPTR, 0, 48 },
         { "net_chatpipe","enable/disable chatpipe used for nukemnet multiplayer (requires restart)", (void *)&gChatPipeUse, CVAR_BOOL, 0, 1 },
         { "net_port","sets network port used for multiplayer", (void *)zNetPortBuffer, CVAR_STRING|CVAR_FUNCPTR, 0, 6 },
+        { "net_online_server","online server for internet games (address or address:port)", (void *)gOnlineServer, CVAR_STRING, 0, sizeof(gOnlineServer) },
+        { "net_online_key","secret key of the online server", (void *)gOnlineKey, CVAR_STRING, 0, sizeof(gOnlineKey) },
+        { "net_online_lobby","lobby name for online games", (void *)gOnlineLobby, CVAR_STRING, 0, sizeof(gOnlineLobby) },
+        { "net_online_lanstats","show LAN games you host on the online server's dashboard", (void *)&gOnlineReportLan, CVAR_BOOL, 0, 1 },
 //
 //        { "osdhightile", "enable/disable hires art replacements for console text", (void *)&osdhightile, CVAR_BOOL, 0, 1 },
 //        { "osdscale", "adjust console text size", (void *)&osdscale, CVAR_FLOAT|CVAR_FUNCPTR, 1, 4 },

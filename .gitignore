@@ -126,3 +126,5 @@ project.xcworkspace/
 /third_party/
 *.ipa
 a.out
+/notblood
+/notblood.exe
