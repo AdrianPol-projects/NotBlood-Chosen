@@ -1,3 +1,27 @@
+# NotBlood Chosen
+
+[NotBlood](https://github.com/clipmove/NotBlood) (a Blood source port) with co-op saves, internet play without port forwarding, a live game dashboard, a MODS menu and a LAN game finder, for **Windows, Linux, macOS, Android and iPad**. Every player in a network game needs the same version; all platforms of one version play together.
+
+**Downloads**
+* Windows, Linux, macOS, Android: [NotBlood-Chosen releases](https://github.com/AdrianPol-projects/NotBlood-Chosen/releases)
+* iPad (unsigned IPA for sideloading): [NotBlood-iOS releases](https://github.com/AdrianPol-projects/NotBlood-iOS/releases)
+
+Unzip, copy your Blood files (One Unit Whole Blood: CD, GOG or Steam) next to the game and start it. The README in each download explains the rest.
+
+**What's new compared to NotBlood**
+* **Co-op saves**, 8 slots, saved on every player's machine. Load *where you saved* (positions, keys, enemies) or *restart the level with your gear*. Players get their saves by name, new players start with the pitchfork, missing players leave the level. The game saves itself when a player leaves.
+* **Online lobbies** through your own relay server ([server/](server/README.md)): host or find lobbies, protected by a server key, no port forwarding.
+* **Live dashboard** in the browser: lobbies, players' health, armor, weapons, keys, a live level map, an event list, big-screen mode, and you choose what it shows.
+* **MODS menu**: add-on episodes (`addons/`, e.g. Cryptic Passage) and mods (`mods/` folders, `.zip`, `.grp`, `.pk3`). A mod that breaks the start is switched off again.
+* **FIND LAN GAMES**, your address on the host screen, clear messages when versions or mods differ.
+* Cutscenes from the CD's `movie` folder in any upper/lower case.
+* **Touch devices**: on-screen controls, gyro aiming, resolutions from 100 % down to 25 %, touch buttons hide while a controller is connected.
+* **macOS** app for Apple Silicon and Intel that needs no administrator; **Android** keeps everything in the `NotBlood` folder of the main storage.
+
+Building: `release.yml` (desktop and Android), `platform/Android`, `platform/iOS`; the relay server is in `server/`.
+
+---
+
 <p align="center">
   <!-- logo -->
   <a href="https://github.com/clipmove/NotBlood" target="_blank"><img src="https://raw.githubusercontent.com/clipmove/NotBlood/master/.github/workflows/logo.png"></a>
