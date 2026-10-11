@@ -88,8 +88,9 @@ jobs:
           path: build.log
           if-no-files-found: ignore
 
+      # only the ios branch publishes; test branches keep the IPA as a workflow artifact
       - name: Publish to "ios-latest" release
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: github.ref_name == 'ios' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
