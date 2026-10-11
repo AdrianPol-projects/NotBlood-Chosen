@@ -27,7 +27,7 @@ void *gl4es_GetProcAddress(const char *name);
 }
 #endif
 
-extern "C" int eduke32_android_main(int argc, char const *argv[]);
+extern "C" int eduke32_android_main(int argc, char *argv[]);
 
 static char const kSharedFolder[] = "/storage/emulated/0/NotBlood";
 static char const kReadmeName[] = "PUT BLOOD FILES HERE.txt";
@@ -348,10 +348,10 @@ void ios_glstartupok(void)
 extern "C" int SDL_main(int argc, char *argv[])
 {
     // everything (game data, config, saves) lives in the game folder
-    char const **newargv = (char const **)calloc(argc + 2, sizeof(char *));
+    char **newargv = (char **)calloc(argc + 2, sizeof(char *));
     int newargc = 0;
-    newargv[newargc++] = argc > 0 ? argv[0] : "notblood";
-    newargv[newargc++] = "-usecwd";
+    newargv[newargc++] = argc > 0 ? argv[0] : (char *)"notblood";
+    newargv[newargc++] = (char *)"-usecwd";
     for (int i = 1; i < argc; i++)
         newargv[newargc++] = argv[i];
     newargv[newargc] = NULL;

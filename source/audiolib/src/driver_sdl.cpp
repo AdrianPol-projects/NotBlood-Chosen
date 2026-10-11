@@ -31,7 +31,7 @@
 #include "sdl_inc.h"
 #include "vfs.h"
 
-#ifdef __ANDROID__
+#ifdef EDUKE32_ANDROID_LEGACY
 #include "duke3d.h"
 #include "android.h"
 #endif
@@ -178,7 +178,7 @@ int SDLDrv_PCM_Init(int *mixrate, int *numchannels, void * initdata)
     }
 
     int chunksize = 512;
-#ifdef __ANDROID__
+#ifdef EDUKE32_ANDROID_LEGACY
     chunksize = droidinfo.audio_buffer_size;
 #endif
 

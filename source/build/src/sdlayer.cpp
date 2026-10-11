@@ -35,6 +35,9 @@
 
 #ifdef __ANDROID__
 # include <android/log.h>
+# ifdef EDUKE32_IOS
+#  include "iosbits.h" // NotBlood's Android port runs the iPad code (androidbits.cpp)
+# endif
 #elif defined EDUKE32_IOS
 # include "iosbits.h"
 # include <mach/mach.h>
@@ -477,7 +480,7 @@ static void sighandler(int signum)
 }
 #endif
 
-#ifdef __ANDROID__
+#ifdef EDUKE32_ANDROID_LEGACY
 int mobile_halted = 0;
 #ifdef __cplusplus
 extern "C"
@@ -583,9 +586,9 @@ void sdlayer_sethints()
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nCmdShow)
 #elif defined __ANDROID__
 # ifdef __cplusplus
-extern "C" int eduke32_android_main(int argc, char const *argv[]);
+extern "C" int eduke32_android_main(int argc, char *argv[]);
 # endif
-int eduke32_android_main(int argc, char const *argv[])
+int eduke32_android_main(int argc, char *argv[])
 #elif defined GEKKO
 int SDL_main(int argc, char *argv[])
 #elif defined EDUKE32_IOS
@@ -665,7 +668,7 @@ int main(int argc, char *argv[])
 
     buildkeytranslationtable();
 
-#ifdef __ANDROID__
+#ifdef EDUKE32_ANDROID_LEGACY
     SDL_SetEventFilter(sdlayer_mobilefilter, NULL);
 #endif
 
@@ -2446,7 +2449,7 @@ void videoEndDrawing(void)
 //
 // showframe() -- update the display
 //
-#ifdef __ANDROID__
+#ifdef EDUKE32_ANDROID_LEGACY
 extern "C" void AndroidDrawControls();
 #endif
 
@@ -2458,7 +2461,7 @@ void videoShowFrame(int32_t w)
     if (sdl_resize.x || sdl_minimized)
         return;
 
-#ifdef __ANDROID__
+#ifdef EDUKE32_ANDROID_LEGACY
     if (mobile_halted) return;
 #endif
 
@@ -2471,7 +2474,7 @@ void videoShowFrame(int32_t w)
                 fullscreen_tint_gl(palfadergb.r, palfadergb.g, palfadergb.b, palfadedelta);
             fullscreen_tint_gl_blood();
 
-#ifdef __ANDROID__
+#ifdef EDUKE32_ANDROID_LEGACY
             AndroidDrawControls();
 #endif
         }
@@ -3300,7 +3303,7 @@ int32_t handleevents_pollsdl(void)
 
 int32_t handleevents(void)
 {
-#ifdef __ANDROID__
+#ifdef EDUKE32_ANDROID_LEGACY
     if (mobile_halted) return 0;
 #endif
 

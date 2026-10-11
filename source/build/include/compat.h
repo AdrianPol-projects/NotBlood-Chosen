@@ -356,6 +356,10 @@ template <typename... Args> static inline void SILENCE_UNUSED(Args const & ...) 
 #if defined __ANDROID__ && defined NOTBLOOD_ANDROID
 # define EDUKE32_IOS
 #endif
+// EDuke32's own (removed) Android port: android.h, droidinput, AndroidDrawControls, ...
+#if defined __ANDROID__ && !defined NOTBLOOD_ANDROID
+# define EDUKE32_ANDROID_LEGACY
+#endif
 
 
 ////////// Architecture detection //////////

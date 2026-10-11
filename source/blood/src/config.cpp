@@ -43,7 +43,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "iosbits.h"
 #endif
 
-#ifdef __ANDROID__
+#ifdef EDUKE32_ANDROID_LEGACY
 # include "android.h"
 #endif
 
@@ -377,7 +377,7 @@ void CONFIG_SetDefaults(void)
 {
     scripthandle = -1;
 
-#ifdef __ANDROID__
+#ifdef EDUKE32_ANDROID_LEGACY
     droidinput.forward_sens = 5.f;
     droidinput.gameControlsAlpha = 0.5;
     droidinput.hideStick = 0;
@@ -425,7 +425,7 @@ void CONFIG_SetDefaults(void)
 
 #if defined(_WIN32)
     MixRate = 44100;
-#elif defined __ANDROID__
+#elif defined EDUKE32_ANDROID_LEGACY
     MixRate = droidinfo.audio_sample_rate;
 #else
     MixRate = 48000;
