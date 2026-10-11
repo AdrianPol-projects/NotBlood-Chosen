@@ -248,6 +248,16 @@ struct Relay
     std::deque<std::string> outText;  // main thread -> server
     std::deque<std::string> inText;   // server -> main thread
     std::string server, key, version;
+
+    // quitting during an online game: a still running std::thread would abort the program
+    ~Relay()
+    {
+        if (thread.joinable())
+        {
+            stop = true;
+            thread.join();
+        }
+    }
 } g_relay;
 
 void setError(const std::string &e)
