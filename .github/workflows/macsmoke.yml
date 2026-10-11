@@ -1,0 +1,57 @@
+name: mac smoke test
+'on':
+  push:
+    branches: [macdebug]
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Get release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download latest -R ${{ github.repository }} -p '*macos.zip'
+          unzip -q *.zip
+          sw_vers; uname -m
+          codesign -dvvv NotBlood/NotBlood.app 2>&1 | head -20
+          codesign --verify --deep --strict --verbose=2 NotBlood/NotBlood.app || true
+          otool -L NotBlood/NotBlood.app/Contents/MacOS/NotBlood
+      - name: Run directly
+        run: |
+          cd NotBlood
+          ./NotBlood.app/Contents/MacOS/NotBlood > run1.txt 2>&1 &
+          pid=$!
+          sleep 15
+          screencapture -x ../shot-direct.png || true
+          if kill -0 $pid 2>/dev/null; then echo STILL RUNNING; kill -9 $pid; else wait $pid; echo "exit $?"; fi
+          tail -150 run1.txt
+          ls -la
+          tail -150 notblood.log || true
+      - name: Run with open
+        run: |
+          rm -f NotBlood/notblood.log
+          open NotBlood/NotBlood.app
+          sleep 15
+          screencapture -x shot-open.png || true
+          pgrep -lx NotBlood || echo "not running"
+          pkill -9 -x NotBlood || true
+          tail -150 NotBlood/notblood.log || true
+      - name: Crash reports
+        if: always()
+        run: |
+          sleep 10
+          ls -la ~/Library/Logs/DiagnosticReports/ || true
+          for f in ~/Library/Logs/DiagnosticReports/NotBlood*; do echo "== $f"; head -c 30000 "$f"; echo; done
+          ls -la ~/Documents/NotBlood || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shots-${{ matrix.os }}
+          path: |
+            shot-*.png
+            NotBlood/*.log
+            NotBlood/run1.txt
