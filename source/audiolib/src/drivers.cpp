@@ -39,7 +39,7 @@
 # include "driver_winmm.h"
 #endif
 
-#ifdef __linux__
+#if defined __linux__ && !defined __ANDROID__ // ALSA: desktop Linux only
 # include "driver_alsa.h"
 #endif
 
@@ -176,7 +176,7 @@ static struct
     // ALSA MIDI synthesiser
     {
         "ALSA",
-    #ifdef __linux__
+    #if defined __linux__ && !defined __ANDROID__
         ALSADrv_GetError,
         ALSADrv_ErrorString,
 
