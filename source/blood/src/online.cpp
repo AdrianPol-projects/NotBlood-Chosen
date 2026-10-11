@@ -546,7 +546,7 @@ void onlineFrame(void)
             return;
         nLastTry = timerGetTicks();
         lobbyNameFor(zLobbyName, sizeof(zLobbyName));
-        std::string name = std::string(zLobbyName) + " (LAN)";
+        std::string name = std::string(zLobbyName) + " - LAN";
         std::string cmd = "report\t" + name.substr(0, 24) + "\t" + std::to_string(gNetPlayers) + "\t" + cleanField(playerName()) +
             "\t" + cleanField(modCurrentName()) + "\t" + onlineVersion();
         relaySendText(cmd.c_str());
