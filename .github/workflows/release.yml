@@ -171,9 +171,53 @@ jobs:
           path: ./NotBlood.apk
           if-no-files-found: error
 
+  build-ios:
+    name: iPad / iPhone (unsigned IPA)
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    runs-on: macos-latest
+    env:
+      GL4ES_COMMIT: ec16bedd8819c475326f4f1a3063772c6d986e06
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch SDL2 and gl4es
+        run: |
+          mkdir -p third_party
+          curl -fsSL -o sdl2.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-${SDL_VERSION}.tar.gz"
+          tar xzf sdl2.tar.gz -C third_party
+          curl -fsSL -o gl4es.tar.gz "https://github.com/ptitSeb/gl4es/archive/${GL4ES_COMMIT}.tar.gz"
+          tar xzf gl4es.tar.gz -C third_party
+          for p in platform/iOS/gl4es/*.patch; do
+            patch -d "third_party/gl4es-${GL4ES_COMMIT}" -p1 --forward < "$p"
+          done
+      - name: Build
+        run: |
+          set -o pipefail
+          cmake -S platform/iOS -B build-ios -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DSDL2_SOURCE_DIR="$PWD/third_party/SDL2-${SDL_VERSION}" \
+            -DGL4ES_SOURCE_DIR="$PWD/third_party/gl4es-${GL4ES_COMMIT}" \
+            -DNOTBLOOD_BUILD=${{ github.run_number }}
+          cmake --build build-ios --config Release --target NotBlood -- \
+            -sdk iphoneos -quiet \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" 2>&1 | tail -40
+      - name: Package IPA
+        run: |
+          APP=$(find build-ios -type d -name NotBlood.app -path '*Release-iphoneos*' | head -n 1)
+          test -n "$APP" || { echo "NotBlood.app not found"; exit 1; }
+          mkdir -p ipa/Payload
+          cp -R "$APP" ipa/Payload/
+          (cd ipa && zip -qry ../NotBlood.ipa Payload)
+          ls -la NotBlood.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notblood-ios
+          path: ./NotBlood.ipa
+          if-no-files-found: error
+
   publish:
     name: Publish
-    needs: [build-linux, build-windows, build-macos, build-android]
+    needs: [build-linux, build-windows, build-macos, build-android, build-ios]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -207,7 +251,8 @@ jobs:
           cp package/release/movie.txt "$dir/movie/Put the movie files here.txt"
           (cd pkg/macos && zip -9 -r -y "../../NotBlood-Chosen-$version-macos.zip" NotBlood)
           cp artifacts/notblood-android/NotBlood.apk "NotBlood-Chosen-$version-android.apk"
-          ls -l *.zip *.apk
+          cp artifacts/notblood-ios/NotBlood.ipa "NotBlood-Chosen-$version-ios.ipa"
+          ls -l *.zip *.apk *.ipa
       - name: Publish to the "latest" release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -219,7 +264,7 @@ jobs:
             exit 0
           fi
           TITLE="NotBlood Chosen $VERSION (build ${{ github.run_number }})"
-          files=$(ls NotBlood-Chosen-*.zip NotBlood-Chosen-*.apk)
+          files=$(ls NotBlood-Chosen-*.zip NotBlood-Chosen-*.apk NotBlood-Chosen-*.ipa)
           if gh release view latest >/dev/null 2>&1; then
             # drop the zips of the previous build, their names carry the version
             for a in $(gh release view latest --json assets -q '.assets[].name'); do
