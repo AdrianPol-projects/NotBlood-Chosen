@@ -98,7 +98,7 @@ char *osx_gethomedir(void)
     if (Cpath)
         returnpath = Xstrdup(Cpath);
 
-    [path release];
+    // NSHomeDirectory() isn't ours to release: releasing it freed it under the rest of the program
 
     return returnpath;
 }
@@ -116,47 +116,24 @@ char *osx_getsupportdir(int32_t local)
             returnpath = Xstrdup(Cpath);
     }
 
-    [paths release];
+    // the array is autoreleased: not ours to release
 
     return returnpath;
 }
 
 char *osx_getappdir(void)
 {
-    CFBundleRef mainBundle;
-    CFURLRef resUrl, fullUrl;
-    CFStringRef str;
-    const char *s;
+    // CFBundleGetMainBundle() isn't ours to release: releasing it (as this did before) freed the
+    // app's bundle and macOS crashed at startup in the keyboard setup. fileSystemRepresentation
+    // also works for folders with non-ASCII names, which CFStringGetCStringPtr() didn't.
     char *dir = NULL;
-
-    mainBundle = CFBundleGetMainBundle();
-    if (!mainBundle) {
-        return NULL;
+    @autoreleasepool
+    {
+        NSString *path = [[NSBundle mainBundle] resourcePath];
+        const char *s = path ? [path fileSystemRepresentation] : NULL;
+        if (s)
+            dir = Xstrdup(s);
     }
-
-    resUrl = CFBundleCopyResourcesDirectoryURL(mainBundle);
-    CFRelease(mainBundle);
-    if (!resUrl) {
-        return NULL;
-    }
-    fullUrl = CFURLCopyAbsoluteURL(resUrl);
-    if (fullUrl) {
-        CFRelease(resUrl);
-        resUrl = fullUrl;
-    }
-
-    str = CFURLCopyFileSystemPath(resUrl, kCFURLPOSIXPathStyle);
-    CFRelease(resUrl);
-    if (!str) {
-        return NULL;
-    }
-
-    s = CFStringGetCStringPtr(str, CFStringGetSystemEncoding());
-    if (s) {
-        dir = Xstrdup(s);
-    }
-    CFRelease(str);
-
     return dir;
 }
 
@@ -173,7 +150,7 @@ char *osx_getapplicationsdir(int32_t local)
             returnpath = Xstrdup(Cpath);
     }
 
-    [paths release];
+    // the array is autoreleased: not ours to release
 
     return returnpath;
 }
@@ -191,7 +168,7 @@ char *osx_getdocumentsdir(int32_t local)
             returnpath = Xstrdup(Cpath);
     }
 
-    [paths release];
+    // the array is autoreleased: not ours to release
 
     return returnpath;
 }
