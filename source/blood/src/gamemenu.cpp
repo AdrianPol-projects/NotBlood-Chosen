@@ -43,6 +43,11 @@ CGameMenuMgr gGameMenuMgr;
 extern CGameMenuItemQAV itemBloodQAV;
 static CGameMenuItemZEdit *pGameMenuItemZEdit = NULL;
 
+bool gameMenuEditingText(void)
+{
+    return CGameMenuMgr::m_bActive && pGameMenuItemZEdit && pGameMenuItemZEdit->at30;
+}
+
 CMenuTextMgr::CMenuTextMgr()
 {
     at0 = -1;

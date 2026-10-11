@@ -480,3 +480,6 @@ public:
 
 extern CMenuTextMgr gMenuTextMgr;
 extern CGameMenuMgr gGameMenuMgr;
+
+// a text field (server, key, address, name, ...) is being typed into
+bool gameMenuEditingText(void);

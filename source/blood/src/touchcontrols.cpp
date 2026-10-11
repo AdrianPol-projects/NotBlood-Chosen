@@ -1836,9 +1836,11 @@ void beginFrame(void)
         g_tapKeyRelease = -1;
     }
 
-    // chat in multiplayer: bring up the on-screen keyboard
+    // chat in multiplayer, or typing into a menu field (server, key, lobby, address, name):
+    // bring up the on-screen keyboard
     static bool typingKeyboard;
-    bool const typing = gGameStarted && gInputMode == INPUT_MODE_2;
+    bool const typing = (gGameStarted && gInputMode == INPUT_MODE_2) ||
+        gameMenuEditingText();
     if (typing && !typingKeyboard && !SDL_IsTextInputActive())
         SDL_StartTextInput();
     else if (!typing && typingKeyboard && SDL_IsTextInputActive())
