@@ -25,6 +25,7 @@ const SETTINGS = [
     ["health", "Health", true], ["armor", "Armor (total)", true], ["armor3", "Armor: fire / body / spirit", false],
     ["weapon", "Current weapon and ammo", true], ["weapons", "All weapons", true], ["keys", "Keys", true],
     ["items", "Inventory items", false], ["powerups", "Active power-ups", true], ["frags", "Frags and deaths", false],
+    ["ping", "Ping to the server (online games)", false],
   ]],
   ["Level", [
     ["level", "Level name and difficulty", true], ["time", "Level time", true], ["kills", "Enemies killed", true], ["secrets", "Secrets found", true],
@@ -37,14 +38,22 @@ const SETTINGS = [
     ["feed", "Event list", true], ["autoopen", "Open the game automatically when only one is running", true],
   ]],
 ];
+// choices with more than on/off: key, title, [value, label]..., the first is the default
+const CHOICES = [
+  ["theme", "Look", [["modern", "Modern"], ["blood", "Blood: dark, blood red, gothic letters"]]],
+  ["mapstyle", "Map style", [["game", "Like the map in the game (Tab)"], ["modern", "Modern: every height change in red"]]],
+  ["textsize", "Text size", [["1", "Normal"], ["0.85", "Small"], ["1.3", "Large (TV)"], ["1.7", "Huge (far away TV)"]]],
+];
 const settings = Object.assign(
   Object.fromEntries(SETTINGS.flatMap(([, items]) => items.map(([k, , d]) => [k, d]))),
-  { textsize: "1" },
+  Object.fromEntries(CHOICES.map(([k, , opts]) => [k, opts[0][0]])),
   store.get("nbl-settings", {}),
 );
 function saveSettings() { store.set("nbl-settings", settings); applySettings(); }
 function applySettings() {
   document.documentElement.style.setProperty("--scale", settings.textsize);
+  document.body.classList.toggle("theme-blood", settings.theme === "blood");
+  document.querySelector('meta[name="theme-color"]').content = settings.theme === "blood" ? "#070202" : "#0d0b0b";
   $("#feed-wrap").classList.toggle("hidden", !settings.feed);
   $(".game-grid").classList.toggle("no-map", !settings.map);
   $("#map-wrap").classList.toggle("hidden", !settings.map);
@@ -64,13 +73,15 @@ function buildSettings() {
     }
     body.appendChild(fs);
   }
-  const fs = document.createElement("fieldset");
-  fs.innerHTML = `<legend>Text size</legend><select aria-label="Text size">
-    <option value="0.85">Small</option><option value="1">Normal</option><option value="1.3">Large (TV)</option><option value="1.7">Huge (far away TV)</option></select>`;
-  const sel = fs.querySelector("select");
-  sel.value = settings.textsize;
-  sel.addEventListener("change", () => { settings.textsize = sel.value; saveSettings(); resizeMap(); });
-  body.appendChild(fs);
+  for (const [k, title, opts] of CHOICES) {
+    const fs = document.createElement("fieldset");
+    fs.innerHTML = `<legend>${esc(title)}</legend><select aria-label="${esc(title)}">${
+      opts.map(([v, label]) => `<option value="${esc(v)}">${esc(label)}</option>`).join("")}</select>`;
+    const sel = fs.querySelector("select");
+    sel.value = settings[k];
+    sel.addEventListener("change", () => { settings[k] = sel.value; saveSettings(); resizeMap(); });
+    body.appendChild(fs);
+  }
 }
 
 // ---- connection -----------------------------------------------------------------------------
@@ -343,6 +354,12 @@ function renderPlayers(l) {
     const col = PLAYER_COLORS[p.id % 8];
     const out = [`<div class="card ${p.alive === 0 ? "dead" : ""}" style="--pc:${col}">`,
       `<div class="head"><span class="pname">${esc(p.name)}</span>${settings.frags && p.frags !== undefined ? `<span class="frags">${p.frags} frags · ${p.deaths} deaths</span>` : ""}</div>`];
+    const net = settings.ping && l.net && l.net[p.name];
+    if (net) {
+      const ms = net.ping;
+      out.push(`<div class="row2 ping"><span class="lbl">Ping</span><span><b style="color:${ms < 80 ? "var(--good)" : ms < 160 ? "var(--warn)" : "var(--bad)"}">${ms} ms</b>` +
+        `<span class="muted"> · avg ${net.avg} · max ${net.max}${net.pauses ? ` · ${net.pauses} pauses` : ""}</span></span></div>`);
+    }
     if (p.health === undefined) return out.join("") + `<span class="muted">Waiting&hellip;</span></div>`;
     if (settings.health) {
       const hp = Math.max(0, p.health);
@@ -425,8 +442,10 @@ function drawMap() {
   const m = maps[l.name];
   $("#map-empty").classList.toggle("hidden", !!m);
   const W = canvas.width, H = canvas.height;
+  // "game": like Blood's own map (Tab): black, solid walls only, thin light grey lines
+  const gameStyle = settings.mapstyle === "game";
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#070606";
+  ctx.fillStyle = gameStyle ? "#000" : "#070606";
   ctx.fillRect(0, 0, W, H);
   if (!m) return;
   const [minx, miny, maxx, maxy] = m.bounds;
@@ -448,14 +467,16 @@ function drawMap() {
   ctx.rotate(rot);
   ctx.scale(scale, scale);
   ctx.translate(-cx, -cy);
-  const lw = 1.3 * (window.devicePixelRatio || 1) / scale;
+  const lw = (gameStyle ? 1 : 1.3) * Math.max(1, window.devicePixelRatio || 1) * Math.sqrt(parseFloat(settings.textsize)) / scale;
   const w = m.walls;
   ctx.lineWidth = lw;
-  ctx.strokeStyle = "rgba(200,40,40,.45)";
-  ctx.beginPath();
-  for (let i = 0; i + 4 < w.length + 1; i += 5) if (w[i + 4]) { ctx.moveTo(w[i], w[i + 1]); ctx.lineTo(w[i + 2], w[i + 3]); }
-  ctx.stroke();
-  ctx.strokeStyle = "rgba(236,228,224,.85)";
+  if (!gameStyle) {
+    ctx.strokeStyle = "rgba(200,40,40,.45)";
+    ctx.beginPath();
+    for (let i = 0; i + 4 < w.length + 1; i += 5) if (w[i + 4]) { ctx.moveTo(w[i], w[i + 1]); ctx.lineTo(w[i + 2], w[i + 3]); }
+    ctx.stroke();
+  }
+  ctx.strokeStyle = gameStyle ? "#c7c7c7" : "rgba(236,228,224,.85)";
   ctx.beginPath();
   for (let i = 0; i + 4 < w.length + 1; i += 5) if (!w[i + 4]) { ctx.moveTo(w[i], w[i + 1]); ctx.lineTo(w[i + 2], w[i + 3]); }
   ctx.stroke();

@@ -25,7 +25,9 @@ import logging
 import os
 import re
 import secrets
+import struct
 import time
+from collections import deque
 from pathlib import Path
 
 from aiohttp import WSMsgType, web
@@ -46,10 +48,19 @@ MAX_MAP = 4 * 1024 * 1024
 AUTH_TIMEOUT = 15
 HISTORY_KEEP = 100
 DASH_INTERVAL = 0.2
+PING_INTERVAL = 2.0     # WebSocket ping to every game: measures its ping and notices dead connections
+DEAD_AFTER = 45         # no pong for this long: the game is gone (ENet itself gives up after ~30 s)
+SEND_QUEUE_MAX = 4000   # game packets waiting for one player; beyond that they are dropped (ENet resends)
+PAUSE_LOG = 2.0         # a player whose packets stop for this long during a game gets a log line
+# Behind Cloudflare (and Caddy) every connection comes from 127.0.0.1; with TRUST_PROXY=1 the real
+# address is taken from CF-Connecting-IP, which Cloudflare sets itself. X-Forwarded-For is never
+# used: its first entry is whatever the client put there.
+TRUST_PROXY = os.environ.get("TRUST_PROXY", "0") == "1"
 
 log = logging.getLogger("relay")
 
 NAME_RE = re.compile(r"^[A-Za-z0-9 _.\-]{1,24}$")
+WALL_CHARS = str.maketrans("", "", "0123456789,- ")
 
 
 def clean_name(s, limit=24):
@@ -58,9 +69,16 @@ def clean_name(s, limit=24):
 
 
 def client_ip(request):
-    return (request.headers.get("CF-Connecting-IP")
-            or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-            or request.remote or "?")
+    if TRUST_PROXY:
+        ip = request.headers.get("CF-Connecting-IP", "").strip()
+        if ip:
+            return ip
+    return request.remote or "?"
+
+
+def fmt_duration(sec):
+    sec = int(sec)
+    return "%dh%02dm" % (sec // 3600, sec % 3600 // 60) if sec >= 3600 else "%dm%02ds" % (sec // 60, sec % 60)
 
 
 class Guard:
@@ -117,6 +135,16 @@ class Lobby:
         self.map_id = None
         self.levels = []
         self.player_names = set()
+        self.net_log = {}  # player name -> connection summary of players who left (for the history)
+
+    def conns(self):
+        return ([self.host] if self.host else []) + list(self.clients.values())
+
+    def net(self):
+        """Ping of each player to this server, for the dashboard (online lobbies only)."""
+        if self.kind != "online":
+            return None
+        return {c.player_name: c.net_summary() for c in self.conns() if c.rtt_n}
 
     def summary(self):
         return {
@@ -133,6 +161,7 @@ class Lobby:
             "map_id": self.map_id,
             "stats": self.stats,
             "stats_age": round(time.time() - self.stats_time, 1) if self.stats_time else None,
+            "net": self.net(),
         }
 
 
@@ -161,11 +190,16 @@ class Relay:
             del self.lobbies[lobby.name.lower()]
         if lobby.started:
             players = sorted(lobby.player_names)
+            net = dict(lobby.net_log)
+            if lobby.kind == "online":
+                for c in lobby.conns():
+                    net.setdefault(c.player_name, c.net_summary(final=True))
             self.history.append({
                 "name": lobby.name, "kind": lobby.kind, "host": lobby.host_name, "players": players,
                 "mod": lobby.mod, "started": lobby.started, "ended": time.time(),
                 "levels": lobby.levels[-20:],
                 "final": lobby.stats,
+                "net": net or None,
             })
             self.history = self.history[-HISTORY_KEEP:]
             self.save_history()
@@ -183,28 +217,134 @@ relay = Relay()
 
 
 class Conn:
+    """One game's WebSocket.
+
+    Everything sent to a game goes through its own queue and writer task, so a slow or stalled
+    player never holds up the loop that reads (and passes on) another player's packets."""
+
     def __init__(self, ws, ip):
         self.ws = ws
         self.ip = ip
         self.lobby = None
+        self.lobby_name = None
         self.peer_id = 0
         self.player_name = ""
         self.is_host = False
-        self.send_lock = asyncio.Lock()
+        self.queue = deque()
+        self.wake = asyncio.Event()
+        self.closing = False
+        self.writer = asyncio.create_task(self.write_loop())
+        # connection quality, logged when the game leaves and kept in the game history
+        self.opened = time.time()
+        self.reason = "connection closed"
+        self.frames_in = self.frames_out = self.bytes_in = self.bytes_out = 0
+        self.dropped = 0
+        self.last_frame = None
+        self.max_pause = 0.0
+        self.pauses = 0
+        self.rtt = 0.0
+        self.rtt_sum = 0.0
+        self.rtt_n = 0
+        self.rtt_max = 0.0
+        self.last_pong = time.monotonic()
+
+    def push(self, item):
+        if not self.closing:
+            self.queue.append(item)
+            self.wake.set()
 
     async def text(self, *fields):
-        if not self.ws.closed:
-            try:
-                await self.ws.send_str("\t".join(str(f) for f in fields))
-            except Exception:
-                pass
+        self.push("\t".join(str(f) for f in fields))
 
     async def binary(self, data):
-        if not self.ws.closed:
-            try:
-                await self.ws.send_bytes(data)
-            except Exception:
-                pass
+        if len(self.queue) >= SEND_QUEUE_MAX:
+            self.dropped += 1  # this game stopped reading; ENet sends lost packets again
+            return
+        self.frames_out += 1
+        self.bytes_out += len(data)
+        self.push(data)
+
+    async def write_loop(self):
+        try:
+            while True:
+                while not self.queue:
+                    self.wake.clear()
+                    if self.closing:
+                        return
+                    await self.wake.wait()
+                item = self.queue.popleft()
+                if isinstance(item, (bytes, bytearray)):
+                    await self.ws.send_bytes(item)
+                else:
+                    await self.ws.send_str(item)
+        except Exception:
+            pass  # the connection is gone; its reader notices
+
+    async def finish(self):
+        """Send what is still queued (like host_left), then stop the writer."""
+        self.closing = True
+        self.wake.set()
+        try:
+            await asyncio.wait_for(asyncio.shield(self.writer), 5)
+        except Exception:
+            self.writer.cancel()
+
+    def got_frame(self, size, playing):
+        now = time.monotonic()
+        self.frames_in += 1
+        self.bytes_in += size
+        if playing and self.last_frame is not None:
+            pause = now - self.last_frame
+            if pause >= 1.0:
+                self.pauses += 1
+                if pause > self.max_pause:
+                    self.max_pause = pause
+                if pause >= PAUSE_LOG:
+                    log.info("%s: no game packets for %.1f s (lobby %r)", self.player_name, pause, self.lobby_name)
+        self.last_frame = now
+
+    def got_pong(self, data):
+        now = time.monotonic()
+        self.last_pong = now
+        if len(data) == 8:
+            rtt = (now - struct.unpack("!d", data)[0]) * 1000
+            if 0 <= rtt < 60000:
+                self.rtt = rtt
+                self.rtt_sum += rtt
+                self.rtt_n += 1
+                self.rtt_max = max(self.rtt_max, rtt)
+
+    def net_summary(self, final=False):
+        d = {"ping": round(self.rtt), "avg": round(self.rtt_sum / self.rtt_n) if self.rtt_n else None,
+             "max": round(self.rtt_max), "pauses": self.pauses, "dropped": self.dropped}
+        if final:
+            d.update(reason=self.reason, online=round(time.time() - self.opened),
+                     longest_pause=round(self.max_pause, 1), packets_in=self.frames_in, packets_out=self.frames_out)
+        return d
+
+    def describe(self):
+        parts = ["online %s" % fmt_duration(time.time() - self.opened)]
+        if self.rtt_n:
+            parts.append("ping avg %d ms, max %d ms" % (self.rtt_sum / self.rtt_n, self.rtt_max))
+        parts.append("%d packets in, %d out" % (self.frames_in, self.frames_out))
+        if self.pauses:
+            parts.append("%d pauses over 1 s, longest %.1f s" % (self.pauses, self.max_pause))
+        if self.dropped:
+            parts.append("%d packets dropped because the game stopped reading" % self.dropped)
+        return ", ".join(parts)
+
+
+async def ping_loop(conn):
+    while not conn.ws.closed:
+        await asyncio.sleep(PING_INTERVAL)
+        if time.monotonic() - conn.last_pong > DEAD_AFTER:
+            conn.reason = "no answer for %d s" % DEAD_AFTER
+            await conn.ws.close(code=1001, message=b"no answer")
+            return
+        try:
+            await conn.ws.ping(struct.pack("!d", time.monotonic()))
+        except Exception:
+            return
 
 
 async def authenticate(ws, ip):
@@ -232,9 +372,11 @@ async def game_ws(request):
     ip = client_ip(request)
     if guard.locked(ip) or not guard.enter(ip):
         raise web.HTTPTooManyRequests()
-    ws = web.WebSocketResponse(max_msg_size=MAX_MAP + 1024, heartbeat=None, autoping=True)
+    # autoping off: pongs are read below to measure each game's ping
+    ws = web.WebSocketResponse(max_msg_size=MAX_MAP + 1024, heartbeat=None, autoping=False)
     await ws.prepare(request)
     conn = Conn(ws, ip)
+    pinger = None
     try:
         extra = await authenticate(ws, ip)
         if extra is None:
@@ -244,16 +386,33 @@ async def game_ws(request):
             await conn.text("error", "Server protocol %d, game protocol %s - update the game or the server" % (PROTOCOL, proto))
             return ws
         await conn.text("ok", PROTOCOL)
+        pinger = asyncio.create_task(ping_loop(conn))
         async for msg in ws:
             if msg.type == WSMsgType.BINARY:
                 await on_game_binary(conn, msg.data)
             elif msg.type == WSMsgType.TEXT:
                 if not await on_game_text(conn, msg.data):
+                    conn.reason = "left the game"
                     break
-            elif msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE):
+            elif msg.type == WSMsgType.PONG:
+                conn.got_pong(msg.data)
+            elif msg.type == WSMsgType.PING:
+                await ws.pong(msg.data)
+            elif msg.type == WSMsgType.ERROR:
+                conn.reason = "connection error: %s" % (ws.exception() or "unknown")
                 break
+            else:
+                break
+        if conn.reason == "connection closed" and ws.close_code is not None:
+            conn.reason = ("closed by the game" if ws.close_code in (1000, 1001)
+                           else "connection lost (code %s)" % ws.close_code)
+    except Exception as e:
+        conn.reason = "connection error: %s" % e
     finally:
+        if pinger:
+            pinger.cancel()
         await drop_conn(conn)
+        await conn.finish()
         guard.leave(ip)
     return ws
 
@@ -261,25 +420,37 @@ async def game_ws(request):
 async def drop_conn(conn):
     lobby = conn.lobby
     if not lobby:
+        if conn.lobby_name:  # its lobby was closed by the host leaving
+            log.info("%s disconnected from lobby %r: %s; %s", conn.player_name, conn.lobby_name, conn.reason, conn.describe())
         return
     conn.lobby = None
     if conn.is_host:
+        log.info("%s (host) left lobby %r: %s; %s", conn.player_name, lobby.name, conn.reason, conn.describe())
         relay.close_lobby(lobby)
         for c in list(lobby.clients.values()):
             c.lobby = None
+            c.reason = "the host left"
             await c.text("host_left")
-            await c.ws.close()
+            asyncio.create_task(close_after_flush(c))
     else:
         lobby.clients.pop(conn.peer_id, None)
+        if lobby.kind == "online":
+            lobby.net_log[conn.player_name] = conn.net_summary(final=True)
         if lobby.host:
             await lobby.host.text("peer_leave", conn.peer_id)
-        log.info("%s left lobby %r", conn.player_name, lobby.name)
+        log.info("%s left lobby %r: %s; %s", conn.player_name, lobby.name, conn.reason, conn.describe())
+
+
+async def close_after_flush(conn):
+    await conn.finish()
+    await conn.ws.close()
 
 
 async def on_game_binary(conn, data):
     lobby = conn.lobby
     if not lobby or lobby.kind != "online" or len(data) > MAX_GAME_FRAME:
         return
+    conn.got_frame(len(data), lobby.state == "playing")
     if conn.is_host:
         if len(data) < 2:
             return
@@ -302,7 +473,7 @@ async def on_game_text(conn, text):
                 continue
             lines.append("\t".join(str(x) for x in (
                 l.name, l.host_name, 1 + len(l.clients), l.max_players, l.state, l.mod, l.version)))
-        await conn.ws.send_str("\n".join(lines))
+        conn.push("\n".join(lines))
 
     elif cmd in ("host", "report") and not lobby:
         # host <lobby> <max players> <player name> <mod> <game version>
@@ -326,7 +497,7 @@ async def on_game_text(conn, text):
         lobby = Lobby(name, "online" if cmd == "host" else "lan", conn, max_players, player or "Host", mod, version)
         lobby.player_names.add(lobby.host_name)
         relay.lobbies[name.lower()] = lobby
-        conn.lobby, conn.is_host, conn.player_name = lobby, True, lobby.host_name
+        conn.lobby, conn.is_host, conn.player_name, conn.lobby_name = lobby, True, lobby.host_name, lobby.name
         log.info("%s %s lobby %r (%d players, mod %r, %s) from %s", lobby.host_name,
                  "hosts" if cmd == "host" else "reports", name, max_players, mod, version, conn.ip)
         await conn.text("hosted", name)
@@ -357,7 +528,7 @@ async def on_game_text(conn, text):
             lobby.next_id = lobby.next_id % 255 + 1
         conn.peer_id = lobby.next_id
         lobby.next_id = lobby.next_id % 255 + 1
-        conn.lobby, conn.player_name = lobby, player
+        conn.lobby, conn.player_name, conn.lobby_name = lobby, player, lobby.name
         lobby.clients[conn.peer_id] = conn
         lobby.player_names.add(player)
         log.info("%s joined lobby %r as %d", player, lobby.name, conn.peer_id)
@@ -389,16 +560,15 @@ async def on_game_text(conn, text):
                     lobby.levels.append(level[:64])
 
     elif cmd == "map" and lobby and conn.is_host and len(f) >= 3:
-        if len(f[2]) <= MAX_MAP:
-            try:
-                walls = json.loads(f[2])
-            except ValueError:
-                return True
-            lobby.map = f[2]
+        # a flat list of numbers; checked without parsing it, which would hold up the packets
+        # of every game for a moment on a big level
+        walls = f[2]
+        if len(walls) <= MAX_MAP and walls[:1] == "[" and walls[-1:] == "]" and not walls[1:-1].translate(WALL_CHARS):
+            lobby.map = walls
             lobby.map_id = clean_name(f[1], 64)
             for d in list(relay.dashboards):
                 if d.watching == lobby.name:
-                    await d.send_map(lobby)
+                    asyncio.create_task(d.send_map(lobby))
 
     elif cmd == "ping":
         await conn.text("pong", *f[1:2])
@@ -414,22 +584,35 @@ class Dash:
         self.ws = ws
         self.watching = None
         self.sent_map = None
+        self.busy = False  # an update is still on its way to this browser
 
-    async def send(self, obj):
+    async def send_str(self, text, timeout=10):
         if not self.ws.closed:
             try:
-                await self.ws.send_str(json.dumps(obj, separators=(",", ":")))
+                await asyncio.wait_for(self.ws.send_str(text), timeout)
+            except asyncio.TimeoutError:
+                await self.ws.close()  # a browser that can't keep up reconnects on its own
             except Exception:
                 pass
+
+    async def send(self, obj):
+        await self.send_str(json.dumps(obj, separators=(",", ":")))
 
     async def send_map(self, lobby):
         if lobby.map and self.sent_map != (lobby.name, lobby.map_id) and not self.ws.closed:
             self.sent_map = (lobby.name, lobby.map_id)
-            try:
-                await self.ws.send_str('{"op":"map","lobby":%s,"map_id":%s,"walls":%s}' % (
-                    json.dumps(lobby.name), json.dumps(lobby.map_id), lobby.map))
-            except Exception:
-                pass
+            await self.send_str('{"op":"map","lobby":%s,"map_id":%s,"walls":%s}' % (
+                json.dumps(lobby.name), json.dumps(lobby.map_id), lobby.map), timeout=60)
+
+    async def push(self, snap):
+        try:
+            await self.send_str(snap, timeout=5)
+            if self.watching:
+                lobby = relay.lobbies.get(str(self.watching).lower())
+                if lobby:
+                    await self.send_map(lobby)
+        finally:
+            self.busy = False
 
 
 async def dash_ws(request):
@@ -472,16 +655,12 @@ async def dash_pusher(app):
             if not relay.dashboards:
                 continue
             snap = json.dumps(relay.snapshot(), separators=(",", ":"))
+            # each browser on its own: a slow one (a phone on a bad network) skips updates
+            # instead of holding up the others
             for d in list(relay.dashboards):
-                if not d.ws.closed:
-                    try:
-                        await d.ws.send_str(snap)
-                    except Exception:
-                        pass
-                    if d.watching:
-                        lobby = relay.lobbies.get(str(d.watching).lower())
-                        if lobby:
-                            await d.send_map(lobby)
+                if not d.ws.closed and not d.busy:
+                    d.busy = True
+                    asyncio.create_task(d.push(snap))
     task = asyncio.create_task(loop())
     yield
     task.cancel()

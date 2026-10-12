@@ -1,5 +1,6 @@
 # NotBlood online relay + live dashboard.
 # The key goes in server.env next to this file:  BLOOD_KEY=<your secret key>
+# Behind Cloudflare also put TRUST_PROXY=1 there (see README.md).
 services:
   notblood-relay:
     build: .
