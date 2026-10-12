@@ -104,10 +104,11 @@ static void frame(int mode, int npolys)
 int main(int argc, char **argv)
 {
     int npolys = argc > 1 ? atoi(argv[1]) : 400;
-    CGLPixelFormatAttribute attrs[] = { kCGLPFAAccelerated, kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_Legacy,
+    CGLPixelFormatAttribute attrs[] = { kCGLPFAAllowOfflineRenderers, kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_Legacy,
                                         kCGLPFAColorSize, (CGLPixelFormatAttribute)24, (CGLPixelFormatAttribute)0 };
-    CGLPixelFormatObj pf; GLint npf;
-    if (CGLChoosePixelFormat(attrs, &pf, &npf) || !pf) { printf("no pixel format\n"); return 1; }
+    CGLPixelFormatObj pf = NULL; GLint npf = 0;
+    CGLError err = CGLChoosePixelFormat(attrs, &pf, &npf);
+    if (err || !pf) { printf("no pixel format: %s\n", CGLErrorString(err)); return 1; }
     CGLContextObj ctx;
     if (CGLCreateContext(pf, NULL, &ctx)) { printf("no context\n"); return 1; }
     CGLSetCurrentContext(ctx);
