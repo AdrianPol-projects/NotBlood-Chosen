@@ -1,0 +1,20 @@
+name: mac GL benchmark
+'on':
+  push:
+    branches: [macdebug]
+    paths: ['tools/macbench/**', '.github/workflows/macbench.yml']
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run
+        run: |
+          clang -O2 -o bench tools/macbench/bench.c -framework OpenGL
+          sysctl -n machdep.cpu.brand_string
+          ./bench 400
+          ./bench 1200
