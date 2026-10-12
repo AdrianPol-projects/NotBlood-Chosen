@@ -57,6 +57,8 @@ int32_t r_usetileshades = 1;
 int32_t r_vertexarrays = 1;
 int32_t r_yshearing;
 int32_t r_persistentStreamBuffer = 1;
+// -1: automatic (on for Apple GPUs, i.e. Apple Silicon Macs), 0: stream through a VBO, 1: client-side arrays
+int32_t r_streamclientarrays = -1;
 
 int32_t r_brightnesshack = 0;
 int32_t r_rortexture = 0;
@@ -129,6 +131,12 @@ static int32_t drawpolyVertsSubBufferIndex = 0;
 static GLsync drawpolyVertsSync[3] = { 0 };
 static float defaultDrawpolyVertsArray[MAX_DRAWPOLY_VERTS*5];
 static float* drawpolyVerts = defaultDrawpolyVertsArray;
+// Apple's OpenGL (built on Metal) stalls or copies whenever a buffer the GPU still has to read
+// is changed with glBufferSubData, and polymost does that for every polygon (hundreds per frame,
+// menus included). Without ARB_buffer_storage, which macOS lacks, the polygons are handed over
+// as client-side arrays instead, which the driver streams without waiting - the same fix that
+// took the iPad build from ~10 to 60 fps.
+static bool clientArrayStream;
 
 struct glfiltermodes glfiltermodes[NUMGLFILTERMODES] = { { "GL_NEAREST",                GL_NEAREST,                GL_NEAREST },
                                                          { "GL_LINEAR",                 GL_LINEAR,                 GL_LINEAR  },
@@ -577,21 +585,25 @@ static void Polymost_DetermineTextureFormatSupport(void);
 // reset vertex pointers to polymost default
 void polymost_resetVertexPointers()
 {
-    buildgl_bindBuffer(GL_ARRAY_BUFFER, drawpolyVertsID);
+    // client-side arrays: no buffer bound, the pointers address defaultDrawpolyVertsArray itself
+    buildgl_bindBuffer(GL_ARRAY_BUFFER, clientArrayStream ? 0 : drawpolyVertsID);
 
-    glVertexPointer(3, GL_FLOAT, 5 * sizeof(float), 0);
-    glTexCoordPointer(2, GL_FLOAT, 5 * sizeof(float), (GLvoid*)(3 * sizeof(float)));
+    GLubyte const *const base = clientArrayStream ? (GLubyte const *)defaultDrawpolyVertsArray : NULL;
+    GLvoid const *const texcoords = base + 3 * sizeof(float);
+
+    glVertexPointer(3, GL_FLOAT, 5 * sizeof(float), base);
+    glTexCoordPointer(2, GL_FLOAT, 5 * sizeof(float), texcoords);
 
 #ifdef USE_GLEXT
     if (r_detailmapping)
     {
         glClientActiveTexture(GL_TEXTURE3);
-        glTexCoordPointer(2, GL_FLOAT, 5 * sizeof(float), (GLvoid*)(3 * sizeof(float)));
+        glTexCoordPointer(2, GL_FLOAT, 5 * sizeof(float), texcoords);
     }
     if (r_glowmapping)
     {
         glClientActiveTexture(GL_TEXTURE4);
-        glTexCoordPointer(2, GL_FLOAT, 5 * sizeof(float), (GLvoid*)(3 * sizeof(float)));
+        glTexCoordPointer(2, GL_FLOAT, 5 * sizeof(float), texcoords);
     }
     glClientActiveTexture(GL_TEXTURE0);
 #endif
@@ -929,6 +941,19 @@ void polymost_initdrawpoly(void)
 
     drawpolyVertsBufferLength = r_drawpolyVertsBufferLength;
     persistentStreamBuffer = !!r_persistentStreamBuffer;
+
+    clientArrayStream = false;
+#ifndef EDUKE32_GLES
+    if (!persistentStreamBuffer)
+    {
+        if (r_streamclientarrays == -1)
+            clientArrayStream = glinfo.vendor && !Bstrcmp(glinfo.vendor, "Apple");
+        else
+            clientArrayStream = !!r_streamclientarrays;
+    }
+#endif
+    LOG_F(INFO, "Polymost streams polygons through %s.",
+          persistentStreamBuffer ? "a persistent mapped buffer" : clientArrayStream ? "client-side arrays" : "a streaming VBO");
 
     drawpolyVertsOffset = 0;
     drawpolyVertsSubBufferIndex = 0;
@@ -3196,6 +3221,9 @@ static void polymost_flatskyrender(vec2f_t const* const dpxy, int32_t const n, i
 
 void polymost_startBufferedDrawing(int nn)
 {
+    if (clientArrayStream) // every polygon starts at the beginning of defaultDrawpolyVertsArray
+        return;
+
     if (nn * 5 + drawpolyVertsOffset > (drawpolyVertsSubBufferIndex + 1) * drawpolyVertsBufferLength)
     {
         if (persistentStreamBuffer)
@@ -3225,6 +3253,13 @@ void polymost_bufferVert(vec3f_t const v, vec2f_t const t)
 
 void polymost_finishBufferedDrawing(int mode)
 {
+    if (clientArrayStream)
+    {
+        glDrawArrays(mode, 0, drawpolyVertsCnt);
+        drawpolyVertsCnt = 0;
+        return;
+    }
+
     if (!persistentStreamBuffer)
         glBufferSubData(GL_ARRAY_BUFFER, drawpolyVertsOffset * sizeof(float) * 5, drawpolyVertsCnt * sizeof(float) * 5, drawpolyVerts);
 
@@ -10173,6 +10208,7 @@ void polymost_initosdfuncs(void)
 #ifdef USE_GLEXT
         { "r_vbocount","sets the number of Vertex Buffer Objects to use when drawing models",(void *) &r_vbocount, CVAR_INT, 1, 256 },
         { "r_persistentStreamBuffer","enable/disable persistent stream buffering (requires renderer restart)",(void *) &r_persistentStreamBuffer, CVAR_BOOL | CVAR_RESTARTVID, 0, 1 },
+        { "r_streamclientarrays","how polygons are sent to the GPU when there is no persistent buffer: -1: automatic (client arrays on Apple GPUs), 0: streaming VBO, 1: client arrays (requires renderer restart)",(void *) &r_streamclientarrays, CVAR_INT | CVAR_RESTARTVID, -1, 1 },
         { "r_drawpolyVertsBufferLength","sets the size of the vertex buffer for polymost's streaming VBO rendering (requires renderer restart)",(void *) &r_drawpolyVertsBufferLength, CVAR_INT, MAX_DRAWPOLY_VERTS, 1000000 },
 #endif
 #ifdef POLYMER

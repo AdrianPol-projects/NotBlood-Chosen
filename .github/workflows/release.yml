@@ -13,6 +13,12 @@ name: Release builds
       - '**.md'
       - 'server/**'
   workflow_dispatch:
+    inputs:
+      only:
+        description: 'Platforms to build: all, or only macos (then only the macOS download of the release is replaced)'
+        type: choice
+        options: [all, macos]
+        default: all
 
 permissions:
   contents: write
@@ -27,7 +33,7 @@ env:
 jobs:
   build-linux:
     name: Linux x86_64
-    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen' && (github.event_name != 'workflow_dispatch' || inputs.only == 'all')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +59,7 @@ jobs:
 
   build-windows:
     name: Windows x64
-    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen' && (github.event_name != 'workflow_dispatch' || inputs.only == 'all')
     runs-on: windows-latest
     defaults:
       run:
@@ -134,7 +140,7 @@ jobs:
 
   build-android:
     name: Android
-    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen' && (github.event_name != 'workflow_dispatch' || inputs.only == 'all')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -173,7 +179,7 @@ jobs:
 
   build-ios:
     name: iPad / iPhone (unsigned IPA)
-    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen' && (github.event_name != 'workflow_dispatch' || inputs.only == 'all')
     runs-on: macos-latest
     env:
       GL4ES_COMMIT: ec16bedd8819c475326f4f1a3063772c6d986e06
@@ -218,6 +224,8 @@ jobs:
   publish:
     name: Publish
     needs: [build-linux, build-windows, build-macos, build-android, build-ios]
+    # skipped jobs (a macOS-only run) are fine, failed ones are not
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.build-macos.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -225,10 +233,14 @@ jobs:
         with:
           path: artifacts
       - name: Package
+        env:
+          ONLY: ${{ inputs.only || 'all' }}
         run: |
           version=$(sed -n 's/#define CHOSEN_VERSION "\(.*\)"/\1/p' source/blood/src/chosen.h)
           echo "VERSION=$version" >> "$GITHUB_ENV"
-          for target in linux-x64 win64; do
+          targets="linux-x64 win64"
+          [ "$ONLY" = all ] || targets=""
+          for target in $targets; do
             dir="pkg/$target/NotBlood"
             mkdir -p "$dir/autoload" "$dir/addons" "$dir/mods" "$dir/movie"
             cp artifacts/notblood-$target/* "$dir/"
@@ -250,17 +262,31 @@ jobs:
           cp package/release/mods.txt "$dir/mods/Put mods here.txt"
           cp package/release/movie.txt "$dir/movie/Put the movie files here.txt"
           (cd pkg/macos && zip -9 -r -y "../../NotBlood-Chosen-$version-macos.zip" NotBlood)
-          cp artifacts/notblood-android/NotBlood.apk "NotBlood-Chosen-$version-android.apk"
-          cp artifacts/notblood-ios/NotBlood.ipa "NotBlood-Chosen-$version-ios.ipa"
-          ls -l *.zip *.apk *.ipa
+          if [ "$ONLY" = all ]; then
+            cp artifacts/notblood-android/NotBlood.apk "NotBlood-Chosen-$version-android.apk"
+            cp artifacts/notblood-ios/NotBlood.ipa "NotBlood-Chosen-$version-ios.ipa"
+          fi
+          ls -l NotBlood-Chosen-*
       - name: Publish to the "latest" release
         env:
           GH_TOKEN: ${{ github.token }}
+          ONLY: ${{ inputs.only || 'all' }}
         run: |
           # Runs can be queued late; never let an older commit replace a newer build.
           HEAD_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}" -q .sha)
           if [ "$HEAD_SHA" != "$GITHUB_SHA" ]; then
             echo "Branch head is $HEAD_SHA, this run built $GITHUB_SHA - not publishing."
+            exit 0
+          fi
+          if [ "$ONLY" = macos ]; then
+            # replace only the macOS download; the other platforms stay as they are
+            gh release view latest >/dev/null
+            for a in $(gh release view latest --json assets -q '.assets[].name' | grep -- '-macos\.zip$'); do
+              gh release delete-asset latest "$a" -y
+            done
+            gh release upload latest NotBlood-Chosen-*-macos.zip --clobber
+            { cat package/release/NOTES.md; echo; echo "_The macOS download was updated on its own in build ${{ github.run_number }} (commit ${GITHUB_SHA::7}); the other downloads are from the build in the title._"; } > notes.md
+            gh release edit latest --notes-file notes.md
             exit 0
           fi
           TITLE="NotBlood Chosen $VERSION (build ${{ github.run_number }})"
