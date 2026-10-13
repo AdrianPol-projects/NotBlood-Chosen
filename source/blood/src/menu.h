@@ -63,7 +63,7 @@ void UpdateNetworkMenus(void);
 void SetGameVanillaMode(char nState);
 unsigned int SetBannedSprites(char bSinglePlayer);
 void QuickSaveGame(void);
-void AutosaveGame(bool bLevelStartSave);
+void AutosaveGame(bool bLevelStartSave, bool bSuspendSave = false);
 void QuickLoadGame(void);
 void NetAlertMissingMap(char bError);
 void StartNetGame(CGameMenuItemChain *);

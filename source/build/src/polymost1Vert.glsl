@@ -1,5 +1,9 @@
 #version 120
 
+//uncommented by polymost when the driver can't clamp depth (OpenGL ES): far-away geometry such as
+//the sky then lands on the far plane instead of being clipped away
+//#define POLYMOST1_CLAMPDEPTH
+
 varying vec4 v_color;
 varying float v_distance;
 
@@ -16,6 +20,10 @@ void main()
    vec4 vertex = u_rotMatrix * gl_Vertex;
    vec4 eyeCoordPosition = gl_ModelViewMatrix * vertex;
    gl_Position = gl_ModelViewProjectionMatrix * vertex;
+#ifdef POLYMOST1_CLAMPDEPTH
+   if (gl_Position.w > c_zero)
+      gl_Position.z = clamp(gl_Position.z, -gl_Position.w, gl_Position.w);
+#endif
 
    eyeCoordPosition.xyz /= eyeCoordPosition.w;
 

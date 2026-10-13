@@ -368,6 +368,11 @@ void texcache_openfiles(void)
 {
     Bassert(!texcache.indexFilePtr && !texcache.dataFilePtr);
 
+#ifdef __ANDROID__
+    if (!glusetexcache) // off on Android, see polymost_glinit()
+        return;
+#endif
+
     Bstrcpy(ptempbuf, TEXCACHEFILE);
     Bstrcat(ptempbuf, ".index");
 

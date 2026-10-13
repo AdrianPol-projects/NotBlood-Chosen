@@ -623,6 +623,15 @@ typedef FILE BFILE;
 #define Bgetenv getenv
 #define Butime utime
 
+// Moves src over dest, replacing it (Windows' rename() refuses an existing dest).
+static inline int Breplacefile(char const *src, char const *dest)
+{
+#ifdef _WIN32
+    remove(dest);
+#endif
+    return rename(src, dest);
+}
+
 
 ////////// Standard library wrappers //////////
 

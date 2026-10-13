@@ -4,6 +4,10 @@
 //include an additional space here so that we can programmatically search for and disable this preprocessor definition easily
  #define POLYMOST1_EXTENDED
 
+//uncommented by polymost on gl4es (iOS, Android): the shader does the alpha test (u_alphaTest is the
+//GL_GREATER reference, below 0 when off) instead of GL_ALPHA_TEST, which gl4es emulates by switching programs
+//#define POLYMOST1_ALPHATEST
+
 //s_texture points to an indexed color texture
 uniform sampler2D s_texture;
 //s_palswap is the palette swap texture where u is the color index and v is the shade
@@ -53,6 +57,9 @@ const vec4 c_vec4_one = vec4(c_one);
 const float c_wrapThreshold = 0.9;
 
 uniform vec4 u_colorCorrection;
+#ifdef POLYMOST1_ALPHATEST
+uniform float u_alphaTest;
+#endif
 const vec2 c_vec2_zero_one = vec2(c_zero, c_one);
 const vec4 c_vec4_luma_709 = vec4(0.2126, 0.7152, 0.0722, 0.0);
 
@@ -117,6 +124,11 @@ void main()
     color.a *= v_color.a;
 
     color.rgb = pow(color.rgb, vec3(u_brightness));
+
+#ifdef POLYMOST1_ALPHATEST
+    if (color.a <= u_alphaTest)
+        discard;
+#endif
 
     vec4 v_cc = vec4(u_colorCorrection.x - c_one, 0.5 * -(u_colorCorrection.y-c_one), -(u_colorCorrection.z-c_one), 1.0);
     gl_FragData[0] = mat4(c_vec2_zero_one.yxxx, c_vec2_zero_one.xyxx, c_vec2_zero_one.xxyx, v_cc.xxxw)

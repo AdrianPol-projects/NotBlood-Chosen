@@ -31,7 +31,7 @@ if(NOT GL4ES_SOURCE_DIR OR NOT EXISTS "${GL4ES_SOURCE_DIR}/src/gl/gl4es.c")
     message(FATAL_ERROR "Set GL4ES_SOURCE_DIR to a gl4es source tree (see fetch-deps.sh)")
 endif()
 file(GLOB GL4ES_SOURCES "${GL4ES_SOURCE_DIR}/src/gl/*.c" "${GL4ES_SOURCE_DIR}/src/gl/wrap/*.c" "${GL4ES_SOURCE_DIR}/src/gl/math/*.c")
-list(APPEND GL4ES_SOURCES "${GL4ES_SOURCE_DIR}/src/glx/hardext.c")
+list(APPEND GL4ES_SOURCES "${GL4ES_SOURCE_DIR}/src/glx/hardext.c" "${CMAKE_CURRENT_SOURCE_DIR}/gl4es_info.c")
 add_library(nb_gl4es STATIC ${GL4ES_SOURCES})
 target_compile_definitions(nb_gl4es PRIVATE NOX11 EGL_NO_X11 NOEGL STATICLIB NO_GBM NO_INIT_CONSTRUCTOR DEFAULT_ES=2)
 target_include_directories(nb_gl4es PRIVATE "${GL4ES_SOURCE_DIR}/include" "${GL4ES_SOURCE_DIR}/src" "${GL4ES_SOURCE_DIR}/src/glx")
@@ -61,7 +61,8 @@ set(NB_INCLUDES
     "${SRC}/libsmackerdec/include"
     "${SRC}/hmpplay/include"
 )
-set(NB_C_FLAGS -funsigned-char -fno-strict-aliasing -frounding-math -O2 -fPIC
+# -g: the APK gets stripped libraries; CI keeps the unstripped libmain.so to read crash reports with
+set(NB_C_FLAGS -funsigned-char -fno-strict-aliasing -frounding-math -O2 -gline-tables-only -fPIC
     -fno-exceptions -fno-rtti -fno-threadsafe-statics -Wno-everything)
 
 function(nb_library name)

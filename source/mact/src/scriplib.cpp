@@ -481,7 +481,14 @@ void SCRIPT_Save(int32_t scripthandle, char const * filename)
     if (!filename) return;
     if (!SC(scripthandle)) return;
 
+#ifndef USE_PHYSFS
+    // write a temporary file and swap it in: a game that is killed while saving keeps its settings
+    char tmpname[BMAX_PATH];
+    Bsnprintf(tmpname, sizeof(tmpname), "%s.tmp", filename);
+    fp = buildvfs_fopen_write_text(tmpname);
+#else
     fp = buildvfs_fopen_write_text(filename);
+#endif
     if (!fp) return;
 
     numsect = SCRIPT_NumberSections(scripthandle);
@@ -511,6 +518,9 @@ void SCRIPT_Save(int32_t scripthandle, char const * filename)
     }
 
     buildvfs_fclose(fp);
+#ifndef USE_PHYSFS
+    Breplacefile(tmpname, filename);
+#endif
 }
 
 int32_t SCRIPT_NumberSections(int32_t scripthandle)

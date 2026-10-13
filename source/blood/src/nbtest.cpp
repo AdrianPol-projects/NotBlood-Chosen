@@ -19,7 +19,7 @@ as published by the Free Software Foundation.
 //
 // Actions: shot:<name>  key:<esc|enter|up|down|left|right|space>  renderer:<classic|polymost>
 //          look:<up|down|center>  osd:<console command>  coopcontinue:<slot>  players
-//          menu:<netstart|coopload|ingame|close>  quit
+//          menu:<netstart|coopload|ingame|close>  flash:<visibility>  quit
 
 #include "compat.h"
 
@@ -80,8 +80,14 @@ static char const kAppleExtensions[] =
 
 static unsigned char const *fakeGetString(unsigned name)
 {
+    if (Bgetenv("NBTEST_NOLIMITS"))
+        return s_realGetString(name);
     if (name == 0x1F03 /* GL_EXTENSIONS */)
-        return (unsigned char const *)kAppleExtensions;
+    {
+        // NBTEST_NPOT=1: the iPad's list plus full NPOT support (as Android GPUs have)
+        static std::string const withNpot = std::string(kAppleExtensions) + "GL_OES_texture_npot ";
+        return (unsigned char const *)(Bgetenv("NBTEST_NPOT") ? withNpot.c_str() : kAppleExtensions);
+    }
     if (name == 0x1F00 /* GL_VENDOR */)
         return (unsigned char const *)"Apple Inc. (emulated)";
     if (name == 0x1F02 /* GL_VERSION */)
@@ -92,6 +98,9 @@ static unsigned char const *fakeGetString(unsigned name)
 static void fakeGetIntegerv(unsigned pname, int *data)
 {
     s_realGetIntegerv(pname, data);
+
+    if (Bgetenv("NBTEST_NOLIMITS")) // the driver's own limits (an Android GPU rather than the iPad)
+        return;
 
     switch (pname)
     {
@@ -130,8 +139,127 @@ static void nbtest_logcounts(int frames)
     LOG_F(INFO, "nbtest: GLES calls per frame:%s", buf);
 }
 
+// NBTEST_FP16FOG=1: fog values gl4es declares mediump behave like half floats (as on phone GPUs:
+// beyond 65504 they become infinite, tiny ones zero), which Mesa doesn't do by itself
+typedef void (*glShaderSource_t)(unsigned, int, char const *const *, int const *);
+static glShaderSource_t s_realShaderSource;
+
+static void fp16ShaderSource(unsigned shader, int count, char const *const *strings, int const *lengths)
+{
+    std::string src;
+    for (int i = 0; i < count; i++)
+        src += lengths && lengths[i] >= 0 ? std::string(strings[i], lengths[i]) : std::string(strings[i]);
+
+    if (src.find("_gl4es_Fog") != std::string::npos && src.find("gl_Frag") != std::string::npos)
+    {
+        static char const *const names[] = { "_gl4es_Fog.start", "_gl4es_Fog.end", "_gl4es_Fog.scale", "_gl4es_FogFragCoord" };
+        for (char const *n : names)
+        {
+            std::string const from = n, to = std::string("nb16(") + n + ")";
+            for (size_t pos = src.find("void main"); pos != std::string::npos && (pos = src.find(from, pos)) != std::string::npos; pos += to.size())
+            {
+                if (src.compare(pos > 5 ? pos - 5 : 0, 5, "nb16(") == 0)
+                    continue;
+                src.replace(pos, from.size(), to);
+            }
+        }
+        LOG_F(INFO, "nbtest: fp16 fog emulation in a fragment shader");
+        size_t const m = src.find("void main");
+        if (m != std::string::npos)
+            src.insert(m, "float nb16(float x) { float a = abs(x); float z = a - a;"
+                          " if (a > 65504.0) return sign(x) / z; if (a < 6e-8) return sign(x) * z; return x; }\n");
+    }
+
+    char const *p = src.c_str();
+    s_realShaderSource(shader, 1, &p, NULL);
+}
+
+// NBTEST_TEXLOG=1: log the texture formats gl4es hands to the real driver
+typedef void (*glTexImage2D_t)(unsigned, int, int, int, int, int, unsigned, unsigned, void const *);
+typedef void (*glTexSubImage2D_t)(unsigned, int, int, int, int, int, unsigned, unsigned, void const *);
+static glTexImage2D_t s_realTexImage2D;
+static glTexSubImage2D_t s_realTexSubImage2D;
+static int s_texLogCount;
+
+static void logTexImage2D(unsigned target, int level, int internalformat, int w, int h, int border, unsigned format, unsigned type, void const *data)
+{
+    s_realTexImage2D(target, level, internalformat, w, h, border, format, type, data);
+    if (s_texLogCount++ < 60)
+    {
+        static auto const getError = (unsigned (*)(void))SDL_GL_GetProcAddress("glGetError");
+        LOG_F(INFO, "nbtest: glTexImage2D level %d internal 0x%x %dx%d format 0x%x type 0x%x data %p error 0x%x", level, internalformat, w, h, format, type, data, getError());
+    }
+}
+
+static void logTexSubImage2D(unsigned target, int level, int x, int y, int w, int h, unsigned format, unsigned type, void const *data)
+{
+    if (w != 256 && s_texLogCount++ < 400)
+        LOG_F(INFO, "nbtest: glTexSubImage2D level %d at %d,%d %dx%d format 0x%x type 0x%x data %p", level, x, y, w, h, format, type, data);
+    s_realTexSubImage2D(target, level, x, y, w, h, format, type, data);
+}
+
+typedef void (*glBindTexture_t)(unsigned, unsigned);
+typedef void (*glActiveTexture_t)(unsigned);
+static glBindTexture_t s_realBindTexture2;
+static glActiveTexture_t s_realActiveTexture;
+static void logBindTexture(unsigned target, unsigned tex)
+{
+    if (s_texLogCount < 400)
+        LOG_F(INFO, "nbtest: glBindTexture 0x%x %u", target, tex);
+    s_realBindTexture2(target, tex);
+}
+static void logActiveTexture(unsigned unit)
+{
+    if (s_texLogCount < 400)
+        LOG_F(INFO, "nbtest: glActiveTexture 0x%x", unit);
+    s_realActiveTexture(unit);
+}
+
+typedef void (*glPixelStorei_t)(unsigned, int);
+static glPixelStorei_t s_realPixelStorei;
+static void logPixelStorei(unsigned pname, int param)
+{
+    LOG_F(INFO, "nbtest: glPixelStorei 0x%x %d", pname, param);
+    s_realPixelStorei(pname, param);
+}
+
 static void *glesProcAddress(char const *name)
 {
+    if (Bgetenv("NBTEST_TEXLOG"))
+    {
+        if (!strcmp(name, "glBindTexture"))
+        {
+            s_realBindTexture2 = (glBindTexture_t)SDL_GL_GetProcAddress(name);
+            return (void *)logBindTexture;
+        }
+        if (!strcmp(name, "glActiveTexture"))
+        {
+            s_realActiveTexture = (glActiveTexture_t)SDL_GL_GetProcAddress(name);
+            return (void *)logActiveTexture;
+        }
+        if (!strcmp(name, "glPixelStorei"))
+        {
+            s_realPixelStorei = (glPixelStorei_t)SDL_GL_GetProcAddress(name);
+            return (void *)logPixelStorei;
+        }
+        if (!strcmp(name, "glTexImage2D"))
+        {
+            s_realTexImage2D = (glTexImage2D_t)SDL_GL_GetProcAddress(name);
+            return (void *)logTexImage2D;
+        }
+        if (!strcmp(name, "glTexSubImage2D"))
+        {
+            s_realTexSubImage2D = (glTexSubImage2D_t)SDL_GL_GetProcAddress(name);
+            return (void *)logTexSubImage2D;
+        }
+    }
+
+    if (!strcmp(name, "glShaderSource") && Bgetenv("NBTEST_FP16FOG"))
+    {
+        s_realShaderSource = (glShaderSource_t)SDL_GL_GetProcAddress(name);
+        return (void *)fp16ShaderSource;
+    }
+
 #if defined __x86_64__
 #define NBTEST_HOOK(f) if (!strcmp(name, #f)) { s_real_##f = SDL_GL_GetProcAddress(name); return (void *)nbtest_wrap_##f; }
     NBTEST_COUNTED(NBTEST_HOOK)
@@ -163,6 +291,8 @@ int nbtest_initgl4es(SDL_Window *window)
     if (!initialized)
     {
         setenv("LIBGL_USEVBO", "0", 1); // same as iosbits.mm
+        if (Bgetenv("NBTEST_FP16FOG"))
+            setenv("LIBGL_NOHIGHP", "1", 1); // fog in mediump, as gl4es does without highp
         set_getprocaddress(glesProcAddress);
         set_getmainfbsize(mainFBSize);
         initialize_gl4es();
@@ -171,8 +301,43 @@ int nbtest_initgl4es(SDL_Window *window)
     return 0;
 }
 
+// NBTEST_STATECOUNT=1: count the game's own state changes per frame (what makes gl4es switch shader variants)
+typedef void (*glCap_t)(unsigned);
+typedef void (*glAlphaFunc_t)(unsigned, float);
+typedef void (*glMatrixMode_t)(unsigned);
+typedef void (*glLoadMatrixf_t)(float const *);
+static glCap_t s_g4Enable, s_g4Disable;
+static glAlphaFunc_t s_g4AlphaFunc;
+static glMatrixMode_t s_g4MatrixMode;
+static glLoadMatrixf_t s_g4LoadMatrixf;
+static int s_cntAlphaTestOn, s_cntAlphaTestOff, s_cntFogOn, s_cntFogOff, s_cntBlend, s_cntAlphaFunc, s_cntTexMatrix, s_cntOtherCap;
+static unsigned s_matrixMode;
+static void cntEnable(unsigned cap) { if (cap == 0x0BC0) s_cntAlphaTestOn++; else if (cap == 0x0B60) s_cntFogOn++; else if (cap == 0x0BE2) s_cntBlend++; else s_cntOtherCap++; s_g4Enable(cap); }
+static void cntDisable(unsigned cap) { if (cap == 0x0BC0) s_cntAlphaTestOff++; else if (cap == 0x0B60) s_cntFogOff++; else if (cap == 0x0BE2) s_cntBlend++; else s_cntOtherCap++; s_g4Disable(cap); }
+static void cntAlphaFunc(unsigned f, float r) { s_cntAlphaFunc++; s_g4AlphaFunc(f, r); }
+static void cntMatrixMode(unsigned m) { s_matrixMode = m; s_g4MatrixMode(m); }
+static void cntLoadMatrixf(float const *m) { if (s_matrixMode == 0x1702 /*GL_TEXTURE*/) s_cntTexMatrix++; s_g4LoadMatrixf(m); }
+
+void nbtest_logstatecounts(int frames)
+{
+    if (!Bgetenv("NBTEST_STATECOUNT"))
+        return;
+    LOG_F(INFO, "nbtest: game GL state per frame: alphatest on %d off %d, alphafunc %d, fog on %d off %d, blend %d, other caps %d, texture matrix %d",
+          s_cntAlphaTestOn / frames, s_cntAlphaTestOff / frames, s_cntAlphaFunc / frames, s_cntFogOn / frames, s_cntFogOff / frames,
+          s_cntBlend / frames, s_cntOtherCap / frames, s_cntTexMatrix / frames);
+    s_cntAlphaTestOn = s_cntAlphaTestOff = s_cntAlphaFunc = s_cntFogOn = s_cntFogOff = s_cntBlend = s_cntOtherCap = s_cntTexMatrix = 0;
+}
+
 void *nbtest_glGetProcAddress(const char *name)
 {
+    if (Bgetenv("NBTEST_STATECOUNT"))
+    {
+        if (!strcmp(name, "glEnable")) { s_g4Enable = (glCap_t)gl4es_GetProcAddress(name); return (void *)cntEnable; }
+        if (!strcmp(name, "glDisable")) { s_g4Disable = (glCap_t)gl4es_GetProcAddress(name); return (void *)cntDisable; }
+        if (!strcmp(name, "glAlphaFunc")) { s_g4AlphaFunc = (glAlphaFunc_t)gl4es_GetProcAddress(name); return (void *)cntAlphaFunc; }
+        if (!strcmp(name, "glMatrixMode")) { s_g4MatrixMode = (glMatrixMode_t)gl4es_GetProcAddress(name); return (void *)cntMatrixMode; }
+        if (!strcmp(name, "glLoadMatrixf")) { s_g4LoadMatrixf = (glLoadMatrixf_t)gl4es_GetProcAddress(name); return (void *)cntLoadMatrixf; }
+    }
     return gl4es_GetProcAddress(name);
 }
 
@@ -330,6 +495,8 @@ void nbtest_frame(void)
 {
     parseScript();
     s_frame++;
+    if (s_frame == 1)
+        LOG_F(INFO, "nbtest: glGetError after startup: 0x%x", glGetError());
 
     static bool s_loggedOutOfSync;
     if (bOutOfSync && !s_loggedOutOfSync)
@@ -377,6 +544,12 @@ void nbtest_frame(void)
             openMenu(st.arg);
         else if (st.action == "players")
             logPlayers();
+        else if (st.action == "flash")
+        {
+            // what an explosion or a flare does to the player's view (brighter, visibility down)
+            if (gMe)
+                gMe->visibility = atoi(st.arg.c_str());
+        }
         else if (st.action == "quit")
         {
             LOG_F(INFO, "nbtest: done");
@@ -399,6 +572,7 @@ void nbtest_beforeswap(int w, int h)
             double const ms = (double)(now - t0) / timerGetNanoTickRate() * 1000.0 / frames;
             LOG_F(INFO, "nbtest: %.2f ms/frame (%.1f fps) at %dx%d", ms, 1000.0 / ms, w, h);
             nbtest_logcounts(frames);
+            nbtest_logstatecounts(frames);
             t0 = now;
             frames = 0;
         }

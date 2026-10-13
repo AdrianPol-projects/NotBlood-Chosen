@@ -142,7 +142,7 @@ void CGameMenuMgr::Pop(void)
         else
         {
             pActiveMenu = pMenuStack[nMenuPointer-1];
-            CONFIG_WriteSetup(0); // keep settings even if the game is killed instead of quit
+            CONFIG_WriteSetup(2); // keep settings even if the game is killed instead of quit
         }
 
         m_menuchange_watchpoint = 1;
@@ -348,7 +348,7 @@ void CGameMenuMgr::Deactivate(void)
     keyFlushScans();
     keyFlushChars();
     m_bActive = false;
-    CONFIG_WriteSetup(0); // keep settings even if the game is killed instead of quit
+    CONFIG_WriteSetup(2); // keep settings even if the game is killed instead of quit
 
     mouseLockToWindow(1);
     gInputMode = INPUT_MODE_0;

@@ -44,10 +44,14 @@ int32_t r_polygonmode;     // 0:GL_FILL,1:GL_LINE,2:GL_POINT //FUK
 int32_t r_polymostDebug;
 int32_t r_shadeinterpolate = 1;
 int32_t r_skyzbufferhack;
-#ifdef EDUKE32_IOS
+#if defined EDUKE32_IOS && !defined NOTBLOOD_ANDROID
 // gl4es (GL on OpenGL ES 2.0) renders the indexed-color tilesheet path wrong (black or
 // garbage colors), so iOS always uses true-color textures
 int32_t r_useindexedcolortextures = 0;
+#elif defined NOTBLOOD_ANDROID
+// on when gl4es can do it, see polymost_glreset()
+extern "C" bool android_glindexedcolors(void);
+int32_t r_useindexedcolortextures = 1;
 #else
 int32_t r_useindexedcolortextures = 1;
 #endif
@@ -509,7 +513,15 @@ static GLuint polymost2_compileShader(GLenum shaderType, const char* const sourc
 
 void polymost_glreset()
 {
-#ifdef EDUKE32_IOS
+#if defined NOTBLOOD_ANDROID
+    // The fast path, wherever gl4es can run it (most Android GPUs; tiles came out black or garbled
+    // where it can't, see androidbits.cpp). Also overrides the 0 that older versions saved.
+    if (!nogl)
+        r_useindexedcolortextures = android_glindexedcolors();
+    // Without indexed textures, tile shades would mean a texture per tile, palette *and shade*: new
+    // uploads whenever a light flickers (stutter, memory). Shade with the vertex color instead.
+    r_usetileshades = 0;
+#elif defined EDUKE32_IOS
     r_useindexedcolortextures = 0; // see declaration; also overrides a saved cvar
 #endif
     buildgl_resetStateAccounting();
@@ -650,6 +662,44 @@ void polymost_resetProgram()
     inthash_delete(&gl.state[ACTIVETEX], gl.currentActiveTexture);
 //    buildgl_bindTexture(GL_TEXTURE0, 0);
 }
+
+// A copy of a shader's source with the line "enable" ("//#define NAME") switched on and "disable"
+// (" #define NAME") switched off; either may be NULL. Free with Xfree().
+static char *polymost_editShader(char const *source, char const *enable, char const *disable)
+{
+    char *const text = Xstrdup(source);
+    if (char *def = enable ? Bstrstr(text, enable) : NULL)
+        def[0] = def[1] = ' ';
+    if (char *def = disable ? Bstrstr(text, disable) : NULL)
+        def[0] = def[1] = '/';
+    return text;
+}
+
+#ifdef BUILDGL_SHADER_ALPHATEST
+static char const kShaderAlphaTest[] = "//#define POLYMOST1_ALPHATEST";
+static GLint polymost1AlphaTestLoc[2] = { -1, -1 }; // basic, extended program
+static float polymost1AlphaTestRef[2];
+
+// called by buildgl_syncAlphaTest(): true if the current program is Polymost's and now tests alpha
+// against ref itself (ref < 0: off)
+bool polymost_setShaderAlphaTest(float ref)
+{
+    if (!gl.currentShaderProgramID)
+        return false;
+    int const i = gl.currentShaderProgramID == polymost1BasicShaderProgramID ? 0 :
+                  gl.currentShaderProgramID == polymost1ExtendedShaderProgramID ? 1 : -1;
+    if (i < 0 || polymost1AlphaTestLoc[i] < 0)
+        return false;
+    if (ref != polymost1AlphaTestRef[i])
+    {
+        polymost1AlphaTestRef[i] = ref;
+        glUniform1f(polymost1AlphaTestLoc[i], ref);
+    }
+    return true;
+}
+#else
+static char const *const kShaderAlphaTest = NULL;
+#endif
 
 static void polymost_setCurrentShaderProgram(uint32_t programID)
 {
@@ -1165,8 +1215,13 @@ void polymost_glinit()
     {
         polymost1ExtendedShaderProgramID = glCreateProgram();
 
-        polymost1BasicVertexShaderID = polymost2_compileShader(GL_VERTEX_SHADER, polymost1Vert);
-        polymost1ExtendedFragmentShaderID = polymost2_compileShader(GL_FRAGMENT_SHADER, polymost1Frag);
+        // no GL_DEPTH_CLAMP (OpenGL ES): clamp in the vertex shader, or the sky is clipped away (black)
+        char *const vert = polymost_editShader(polymost1Vert, glinfo.depthclamp ? NULL : "//#define POLYMOST1_CLAMPDEPTH", NULL);
+        char *const frag = polymost_editShader(polymost1Frag, kShaderAlphaTest, NULL);
+        polymost1BasicVertexShaderID = polymost2_compileShader(GL_VERTEX_SHADER, vert, Bstrlen(vert));
+        polymost1ExtendedFragmentShaderID = polymost2_compileShader(GL_FRAGMENT_SHADER, frag, Bstrlen(frag));
+        Xfree(vert);
+        Xfree(frag);
 
         glAttachShader(polymost1ExtendedShaderProgramID, polymost1BasicVertexShaderID);
         glAttachShader(polymost1ExtendedShaderProgramID, polymost1ExtendedFragmentShaderID);
@@ -1179,23 +1234,12 @@ void polymost_glinit()
 
     if (!polymost1BasicShaderProgramID || !glIsProgram(polymost1BasicShaderProgramID))
     {
-        int const polymost1BasicFragLen = Bstrlen(polymost1Frag);
-        auto      polymost1BasicFrag    = (char *)Xmalloc(polymost1BasicFragLen);
-
-        Bmemcpy(polymost1BasicFrag, polymost1Frag, polymost1BasicFragLen);
-
-        char *extDefineSubstr = Bstrstr(polymost1BasicFrag, " #define POLYMOST1_EXTENDED");
-
-        if (extDefineSubstr)
-        {
-            //Disable extensions for basic fragment shader
-            extDefineSubstr[0] = '/';
-            extDefineSubstr[1] = '/';
-        }
+        //Disable extensions for basic fragment shader
+        char *polymost1BasicFrag = polymost_editShader(polymost1Frag, kShaderAlphaTest, " #define POLYMOST1_EXTENDED");
 
         polymost1BasicShaderProgramID = glCreateProgram();
 
-        polymost1BasicFragmentShaderID = polymost2_compileShader(GL_FRAGMENT_SHADER, polymost1BasicFrag, polymost1BasicFragLen);
+        polymost1BasicFragmentShaderID = polymost2_compileShader(GL_FRAGMENT_SHADER, polymost1BasicFrag, Bstrlen(polymost1BasicFrag));
 
         glAttachShader(polymost1BasicShaderProgramID, polymost1BasicVertexShaderID);
         glAttachShader(polymost1BasicShaderProgramID, polymost1BasicFragmentShaderID);
@@ -1212,6 +1256,12 @@ void polymost_glinit()
     glDeleteShader(polymost1BasicVertexShaderID);
     glDeleteShader(polymost1ExtendedFragmentShaderID);
     glDeleteShader(polymost1BasicFragmentShaderID);
+
+#ifdef BUILDGL_SHADER_ALPHATEST
+    polymost1AlphaTestLoc[0] = glGetUniformLocation(polymost1BasicShaderProgramID, "u_alphaTest");
+    polymost1AlphaTestLoc[1] = glGetUniformLocation(polymost1ExtendedShaderProgramID, "u_alphaTest");
+    polymost1AlphaTestRef[0] = polymost1AlphaTestRef[1] = -2.f; // not sent yet
+#endif
 
     // set defaults
     polymost_setCurrentShaderProgram(polymost1ExtendedShaderProgramID);
@@ -1240,11 +1290,18 @@ void polymost_glinit()
     polymost_resetState();
 
     texcache_init();
+#ifdef __ANDROID__
+    // The texture cache only holds compressed textures, which gl4es would unpack again on the CPU,
+    // and memory-maps a file in shared storage, which Android's storage layer doesn't handle well.
+    // Also overrides saved cvars.
+    glusetexcache = glusememcache = glusetexcompr = 0;
+#else
     texcache_openfiles();
     texcache_loadoffsets();
 
     texcache_setupmemcache();
     texcache_checkgarbage();
+#endif
 
     polymost_clearOrnamentSprites();
 
@@ -1360,6 +1417,24 @@ void polymost2_calc_fog(int32_t shade, int32_t vis, int32_t pal)
 }
 #endif // POLYMOST2
 
+static void polymost_setLinearFog(float start, float end)
+{
+#if defined EDUKE32_IOS || defined NOTBLOOD_GL4ES_TEST
+    // gl4es on phone and tablet GPUs can keep the fog parameters in half floats (mediump, largest
+    // value 65504). The +-GL_FOG_MAX tricks then turned into infinities, the fog maths into NaN, and
+    // walls, floors and the sky went black (always for the sky; after explosions and flares, which
+    // bring the visibility to 0, for everything else). Fog that far out is no fog at all, so say
+    // that with small numbers: from -1 to 0 nothing in front of the camera is fogged.
+    if (fabsf(start) > 8192.f || fabsf(end) > 8192.f)
+    {
+        start = 0.f;
+        end = -1.f;
+    }
+#endif
+    glFogf(GL_FOG_START, start);
+    glFogf(GL_FOG_END, end);
+}
+
 void calc_and_apply_fog(int32_t shade, int32_t vis, int32_t pal)
 {
     if (nofog) return;
@@ -1385,8 +1460,7 @@ void calc_and_apply_fog(int32_t shade, int32_t vis, int32_t pal)
             fogresult2 = -GL_FOG_MAX; // hide fog behind the camera
         }
 
-        glFogf(GL_FOG_START, fogresult);
-        glFogf(GL_FOG_END, fogresult2);
+        polymost_setLinearFog(fogresult, fogresult2);
         glFogfv(GL_FOG_COLOR, (GLfloat *)&fogcol);
 
         return;
@@ -1432,8 +1506,7 @@ void calc_and_apply_fog_factor(int32_t shade, int32_t vis, int32_t pal, float fa
             fogresult2 = -GL_FOG_MAX; // hide fog behind the camera
         }
 
-        glFogf(GL_FOG_START, fogresult);
-        glFogf(GL_FOG_END, fogresult2);
+        polymost_setLinearFog(fogresult, fogresult2);
         glFogfv(GL_FOG_COLOR, (GLfloat *)&fogcol);
 
         return;
@@ -1956,7 +2029,9 @@ void uploadtextureindexed(int32_t doalloc, vec2_t offset, vec2_t siz, intptr_t t
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+        // no mipmaps: OpenGL ES 2 has no GL_TEXTURE_MAX_LEVEL, and with a mipmap filter the sheet was
+        // incomplete there (all black; gl4es on iOS/Android)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1.f);
 
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, siz.y, siz.x, 0, GL_RED, GL_UNSIGNED_BYTE, (void*) tile);

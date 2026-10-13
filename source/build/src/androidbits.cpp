@@ -12,8 +12,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <ucontext.h>
+#include <unwind.h>
 
 #include "compat.h"
+#include "baselayer.h"
 #include "iosbits.h"
 #include "SDL.h"
 #include "SDL_system.h"
@@ -285,18 +290,56 @@ static void android_getMainFBSize(int *width, int *height)
     SDL_GL_GetDrawableSize(s_glWindow, width, height);
 }
 
+extern "C" int gl4es_info_npot(void);
+extern "C" int gl4es_info_highp(void);
+
+// Palette-indexed textures (one copy of each tile in big sheets, palette and shading in the shader:
+// the fast path) need full NPOT support, or gl4es garbles the tiles it uploads into the sheets, and
+// highp floats in fragment shaders to address single texels of a 4096 sheet. Without them the
+// renderer makes a texture per tile, palette and shade.
+bool android_glindexedcolors(void)
+{
+    return gl4es_info_npot() >= 3 && gl4es_info_highp() > 0;
+}
+
+// what the phone's own OpenGL ES driver says (gl4es reports itself), for bug reports
+static void logGLESDriver(void)
+{
+    typedef unsigned char const *(*getString_t)(unsigned);
+    typedef void (*getPrecision_t)(unsigned, unsigned, int *, int *);
+    auto const getString = (getString_t)SDL_GL_GetProcAddress("glGetString");
+    auto const getPrecision = (getPrecision_t)SDL_GL_GetProcAddress("glGetShaderPrecisionFormat");
+    if (!getString)
+        return;
+    LOG_F(INFO, "GLES driver: %s / %s / %s / GLSL %s", (char const *)getString(0x1F00 /*GL_VENDOR*/),
+          (char const *)getString(0x1F01 /*GL_RENDERER*/), (char const *)getString(0x1F02 /*GL_VERSION*/),
+          (char const *)getString(0x8B8C /*GL_SHADING_LANGUAGE_VERSION*/));
+    if (getPrecision)
+    {
+        int high[2] = {}, highBits = 0, medium[2] = {}, mediumBits = 0;
+        getPrecision(0x8B30 /*GL_FRAGMENT_SHADER*/, 0x8DF2 /*GL_HIGH_FLOAT*/, high, &highBits);
+        getPrecision(0x8B30 /*GL_FRAGMENT_SHADER*/, 0x8DF1 /*GL_MEDIUM_FLOAT*/, medium, &mediumBits);
+        LOG_F(INFO, "GLES fragment shader floats: highp %d bits (range %d), mediump %d bits (range %d)",
+              highBits, high[1], mediumBits, medium[1]);
+    }
+    LOG_F(INFO, "GLES extensions: %s", (char const *)getString(0x1F03 /*GL_EXTENSIONS*/));
+}
+
 int ios_initgl4es(SDL_Window *window)
 {
     s_glWindow = window;
     static bool initialized;
     if (!initialized)
     {
+        logGLESDriver();
         // same as on iOS: client arrays instead of one constantly rewritten VBO
         setenv("LIBGL_USEVBO", "0", 1);
         set_getprocaddress(android_glesGetProcAddress);
         set_getmainfbsize(android_getMainFBSize);
         initialize_gl4es();
         initialized = true;
+        LOG_F(INFO, "gl4es: NPOT support %d, highp in fragment shaders %d: %s textures", gl4es_info_npot(), gl4es_info_highp(),
+              android_glindexedcolors() ? "palette-indexed" : "true-color");
     }
     return 0;
 }
@@ -312,35 +355,195 @@ void *ios_glGetProcAddress(const char *name)
 static char const kNoGLFile[] = "DISABLE_OPENGL.txt";
 static char const kGLStartingFile[] = ".opengl_starting";
 
+// .opengl_starting counts the starts with OpenGL that didn't get through the first seconds (it is
+// removed once they did, when the game runs the classic renderer, and when it goes to the
+// background). One such start can be bad luck; after two in a row the next start uses the classic
+// renderer.
 bool ios_glsafemode(void)
 {
     if (access(kNoGLFile, F_OK) == 0)
         return true;
 
-    if (access(kGLStartingFile, F_OK) == 0)
+    int nFailed = 0;
+    if (FILE *fp = fopen(kGLStartingFile, "r"))
+    {
+        if (fscanf(fp, "%d", &nFailed) != 1 || nFailed < 1)
+            nFailed = 1; // empty marker of an older version
+        fclose(fp);
+    }
+
+    if (nFailed >= 2)
     {
         unlink(kGLStartingFile);
         if (FILE *fp = fopen(kNoGLFile, "w"))
         {
-            fputs("NotBlood crashed while starting its OpenGL renderer, so it now uses the software\n"
-                  "renderer. Delete this file to try OpenGL again.\n", fp);
+            fputs("NotBlood crashed twice in a row while starting with its OpenGL renderer, so it now uses the\n"
+                  "classic renderer. Delete this file to try OpenGL again.\n", fp);
             fclose(fp);
         }
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "OpenGL renderer disabled",
-                                 "NotBlood crashed while starting its OpenGL renderer last time, so it will use the "
-                                 "software renderer from now on.\n\nTo try OpenGL again, delete DISABLE_OPENGL.txt "
-                                 "in the NotBlood folder.", NULL);
+                                 "NotBlood crashed twice in a row while starting with its OpenGL renderer, so it will "
+                                 "use the classic renderer from now on.\n\nTo try OpenGL again, delete DISABLE_OPENGL.txt "
+                                 "in the NotBlood folder. If it keeps crashing, please send notblood.log from that folder.", NULL);
         return true;
     }
 
     if (FILE *fp = fopen(kGLStartingFile, "w"))
+    {
+        fprintf(fp, "%d\n", nFailed + 1);
         fclose(fp);
+    }
+    if (nFailed)
+        LOG_F(WARNING, "The last start with OpenGL ended early; trying OpenGL again.");
     return false;
 }
 
 void ios_glstartupok(void)
 {
     unlink(kGLStartingFile);
+}
+
+// ---- crash report ---------------------------------------------------------------------------
+//
+// Android writes crash details where users can't get at them, so a crash also appends the signal
+// and a backtrace (library + offset, symbolized with the unstripped libmain.so that CI keeps) to
+// notblood.log. Only async-signal-safe calls, mostly; then the default handler takes over.
+
+static int s_crashFd = -1;
+static int const kCrashSignals[] = { SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT };
+static struct sigaction s_oldCrashActions[ARRAY_SIZE(kCrashSignals)];
+
+static void crashPuts(char const *s)
+{
+    if (s_crashFd >= 0 && s)
+        write(s_crashFd, s, strlen(s));
+}
+
+static void crashPutHex(uintptr_t v)
+{
+    char buf[2 + 16 + 1];
+    char *p = buf + sizeof(buf) - 1;
+    *p = 0;
+    do
+        *--p = "0123456789abcdef"[v & 15];
+    while ((v >>= 4) && p > buf + 2);
+    *--p = 'x';
+    *--p = '0';
+    crashPuts(p);
+}
+
+static void crashPutDec(int v)
+{
+    char buf[16];
+    char *p = buf + sizeof(buf) - 1;
+    *p = 0;
+    bool const neg = v < 0;
+    unsigned u = neg ? -(unsigned)v : (unsigned)v;
+    do
+        *--p = '0' + u % 10;
+    while ((u /= 10) && p > buf + 1);
+    if (neg)
+        *--p = '-';
+    crashPuts(p);
+}
+
+static void crashPutFrame(int n, uintptr_t pc)
+{
+    crashPuts("  #");
+    crashPutDec(n);
+    crashPuts(" ");
+    crashPutHex(pc);
+    Dl_info info;
+    if (dladdr((void *)pc, &info) && info.dli_fname)
+    {
+        char const *name = strrchr(info.dli_fname, '/');
+        crashPuts(" ");
+        crashPuts(name ? name + 1 : info.dli_fname);
+        crashPuts(" +");
+        crashPutHex(pc - (uintptr_t)info.dli_fbase);
+        if (info.dli_sname)
+        {
+            crashPuts(" (");
+            crashPuts(info.dli_sname);
+            crashPuts(")");
+        }
+    }
+    crashPuts("\n");
+}
+
+struct CrashUnwind
+{
+    int count;
+};
+
+static _Unwind_Reason_Code crashUnwindFrame(struct _Unwind_Context *ctx, void *arg)
+{
+    auto *state = (CrashUnwind *)arg;
+    uintptr_t const pc = _Unwind_GetIP(ctx);
+    if (pc)
+        crashPutFrame(state->count++, pc);
+    return state->count < 40 ? _URC_NO_REASON : _URC_END_OF_STACK;
+}
+
+static void crashHandler(int sig, siginfo_t *info, void *ucontext)
+{
+    static volatile sig_atomic_t s_inHandler;
+    if (!s_inHandler)
+    {
+        s_inHandler = 1;
+        crashPuts("\n*** NotBlood crashed: signal ");
+        crashPutDec(sig);
+        crashPuts(sig == SIGSEGV ? " (SIGSEGV)" : sig == SIGBUS ? " (SIGBUS)" : sig == SIGFPE ? " (SIGFPE)" : sig == SIGILL ? " (SIGILL)" : " (SIGABRT)");
+        crashPuts(" code ");
+        crashPutDec(info ? info->si_code : 0);
+        crashPuts(" address ");
+        crashPutHex(info ? (uintptr_t)info->si_addr : 0);
+        crashPuts("\n");
+
+        if (auto *uc = (ucontext_t *)ucontext)
+        {
+#if defined __aarch64__
+            crashPuts("crashed at:\n");
+            crashPutFrame(0, (uintptr_t)uc->uc_mcontext.pc);
+            crashPuts("called from:\n");
+            crashPutFrame(1, (uintptr_t)uc->uc_mcontext.regs[30]);
+#elif defined __x86_64__
+            crashPuts("crashed at:\n");
+            crashPutFrame(0, (uintptr_t)uc->uc_mcontext.gregs[REG_RIP]);
+#endif
+        }
+
+        crashPuts("backtrace:\n");
+        CrashUnwind state = { 0 };
+        _Unwind_Backtrace(crashUnwindFrame, &state);
+        crashPuts("*** end of crash report\n");
+    }
+
+    // let Android's handler finish the job (crash dialog, tombstone)
+    for (size_t i = 0; i < ARRAY_SIZE(kCrashSignals); i++)
+        if (kCrashSignals[i] == sig)
+            sigaction(sig, &s_oldCrashActions[i], NULL);
+    raise(sig);
+}
+
+void android_installcrashhandler(char const *pzLogFile)
+{
+    s_crashFd = open(pzLogFile, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0664);
+    if (s_crashFd < 0)
+        return;
+
+    static char altStack[64 * 1024];
+    stack_t ss = {};
+    ss.ss_sp = altStack;
+    ss.ss_size = sizeof(altStack);
+    sigaltstack(&ss, NULL);
+
+    struct sigaction sa = {};
+    sa.sa_sigaction = crashHandler;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigemptyset(&sa.sa_mask);
+    for (size_t i = 0; i < ARRAY_SIZE(kCrashSignals); i++)
+        sigaction(kCrashSignals[i], &sa, &s_oldCrashActions[i]);
 }
 
 // ---- entry point ----------------------------------------------------------------------------

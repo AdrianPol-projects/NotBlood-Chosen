@@ -94,6 +94,13 @@ extern void buildgl_setViewport(GLint x, GLint y, GLsizei width, GLsizei height)
 extern void buildgl_uLookAt(vec3f_t v_eye, vec3f_t v_center, vec3f_t v_up);
 extern void buildgl_useShaderProgram(uint32_t shaderID);
 
+#if defined EDUKE32_IOS || defined NOTBLOOD_GL4ES_TEST
+// gl4es: Polymost's shader does the alpha test itself, see glbuild.cpp
+# define BUILDGL_SHADER_ALPHATEST
+extern void buildgl_syncAlphaTest(void);
+extern bool polymost_setShaderAlphaTest(float ref);
+#endif
+
 extern void bind_2d_texture(GLuint texture, int filter);
 
 static FORCE_INLINE void  buildgl_crossproduct(const GLfloat* in_a, const GLfloat* in_b, GLfloat* out)

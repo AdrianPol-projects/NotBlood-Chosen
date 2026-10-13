@@ -726,6 +726,13 @@ const char *pzWeaponSwitchStrings[] = {
     "IF HOLDING PITCHFORK"
 };
 
+#ifdef NOTBLOOD_ANDROID
+// Android also autosaves into the key slot when the app goes to the background (see blood.cpp)
+#define AUTOSAVE_KEYSLOT (gAutosave != 0)
+#else
+#define AUTOSAVE_KEYSLOT (gAutosave == 2)
+#endif
+
 const char *pzAutosaveModeStrings[] = {
     "OFF",
     "NEW LEVEL",
@@ -1905,7 +1912,7 @@ void SetupSaveGameMenu(void)
     itemSaveGameAutosaveStart.bEnable = 0;
     itemSaveGameAutosaveStart.bNoDraw = gAutosave == 0;
     itemSaveGameAutosaveKey.bEnable = 0;
-    itemSaveGameAutosaveKey.bNoDraw = gAutosave != 2;
+    itemSaveGameAutosaveKey.bNoDraw = !AUTOSAVE_KEYSLOT;
 }
 
 void SetupLoadGameMenu(void)
@@ -1941,8 +1948,8 @@ void SetupLoadGameMenu(void)
     itemLoadGameAutosaveKey.at35 = 0;
     itemLoadGameAutosaveStart.bEnable = gAutosave != 0; // remove autosave slots if autosaves are disabled
     itemLoadGameAutosaveStart.bNoDraw = gAutosave == 0;
-    itemLoadGameAutosaveKey.bEnable = gAutosave == 2;
-    itemLoadGameAutosaveKey.bNoDraw = gAutosave != 2;
+    itemLoadGameAutosaveKey.bEnable = AUTOSAVE_KEYSLOT;
+    itemLoadGameAutosaveKey.bNoDraw = !AUTOSAVE_KEYSLOT;
     itemLoadGame0.at2c = &itemLoadGamePic;
     itemLoadGame1.at2c = &itemLoadGamePic;
     itemLoadGame2.at2c = &itemLoadGamePic;
@@ -3207,9 +3214,9 @@ void SetAutosaveMode(CGameMenuItemZCycle *pItem)
     itemLoadGameAutosaveStart.bEnable = gAutosave != 0; // remove autosave slots if autosaves are disabled
     itemLoadGameAutosaveStart.bNoDraw = gAutosave == 0;
     itemSaveGameAutosaveStart.bNoDraw = gAutosave == 0;
-    itemLoadGameAutosaveKey.bEnable = gAutosave == 2;
-    itemLoadGameAutosaveKey.bNoDraw = gAutosave != 2;
-    itemSaveGameAutosaveKey.bNoDraw = gAutosave != 2;
+    itemLoadGameAutosaveKey.bEnable = AUTOSAVE_KEYSLOT;
+    itemLoadGameAutosaveKey.bNoDraw = !AUTOSAVE_KEYSLOT;
+    itemSaveGameAutosaveKey.bNoDraw = !AUTOSAVE_KEYSLOT;
 }
 
 void SetLockSaving(CGameMenuItemZBool *pItem)
@@ -4728,7 +4735,7 @@ void QuickSaveGame(void)
     viewSetMessage("Game saved");
 }
 
-void AutosaveGame(bool bLevelStartSave)
+void AutosaveGame(bool bLevelStartSave, bool bSuspendSave)
 {
     char strSaveGameName[BMAX_PATH];
     int nSlot = bLevelStartSave ? kLoadSaveSlotSpawn : kLoadSaveSlotKey;
@@ -4736,7 +4743,7 @@ void AutosaveGame(bool bLevelStartSave)
         return;
     if (G_ModDirSnprintf(strSaveGameName, BMAX_PATH, "gameautosave%1d.sav", nSlot - kLoadSaveSlotSpawn))
         return;
-    snprintf(gGameOptions.szUserGameName, sizeof(gGameOptions.szUserGameName), "%s %s", gGameOptions.zLevelName, nSlot == kLoadSaveSlotSpawn ? "start": "key");
+    snprintf(gGameOptions.szUserGameName, sizeof(gGameOptions.szUserGameName), "%s %s", gGameOptions.zLevelName, nSlot == kLoadSaveSlotSpawn ? "start" : bSuspendSave ? "paused" : "key");
     snprintf(gGameOptions.szSaveGameName, sizeof(gGameOptions.szSaveGameName), "%s", strSaveGameName);
     gGameOptions.nSaveGameSlot = nSlot;
     const PLAYER playerTemp = *gMe; // temp player struct while we make autosaving a little more easier (blood is stressful enough already)
@@ -4747,7 +4754,7 @@ void AutosaveGame(bool bLevelStartSave)
     }
     LoadSave::SaveGame(strSaveGameName);
     *gMe = playerTemp; // restore current player struct
-    if (!bLevelStartSave) // don't print message on level start autosaves
+    if (!bLevelStartSave && !bSuspendSave) // don't print message on level start autosaves
         viewSetMessage("Autosaved...");
     gGameOptions.picEntry = gSavedOffset;
     gSaveGameOptions[nSlot] = gGameOptions;

@@ -1132,7 +1132,10 @@ void CONFIG_WriteSettings(void) // save binds and aliases to <cfgname>_settings.
             Bsnprintf(filename, ARRAY_SIZE(filename), "%s_cvars.cfg", SetupFilename);
     }
 
-    BFILE *fp = Bfopen(filename, "wt");
+    // written to a temporary file and swapped in: a game that is killed while saving keeps its settings
+    char tmpname[BMAX_PATH];
+    Bsnprintf(tmpname, sizeof(tmpname), "%s.tmp", filename);
+    BFILE *fp = Bfopen(tmpname, "wt");
 
     if (fp)
     {
@@ -1157,6 +1160,7 @@ void CONFIG_WriteSettings(void) // save binds and aliases to <cfgname>_settings.
         OSD_WriteCvars(fp);
 
         Bfclose(fp);
+        Breplacefile(tmpname, filename);
 
         OSD_Printf("Wrote %s\n", filename);
 
@@ -1166,13 +1170,24 @@ void CONFIG_WriteSettings(void) // save binds and aliases to <cfgname>_settings.
     OSD_Printf("Error writing %s: %s\n", filename, strerror(errno));
 }
 
+// The settings script, loaded again from the file if it was freed (it also holds entries this
+// version doesn't write itself, such as the best map times).
+static int32_t CONFIG_GetScript(void)
+{
+    if (scripthandle < 0 && buildvfs_exists(SetupFilename))
+        scripthandle = SCRIPT_Load(SetupFilename);
+    if (scripthandle < 0)
+        scripthandle = SCRIPT_Init(SetupFilename);
+    return scripthandle;
+}
+
+// flags: 1 = only what the startup window changes, 2 = keep the script loaded (saving during the game)
 void CONFIG_WriteSetup(uint32_t flags)
 {
     char buf[128];
     if (!setupread) return;
 
-    if (scripthandle < 0)
-        scripthandle = SCRIPT_Init(SetupFilename);
+    CONFIG_GetScript();
 
     //SCRIPT_PutNumber(scripthandle, "Misc", "Executions", ud.executions, FALSE, FALSE);
 
@@ -1211,6 +1226,7 @@ void CONFIG_WriteSetup(uint32_t flags)
     {
         SCRIPT_Save(scripthandle, SetupFilename);
         SCRIPT_Free(scripthandle);
+        scripthandle = -1;
         return;
     }
 
@@ -1332,7 +1348,10 @@ void CONFIG_WriteSetup(uint32_t flags)
     SCRIPT_Save(scripthandle, SetupFilename);
 
     if ((flags & 2) == 0)
+    {
         SCRIPT_Free(scripthandle);
+        scripthandle = -1; // a later save or best time loads it again
+    }
 
     OSD_Printf("Wrote %s\n",SetupFilename);
     CONFIG_WriteSettings();
@@ -1365,7 +1384,7 @@ static void CONFIG_GetMD4EntryName(char m[], uint8_t const * const md4)
 
 int32_t CONFIG_GetMapBestTime(char const * const mapname, uint8_t const * const mapmd4)
 {
-    if (!setupread || scripthandle < 0)
+    if (!setupread || CONFIG_GetScript() < 0)
         return -1;
 
     char m[37];
@@ -1387,7 +1406,7 @@ int32_t CONFIG_GetMapBestTime(char const * const mapname, uint8_t const * const 
 
 int CONFIG_SetMapBestTime(uint8_t const * const mapmd4, int32_t tm)
 {
-    if (scripthandle < 0 && (scripthandle = SCRIPT_Init(SetupFilename)) < 0)
+    if (CONFIG_GetScript() < 0)
         return -1;
 
     char m[37];

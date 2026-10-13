@@ -55,6 +55,13 @@ void ios_setrenderscale(SDL_Window *window, int pct);
 extern int const ios_renderscales[kIosRenderScales];
 int ios_scaleforsize(int32_t w);
 
+#ifdef NOTBLOOD_ANDROID
+// A crash appends the signal and a backtrace to this file (the log; see androidbits.cpp).
+void android_installcrashhandler(char const *pzLogFile);
+// gl4es can run Polymost's palette-indexed textures on this GPU (after ios_initgl4es()).
+bool android_glindexedcolors(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

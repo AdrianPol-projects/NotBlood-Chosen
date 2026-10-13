@@ -101,6 +101,37 @@ void buildgl_setDepthFunc(GLenum func)
     inthash_add(&gl.state[0], GL_DEPTH_FUNC, func, 1);
 }
 
+#ifdef BUILDGL_SHADER_ALPHATEST
+// gl4es emulates GL_ALPHA_TEST with a variant of the current shader, and changing variants means a
+// program switch plus sending every uniform again: Polymost turned alpha testing on and off about
+// 150 times a frame, each costing that on a phone. So while Polymost's shader is in use, the shader
+// tests alpha itself (u_alphaTest) and the real GL_ALPHA_TEST stays off; other drawing gets the real
+// thing. gl.state keeps what the engine asked for.
+void buildgl_syncAlphaTest(void)
+{
+    bool const wanted = inthash_find(&gl.state[0], GL_ALPHA_TEST) == GL_TRUE;
+    bool inShader = false;
+
+    if ((GLenum)inthash_find(&gl.state[0], GL_ALPHA_TEST_FUNC) == GL_GREATER || !wanted)
+    {
+        float ref = 0.f;
+        int32_t const refBits = (int32_t)inthash_find(&gl.state[0], GL_ALPHA_TEST_REF);
+        if (refBits != -1)
+            Bmemcpy(&ref, &refBits, sizeof(ref));
+        inShader = polymost_setShaderAlphaTest(wanted ? ref : -1.f);
+    }
+
+    bool const real = wanted && !inShader;
+    if (!!glIsEnabled(GL_ALPHA_TEST) != real)
+    {
+        if (real)
+            glEnable(GL_ALPHA_TEST);
+        else
+            glDisable(GL_ALPHA_TEST);
+    }
+}
+#endif
+
 void buildgl_setAlphaFunc(GLenum func, GLfloat ref)
 {
     if ((GLenum)inthash_find(&gl.state[0], GL_ALPHA_TEST_FUNC) == func && inthash_find(&gl.state[0], GL_ALPHA_TEST_REF) == *(int32_t *)&ref)
@@ -109,12 +140,24 @@ void buildgl_setAlphaFunc(GLenum func, GLfloat ref)
     glAlphaFunc(func, ref);
     inthash_add(&gl.state[0], GL_ALPHA_TEST_FUNC, func, 1);
     inthash_add(&gl.state[0], GL_ALPHA_TEST_REF, *(int32_t *)&ref, 1);
+#ifdef BUILDGL_SHADER_ALPHATEST
+    buildgl_syncAlphaTest();
+#endif
 }
 
 void buildgl_setEnabled(GLenum key)
 {
     if (inthash_find(&gl.state[0], key) == GL_TRUE)
         return;
+
+#ifdef BUILDGL_SHADER_ALPHATEST
+    if (key == GL_ALPHA_TEST)
+    {
+        inthash_add(&gl.state[0], key, GL_TRUE, 1);
+        buildgl_syncAlphaTest();
+        return;
+    }
+#endif
 
     glEnable(key);
 
@@ -126,6 +169,15 @@ void buildgl_setDisabled(GLenum key)
     if (inthash_find(&gl.state[0], key) == GL_FALSE)
         return;
 
+#ifdef BUILDGL_SHADER_ALPHATEST
+    if (key == GL_ALPHA_TEST)
+    {
+        inthash_add(&gl.state[0], key, GL_FALSE, 1);
+        buildgl_syncAlphaTest();
+        return;
+    }
+#endif
+
     glDisable(key);
 
     inthash_add(&gl.state[0], key, GL_FALSE, 1);
@@ -135,6 +187,9 @@ void buildgl_useShaderProgram(uint32_t shaderID)
 {
     glUseProgram(shaderID);
     gl.currentShaderProgramID = shaderID;
+#ifdef BUILDGL_SHADER_ALPHATEST
+    buildgl_syncAlphaTest();
+#endif
 }
 
 //POGOTODO: these wrappers won't be needed down the line -- remove them once proper draw call organization is finished

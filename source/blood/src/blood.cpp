@@ -2005,7 +2005,14 @@ static int32_t check_filename_casing(void)
 extern void (*app_onsuspend)(void);
 static void SaveSettingsOnSuspend(void)
 {
-    CONFIG_WriteSetup(0);
+    CONFIG_WriteSetup(2);
+#ifdef NOTBLOOD_ANDROID
+    // Android often ends a game that sits in the background (or it crashes there), and nothing tells
+    // the game beforehand: keep the progress in the autosave slot ("paused")
+    if (gAutosave && gGameStarted && !gStartNewGame && !gQuitGame && !gEndGameMgr.at0 && !gDemo.bPlaying && !gDemo.bRecording
+        && gGameOptions.nGameType == kGameTypeSinglePlayer && !gGameOptions.bPermaDeath && gMe && gMe->pXSprite && gMe->pXSprite->health > 0)
+        AutosaveGame(false, true);
+#endif
 }
 #endif
 

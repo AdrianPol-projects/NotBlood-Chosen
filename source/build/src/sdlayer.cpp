@@ -650,6 +650,9 @@ int main(int argc, char *argv[])
 
 #ifdef EDUKE32_IOS
     ios_setupdocuments();
+#ifdef NOTBLOOD_ANDROID
+    android_installcrashhandler("notblood.log");
+#endif
     if (freopen("stdout.txt", "w", stdout))
         setvbuf(stdout, NULL, _IONBF, 0);
     ios_checkgamedata();
@@ -2051,6 +2054,27 @@ int32_t videoSetMode(int32_t x, int32_t y, int32_t c, int32_t fs)
 {
     int32_t regrab = 0, ret;
 
+#ifdef __ANDROID__
+    // The classic renderer draws every pixel on the CPU, then converts and uploads the whole frame:
+    // at a phone's native resolution even the menus were slow. Above about 1.2 million pixels it
+    // renders a smaller size the screen scales up (the pixel art looks the same).
+    if (c == 8 && x * y > 1200000)
+    {
+        for (int const pct : ios_renderscales)
+        {
+            int32_t sw, sh;
+            ios_scaledsize(pct, &sw, &sh);
+            if (sw * sh <= 1200000)
+            {
+                LOG_F(INFO, "Classic renderer: %dx%d instead of %dx%d", sw, sh, x, y);
+                x = sw;
+                y = sh;
+                break;
+            }
+        }
+    }
+#endif
+
     ret = setvideomode_sdlcommon(&x, &y, c, fs, &regrab);
 
     if (ret != 1)
@@ -2548,7 +2572,10 @@ void videoShowFrame(int32_t w)
             // survived the risky part (context, gl4es, shader compiles, first frames)
             static int glFramesShown;
             if (++glFramesShown == 120)
+            {
+                LOG_F(INFO, "OpenGL: the first %d frames are on screen (%dx%d)", glFramesShown, outw, outh);
                 ios_glstartupok();
+            }
         }
 #endif
         {
@@ -2559,6 +2586,31 @@ void videoShowFrame(int32_t w)
             SDL_GL_SwapBuffers();
 #endif
         }
+#ifdef __ANDROID__
+        {
+            // After a swap the next buffer holds an old frame: Android's surface has three buffers, and
+            // screens that don't draw everything (the logos at startup) showed bits of earlier frames,
+            // such as copies of the touch buttons. Start each frame black. On these tile-based GPUs
+            // a full clear is also cheaper than loading the old contents back into the tiles.
+            GLboolean const scissor = glIsEnabled(GL_SCISSOR_TEST);
+            GLboolean depthMask = GL_TRUE, colorMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
+            GLfloat clearColor[4] = {};
+            glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+            glGetBooleanv(GL_COLOR_WRITEMASK, colorMask);
+            glGetFloatv(GL_COLOR_CLEAR_VALUE, clearColor);
+            if (scissor)
+                glDisable(GL_SCISSOR_TEST);
+            glDepthMask(GL_TRUE);
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            glClearColor(0.f, 0.f, 0.f, 1.f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+            glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+            glColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+            glDepthMask(depthMask);
+            if (scissor)
+                glEnable(GL_SCISSOR_TEST);
+        }
+#endif
 
         if (r_glfinish == 1 && r_finishbeforeswap == 0 && vsync_renderlayer != 2)
         {
@@ -2627,6 +2679,12 @@ void videoShowFrame(int32_t w)
     softsurface_blitBuffer((uint32_t*) sdl_surface->pixels, sdl_surface->format->BitsPerPixel);
     if (SDL_MUSTLOCK(sdl_surface)) SDL_UnlockSurface(sdl_surface);
 #if defined EDUKE32_IOS
+    {
+        // running fine with the classic renderer: no OpenGL start that could have crashed
+        static int classicFramesShown;
+        if (++classicFramesShown == 120)
+            ios_glstartupok();
+    }
     ios_updategamerect();
     SDL_UpdateTexture(sdl_texture, NULL, sdl_surface->pixels, sdl_surface->pitch);
     SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 255);
@@ -3002,6 +3060,7 @@ int32_t handleevents_pollsdl(void)
                 // to do there anyway: park the whole game until we are active again.
                 if (app_onsuspend)
                     app_onsuspend();
+                ios_glstartupok(); // got this far: being closed in the background is no GL crash
 #ifdef USE_OPENGL
                 if (!nogl && sdl_context)
                     glFinish();

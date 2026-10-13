@@ -15,9 +15,9 @@ name: Release builds
   workflow_dispatch:
     inputs:
       only:
-        description: 'Platforms to build: all, or only macos (then only the macOS download of the release is replaced)'
+        description: 'Platforms to build: all; only macos or android (then only that download of the release is replaced); android-test (an APK artifact, nothing published)'
         type: choice
-        options: [all, macos]
+        options: [all, macos, android, android-test]
         default: all
 
 permissions:
@@ -83,7 +83,7 @@ jobs:
 
   build-macos:
     name: macOS (Apple Silicon + Intel)
-    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen' && (github.event_name != 'workflow_dispatch' || inputs.only == 'all' || inputs.only == 'macos')
     runs-on: macos-14
     env:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
@@ -140,7 +140,7 @@ jobs:
 
   build-android:
     name: Android
-    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen' && (github.event_name != 'workflow_dispatch' || inputs.only == 'all')
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen' && (github.event_name != 'workflow_dispatch' || inputs.only == 'all' || startsWith(inputs.only, 'android'))
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -176,6 +176,19 @@ jobs:
           name: notblood-android
           path: ./NotBlood.apk
           if-no-files-found: error
+      # libmain.so with its symbols, to turn the offsets of a crash report in notblood.log into lines
+      - name: Collect native symbols
+        run: |
+          mkdir symbols
+          for f in $(find platform/Android/app/build/intermediates -path '*merged_native_libs*' -name libmain.so); do
+            abi=$(basename "$(dirname "$f")")
+            mkdir -p "symbols/$abi" && cp "$f" "symbols/$abi/"
+          done
+          ls -lR symbols
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notblood-android-symbols
+          path: ./symbols
 
   build-ios:
     name: iPad / iPhone (unsigned IPA)
@@ -224,8 +237,8 @@ jobs:
   publish:
     name: Publish
     needs: [build-linux, build-windows, build-macos, build-android, build-ios]
-    # skipped jobs (a macOS-only run) are fine, failed ones are not
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.build-macos.result == 'success' }}
+    # skipped jobs (a macOS- or Android-only run) are fine, failed ones are not
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && inputs.only != 'android-test' && (needs.build-macos.result == 'success' || inputs.only == 'android') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -254,16 +267,20 @@ jobs:
             chmod +x "$dir/notblood" 2>/dev/null || true
             (cd "pkg/$target" && zip -9 -r "../../NotBlood-Chosen-$version-$target.zip" NotBlood)
           done
-          dir=pkg/macos/NotBlood
-          mkdir -p "$dir/addons" "$dir/mods" "$dir/movie"
-          (cd "$dir" && unzip -q ../../../artifacts/notblood-macos/NotBlood.app.zip)
-          cp package/release/README.txt "$dir/README - NotBlood Chosen.txt"
-          cp package/release/addons.txt "$dir/addons/Put add-on episodes here.txt"
-          cp package/release/mods.txt "$dir/mods/Put mods here.txt"
-          cp package/release/movie.txt "$dir/movie/Put the movie files here.txt"
-          (cd pkg/macos && zip -9 -r -y "../../NotBlood-Chosen-$version-macos.zip" NotBlood)
-          if [ "$ONLY" = all ]; then
+          if [ "$ONLY" = all ] || [ "$ONLY" = macos ]; then
+            dir=pkg/macos/NotBlood
+            mkdir -p "$dir/addons" "$dir/mods" "$dir/movie"
+            (cd "$dir" && unzip -q ../../../artifacts/notblood-macos/NotBlood.app.zip)
+            cp package/release/README.txt "$dir/README - NotBlood Chosen.txt"
+            cp package/release/addons.txt "$dir/addons/Put add-on episodes here.txt"
+            cp package/release/mods.txt "$dir/mods/Put mods here.txt"
+            cp package/release/movie.txt "$dir/movie/Put the movie files here.txt"
+            (cd pkg/macos && zip -9 -r -y "../../NotBlood-Chosen-$version-macos.zip" NotBlood)
+          fi
+          if [ "$ONLY" = all ] || [ "$ONLY" = android ]; then
             cp artifacts/notblood-android/NotBlood.apk "NotBlood-Chosen-$version-android.apk"
+          fi
+          if [ "$ONLY" = all ]; then
             cp artifacts/notblood-ios/NotBlood.ipa "NotBlood-Chosen-$version-ios.ipa"
           fi
           ls -l NotBlood-Chosen-*
@@ -278,14 +295,20 @@ jobs:
             echo "Branch head is $HEAD_SHA, this run built $GITHUB_SHA - not publishing."
             exit 0
           fi
-          if [ "$ONLY" = macos ]; then
-            # replace only the macOS download; the other platforms stay as they are
+          if [ "$ONLY" = macos ] || [ "$ONLY" = android ]; then
+            # replace only that platform's download; the others stay as they are
+            case "$ONLY" in
+              macos) pattern='-macos\.zip$'; file=$(ls NotBlood-Chosen-*-macos.zip); name=macOS ;;
+              android) pattern='-android\.apk$'; file=$(ls NotBlood-Chosen-*-android.apk); name=Android ;;
+            esac
             gh release view latest >/dev/null
-            for a in $(gh release view latest --json assets -q '.assets[].name' | grep -- '-macos\.zip$'); do
+            for a in $(gh release view latest --json assets -q '.assets[].name' | grep -- "$pattern"); do
               gh release delete-asset latest "$a" -y
             done
-            gh release upload latest NotBlood-Chosen-*-macos.zip --clobber
-            { cat package/release/NOTES.md; echo; echo "_The macOS download was updated on its own in build ${{ github.run_number }} (commit ${GITHUB_SHA::7}); the other downloads are from the build in the title._"; } > notes.md
+            gh release upload latest "$file" --clobber
+            # keep the notes of earlier single-platform updates
+            gh release view latest --json body -q .body | grep '^_The .* download was updated on its own' | grep -v "^_The $name " > earlier.txt || true
+            { cat package/release/NOTES.md; echo; cat earlier.txt; echo "_The $name download was updated on its own in build ${{ github.run_number }} (commit ${GITHUB_SHA::7}); the other downloads are from the build in the title._"; } > notes.md
             gh release edit latest --notes-file notes.md
             exit 0
           fi
