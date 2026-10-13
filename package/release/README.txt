@@ -44,7 +44,7 @@ CO-OP SAVES
 
 ONLINE
 
-  MULTIPLAYER > ONLINE: the server (for example blood.pi-mole.com) and its key, then
+  MULTIPLAYER > ONLINE: the server address and its key (ask whoever runs the server), then
   HOST A LOBBY or FIND LOBBIES. Nobody needs to forward ports.
   Live stats of the games: open the server's address in a web browser.
 

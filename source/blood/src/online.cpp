@@ -36,7 +36,7 @@ See the GNU General Public License for more details.
 #include "player.h"
 #include "view.h"
 
-char gOnlineServer[64] = "blood.pi-mole.com";
+char gOnlineServer[64];
 char gOnlineKey[48];
 char gOnlineLobby[25];
 int gOnlineReportLan;

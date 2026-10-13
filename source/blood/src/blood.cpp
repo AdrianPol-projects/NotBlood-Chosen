@@ -2001,11 +2001,22 @@ static int32_t check_filename_casing(void)
 }
 #endif
 
+#ifdef EDUKE32_IOS
+extern void (*app_onsuspend)(void);
+static void SaveSettingsOnSuspend(void)
+{
+    CONFIG_WriteSetup(0);
+}
+#endif
+
 int app_main(int argc, char const * const * argv)
 {
     char buffer[BMAX_PATH];
     margc = argc;
     margv = argv;
+#ifdef EDUKE32_IOS
+    app_onsuspend = SaveSettingsOnSuspend;
+#endif
 #ifdef _WIN32
 #ifndef DEBUGGINGAIDS
     if (!G_CheckCmdSwitch(argc, argv, "-noinstancechecking") && !windowsCheckAlreadyRunning())

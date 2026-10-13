@@ -140,7 +140,10 @@ void CGameMenuMgr::Pop(void)
         if (nMenuPointer == 0)
             Deactivate();
         else
+        {
             pActiveMenu = pMenuStack[nMenuPointer-1];
+            CONFIG_WriteSetup(0); // keep settings even if the game is killed instead of quit
+        }
 
         m_menuchange_watchpoint = 1;
         if (pGameMenuItemZEdit) // deselect last actively edited item
@@ -345,6 +348,7 @@ void CGameMenuMgr::Deactivate(void)
     keyFlushScans();
     keyFlushChars();
     m_bActive = false;
+    CONFIG_WriteSetup(0); // keep settings even if the game is killed instead of quit
 
     mouseLockToWindow(1);
     gInputMode = INPUT_MODE_0;

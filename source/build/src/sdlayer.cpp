@@ -100,6 +100,10 @@ static int vsync_unsupported;
 #endif
 
 #ifdef EDUKE32_IOS
+// Set by the game: saves the settings when the app goes to the background, because
+// iOS and Android usually kill a suspended app instead of letting it quit.
+void (*app_onsuspend)(void);
+
 // Normally the engine's OpenGL renderers run through gl4es (desktop GL 2.1 on top of
 // OpenGL ES 2.0, see ios_initgl4es()). If that is unavailable we fall back to this:
 // the classic renderer's output is converted into sdl_surface (CPU side, 32-bit),
@@ -2996,6 +3000,8 @@ int32_t handleevents_pollsdl(void)
             case SDL_APP_DIDENTERBACKGROUND:
                 // iOS kills apps that touch the GPU in the background, and there is nothing
                 // to do there anyway: park the whole game until we are active again.
+                if (app_onsuspend)
+                    app_onsuspend();
 #ifdef USE_OPENGL
                 if (!nogl && sdl_context)
                     glFinish();
