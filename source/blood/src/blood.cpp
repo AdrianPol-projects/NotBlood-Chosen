@@ -33,6 +33,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "asound.h"
 #include "db.h"
 #include "blood.h"
+#include "bot.h"
 #include "chatpipe.h"
 #include "choke.h"
 #include "config.h"
@@ -976,9 +977,10 @@ void StartLevel(GAMEOPTIONS *pOpt)
     gGameStarted = 1;
     ready2send = 1;
     gAutosaveInCurLevel = false;
+    botLevelStart();
     if (bTriggerAutosave && !pOpt->bPermaDeath)
         AutosaveGame(true); // create autosave at start of the new level
-    if ((pOpt->nGameType == kGameTypeCoop) && !gDemo.bPlaying && !gDemo.bRecording)
+    if ((pOpt->nGameType == kGameTypeCoop) && !gDemo.bPlaying && !gDemo.bRecording && !gBotMatch)
         coopWriteLevelStartSave(); // every machine keeps a co-op save of the level start
 }
 
@@ -1339,7 +1341,7 @@ void ProcessFrame(void)
     viewClearInterpolations();
     if (!gDemo.bPlaying)
     {
-        if (gPaused || gEndGameMgr.at0 || (gGameOptions.nGameType == kGameTypeSinglePlayer && (gGameMenuMgr.m_bActive || (!gDemo.bRecording && ((osd->flags & OSD_DRAW) == OSD_DRAW)))))
+        if (gPaused || gEndGameMgr.at0 || ((gGameOptions.nGameType == kGameTypeSinglePlayer || gBotMatch) && (gGameMenuMgr.m_bActive || (!gDemo.bRecording && ((osd->flags & OSD_DRAW) == OSD_DRAW)))))
             return;
         if (gDemo.bRecording)
             gDemo.Write(gFifoInput[(gNetFifoTail-1)&255]);
@@ -2585,6 +2587,7 @@ RESTART:
         gDemo.Close();
     if (gRestartGame)
     {
+        botEndMatch(); // a bot match ended: back to single player
         UpdateDacs(0, true);
         sndStopSong();
         FX_StopAllSounds();

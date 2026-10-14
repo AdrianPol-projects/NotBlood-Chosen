@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "enet.h"
 #endif
 #include "compat.h"
+#include "bot.h"
 #include "callback.h"
 #include "chatpipe.h"
 #include "coopsave.h"
@@ -903,7 +904,10 @@ void netGetInput(void)
             {
                 GINPUT *pInput1 = &gFifoInput[(gNetFifoHead[p]-1)&255][p];
                 GINPUT *pInput2 = &gFifoInput[gNetFifoHead[p]&255][p];
-                memcpy(pInput2, pInput1, sizeof(GINPUT));
+                if (botIsBot(p))
+                    botGetInput(p, pInput2);
+                else
+                    memcpy(pInput2, pInput1, sizeof(GINPUT));
                 gNetFifoHead[p]++;
             }
         }

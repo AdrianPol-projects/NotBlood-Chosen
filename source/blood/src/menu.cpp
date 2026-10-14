@@ -26,6 +26,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "fx_man.h"
 #include "music.h"
 #include "blood.h"
+#include "bot.h"
 #include "demo.h"
 #include "config.h"
 #include "coopsave.h"
@@ -1556,6 +1557,15 @@ void SetupEpisodeMenu(void)
     else
         itemUserMap.m_nY = nOffset+(height+8)*j;
     menuEpisode.Add(&itemUserMap, false);
+    itemEpisodeBots.m_nY = itemUserMap.m_nY+height+4;
+    if (itemEpisodeBots.m_nY+height > 192) // keep both on the screen
+    {
+        const int nUp = itemEpisodeBots.m_nY+height-192;
+        itemUserMap.m_nY -= nUp;
+        itemEpisodeBots.m_nY -= nUp;
+    }
+    itemEpisodeBots.tooltip_pzTextUpper = "Bloodbath against computer players";
+    menuEpisode.Add(&itemEpisodeBots, false);
     menuEpisode.Add(&itemBloodQAV, false);
 
     menuUserMap.Add(&itemUserMapTitle, true);
@@ -3392,6 +3402,7 @@ void SetMonsters(CGameMenuItemZCycle *pItem)
 
 void SetDifficultyAndStart(CGameMenuItemChain *pItem)
 {
+    botEndMatch();
     gGameOptions.nDifficulty = pItem->at30;
     gGameOptions.nMonsterSettings = 1;
     gGameOptions.nMonsterRespawnTime = 3600; // default (30 secs)
@@ -3455,6 +3466,7 @@ void SetCustomDifficultyMenu(CGameMenuItemChain *pItem)
 void SetCustomDifficultyAndStart(CGameMenuItemChain *pItem)
 {
     UNREFERENCED_PARAMETER(pItem);
+    botEndMatch();
     gGameOptions.nDifficulty = ClipRange(itemCustomDifficultyEnemyDifficulty.nValue, 0, 4);
     gGameOptions.nMonsterSettings = ClipRange(itemCustomDifficultyMonsterSettings.m_nFocus, 0, ARRAY_SSIZE(zMonsterStrings)-1);
     if (gGameOptions.nMonsterSettings <= 1)
@@ -4949,6 +4961,68 @@ void UpdateMainLoadItem(CGameMenuItem *pItem)
     }
 }
 
+// Bot matches use the multiplayer game setup offline
+static void UpdateNetStartCoopItem(CGameMenuItem *pItem)
+{
+    pItem->bEnable = gNetMode != NETWORK_NONE; // co-op saves need real players
+}
+
+void SetupBotMatchMenu(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    static bool bDone = false;
+    itemNetStart10Coop.pPreDrawCallback = UpdateNetStartCoopItem;
+    if (bDone)
+        return;
+    bDone = true;
+    // start on the first bloodbath map, if the game has an episode of them
+    for (int i = 0; i < gEpisodeCount && i < 6; i++)
+    {
+        if (gEpisodeInfo[i].bloodbath && gMultiEpisodeInit == -1)
+        {
+            itemNetStart2.SetTextIndex(i);
+            SetupNetLevels(&itemNetStart2);
+            itemNetStart3.SetTextIndex(0);
+            break;
+        }
+    }
+    if ((itemNetGameMode.m_nFocus+1) == kGameTypeCoop && gMultiModeInit == -1)
+    {
+        itemNetGameMode.SetTextIndex(kGameTypeBloodBath-1);
+        SetNetGameMode(&itemNetGameMode);
+    }
+}
+
+void BotMatchInfo(char *pzBuffer, int nSize)
+{
+    const char *pzMode = zNetGameTypes[ClipRange(itemNetGameMode.m_nFocus, 0, ARRAY_SSIZE(zNetGameTypes)-1)];
+    const char *pzMap = zUserMapName[0] ? zUserMapName : itemNetStart3.m_pzStrings[ClipRange(itemNetStart3.m_nFocus, 0, kMaxGameCycleItems-1)];
+    char zLimits[32] = "";
+    if ((itemNetGameMode.m_nFocus+1) != kGameTypeCoop)
+    {
+        if (itemNetGameSliderScoreLimit.nValue)
+            Bsnprintf(zLimits, sizeof(zLimits), ", %d FRAGS", itemNetGameSliderScoreLimit.nValue);
+        if (itemNetGameSliderTimeLimit.nValue)
+            Bsnprintf(zLimits + strlen(zLimits), sizeof(zLimits) - strlen(zLimits), ", %d MIN", itemNetGameSliderTimeLimit.nValue);
+    }
+    Bsnprintf(pzBuffer, nSize, "%s: %s%s", pzMode, pzMap ? pzMap : "", zLimits);
+    Bstrupr(pzBuffer);
+}
+
+void BotMatchSetLimits(int nFrags, int nMinutes)
+{
+    if (nFrags >= 0)
+        itemNetGameSliderScoreLimit.nValue = ClipRange(nFrags, 0, 255);
+    if (nMinutes >= 0)
+        itemNetGameSliderTimeLimit.nValue = ClipRange(nMinutes, 0, 60);
+}
+
+void StartBotMatch(CGameMenuItemChain *pItem)
+{
+    SetupBotMatchMenu(pItem);
+    StartNetGame(pItem);
+}
+
 void StartNetGame(CGameMenuItemChain *pItem)
 {
     UNREFERENCED_PARAMETER(pItem);
@@ -5054,6 +5128,8 @@ void StartNetGame(CGameMenuItemChain *pItem)
     Bstrncpy(gPacketStartGame.userMapName, zUserMapName, sizeof(zUserMapName));
     gPacketStartGame.userMap = gPacketStartGame.userMapName[0] != '\0';
 
+    if (gNetMode == NETWORK_NONE) // offline, the only way here is a bot match
+        botSetupMatch();
     netBroadcastNewGame();
     gStartNewGame = 1;
     gGameMenuMgr.Deactivate();

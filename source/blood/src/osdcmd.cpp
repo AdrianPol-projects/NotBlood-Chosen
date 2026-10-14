@@ -31,6 +31,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "sndcards.h"
 #include "fx_man.h"
 #include "common_game.h"
+#include "bot.h"
 #include "config.h"
 #include "coopsave.h"
 #include "online.h"
@@ -1498,6 +1499,7 @@ int32_t registerosdcommands(void)
                 OSD_RegisterCvar(&cv, osdcmd_cvar_set); break;
         }
     }
+    botRegisterCvars();
 //
 //    if (VOLUMEONE)
 //        OSD_RegisterFunction("changelevel","changelevel <level>: warps to the given level", osdcmd_changelevel);

@@ -22,6 +22,7 @@ See the GNU General Public License for more details.
 #include "mmulti.h"
 #include "common_game.h"
 #include "blood.h"
+#include "bot.h"
 #include "coopsave.h"
 #include "fx_man.h"
 #include "gamemenu.h"
@@ -453,8 +454,177 @@ static void ModChosen(CGameMenuItemChain *pItem)
         viewSetMessage("Could not save the mod choice");
 }
 
+// ---- BOTS ---------------------------------------------------------------------------------
+
+CGameMenu menuBots;
+CGameMenu menuBotsTuning;
+CGameMenu menuBotsEach;
+
+static void BotsSlider(CGameMenuItemSlider *pItem);
+static void BotsSetSkill(CGameMenuItemZCycle *pItem);
+static void BotsSetPersona(CGameMenuItemZCycle *pItem);
+static void BotsSetEach(CGameMenuItemZCycle *pItem);
+static void BotsSetupMenu(CGameMenuItemChain *pItem);
+static void BotsSetupEach(CGameMenuItemChain *pItem);
+static void BotsToggle(CGameMenuItemZBool *pItem);
+static void UpdateBotsInfo(CGameMenuItem *pItem);
+
+static const char *pzBotsEachSkill[kBotSkillMax+1] = { "SAME AS ALL", "EASY", "NORMAL", "HARD", "NIGHTMARE" };
+static const char *pzBotsEachPersona[kBotPersonaMax+1] = { "SAME AS ALL", "MIXED", "BALANCED", "RUSHER", "CAMPER", "TRICKSTER", "COWARD", "JUMPER" };
+static const char *pzBotsNumbers[kBotMaxBots] = { "1", "2", "3", "4", "5", "6", "7" };
+static char zBotsInfo[80];
+
+CGameMenuItemChain itemEpisodeBots("< BLOODBATH WITH BOTS >", 1, 0, 60, 320, 1, &menuBots, -1, BotsSetupMenu, 0, 8);
+
+CGameMenuItemTitle itemBotsTitle("BOTS", 1, 160, 20, 2038);
+CGameMenuItemSlider itemBotsCount("BOTS:", 3, 66, 42, 180, &gBotCount, 1, kBotMaxBots, 1, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemZCycle itemBotsSkill("DIFFICULTY:", 3, 66, 54, 180, 0, BotsSetSkill, gBotSkillNames, kBotSkillMax, 0);
+CGameMenuItemZCycle itemBotsPersona("PERSONALITY:", 3, 66, 66, 180, 0, BotsSetPersona, gBotPersonaNames, kBotPersonaMax, 0);
+CGameMenuItemChain itemBotsEach("SET EACH BOT", 3, 0, 84, 320, 1, &menuBotsEach, -1, BotsSetupEach, 0);
+CGameMenuItemChain itemBotsTuning("FINE TUNING", 3, 0, 96, 320, 1, &menuBotsTuning, -1, NULL, 0);
+CGameMenuItemChain itemBotsMatch("MATCH SETTINGS", 3, 0, 108, 320, 1, &menuNetStart, -1, NULL, 0);
+CGameMenuItemText itemBotsInfo(zBotsInfo, 3, 160, 126, 1);
+CGameMenuItemChain itemBotsStart("START MATCH", 1, 0, 150, 320, 1, NULL, -1, StartBotMatch, 0);
+
+CGameMenuItemTitle itemBotsTuningTitle("FINE TUNING", 1, 160, 20, 2038);
+CGameMenuItemSlider itemBotsAccuracy("AIM %:", 3, 66, 40, 180, &gBotAccuracy, 10, 300, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsReaction("REACTION TIME %:", 3, 66, 50, 180, &gBotReaction, 10, 300, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsAggression("AGGRESSION %:", 3, 66, 60, 180, &gBotAggression, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsJumping("JUMPING %:", 3, 66, 70, 180, &gBotJumping, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsAmbush("AMBUSHES %:", 3, 66, 80, 180, &gBotAmbush, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsFlank("FLANKING %:", 3, 66, 90, 180, &gBotFlank, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsCamping("CAMPING %:", 3, 66, 100, 180, &gBotCamping, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemZBool itemBotsTaunts("TAUNTS:", 3, 66, 114, 180, true, BotsToggle, NULL, NULL);
+CGameMenuItemZBool itemBotsCultists("LOOK:", 3, 66, 124, 180, true, BotsToggle, "CULTISTS/CALEB", "CALEB");
+CGameMenuItemZBool itemBotsDebug("SHOW WHAT BOTS DO:", 3, 66, 134, 180, false, BotsToggle, NULL, NULL);
+CGameMenuItemText itemBotsTuningHelp1("100% IS THE DIFFICULTY'S OR PERSONALITY'S OWN VALUE", 3, 160, 154, 1);
+CGameMenuItemText itemBotsTuningHelp2("AIM ABOVE 100% IS BETTER, REACTION ABOVE 100% IS SLOWER", 3, 160, 164, 1);
+
+CGameMenuItemTitle itemBotsEachTitle("EACH BOT", 1, 160, 20, 2038);
+CGameMenuItemZCycle itemBotsEachWhich("BOT:", 3, 66, 50, 180, 0, BotsSetEach, pzBotsNumbers, kBotMaxBots, 0);
+CGameMenuItemZCycle itemBotsEachSkill("DIFFICULTY:", 3, 66, 64, 180, 0, BotsSetEach, pzBotsEachSkill, kBotSkillMax+1, 0);
+CGameMenuItemZCycle itemBotsEachPersona("PERSONALITY:", 3, 66, 76, 180, 0, BotsSetEach, pzBotsEachPersona, kBotPersonaMax+1, 0);
+CGameMenuItemText itemBotsEachHelp1("BOTS ON \"SAME AS ALL\" USE THE BOTS MENU'S CHOICE", 3, 160, 100, 1);
+CGameMenuItemText itemBotsEachHelp2("MIXED GIVES EVERY BOT A DIFFERENT PERSONALITY", 3, 160, 110, 1);
+
+static void BotsSlider(CGameMenuItemSlider *pItem)
+{
+    if (pItem->pValue)
+        *pItem->pValue = pItem->nValue;
+}
+
+static void BotsSetSkill(CGameMenuItemZCycle *pItem)
+{
+    gBotSkill = ClipRange(pItem->m_nFocus, 0, kBotSkillMax-1);
+}
+
+static void BotsSetPersona(CGameMenuItemZCycle *pItem)
+{
+    gBotPersona = ClipRange(pItem->m_nFocus, 0, kBotPersonaMax-1);
+}
+
+static void BotsToggle(CGameMenuItemZBool *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    gBotTaunts = itemBotsTaunts.at20;
+    gBotCultists = itemBotsCultists.at20;
+    gBotDebug = itemBotsDebug.at20;
+}
+
+static int nBotsEachLast = -1;
+
+static void BotsSetEach(CGameMenuItemZCycle *pItem)
+{
+    const int nBot = ClipRange(itemBotsEachWhich.m_nFocus, 0, kBotMaxBots-1);
+    if (pItem == &itemBotsEachWhich || nBotsEachLast != nBot)
+    {
+        // another bot picked: show its choices
+        itemBotsEachSkill.SetTextIndex(gBotEachSkill[nBot] + 1);
+        itemBotsEachPersona.SetTextIndex(gBotEachPersona[nBot] + 1);
+        nBotsEachLast = nBot;
+        return;
+    }
+    gBotEachSkill[nBot] = itemBotsEachSkill.m_nFocus - 1;
+    gBotEachPersona[nBot] = itemBotsEachPersona.m_nFocus - 1;
+}
+
+static void BotsSetupEach(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    nBotsEachLast = -1;
+    BotsSetEach(&itemBotsEachWhich);
+}
+
+static void BotsSetupMenu(CGameMenuItemChain *pItem)
+{
+    SetupBotMatchMenu(pItem);
+    itemBotsSkill.SetTextIndex(ClipRange(gBotSkill, 0, kBotSkillMax-1));
+    itemBotsPersona.SetTextIndex(ClipRange(gBotPersona, 0, kBotPersonaMax-1));
+    itemBotsTaunts.at20 = !!gBotTaunts;
+    itemBotsCultists.at20 = !!gBotCultists;
+    itemBotsDebug.at20 = !!gBotDebug;
+}
+
+static void UpdateBotsInfo(CGameMenuItem *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    BotMatchInfo(zBotsInfo, sizeof(zBotsInfo));
+}
+
+static void UpdateEpisodeBots(CGameMenuItem *pItem)
+{
+    pItem->bEnable = gNetMode == NETWORK_NONE; // offline only, for now
+}
+
 void SetupChosenMenus(void)
 {
+    menuBots.Add(&itemBotsTitle, false);
+    menuBots.Add(&itemBotsCount, true);
+    menuBots.Add(&itemBotsSkill, false);
+    menuBots.Add(&itemBotsPersona, false);
+    menuBots.Add(&itemBotsEach, false);
+    menuBots.Add(&itemBotsTuning, false);
+    menuBots.Add(&itemBotsMatch, false);
+    menuBots.Add(&itemBotsInfo, false);
+    menuBots.Add(&itemBotsStart, false);
+    menuBots.Add(&itemBloodQAV, false);
+    itemBotsInfo.pPreDrawCallback = UpdateBotsInfo;
+    itemEpisodeBots.pPreDrawCallback = UpdateEpisodeBots;
+    itemBotsCount.tooltip_pzTextUpper = "How many bots to play against";
+    itemBotsSkill.tooltip_pzTextUpper = "How well they aim, how fast they react and how smart they are";
+    itemBotsPersona.tooltip_pzTextUpper = "Rusher, camper, trickster, coward, jumper or a mix";
+    itemBotsEach.tooltip_pzTextUpper = "A different difficulty or personality for single bots";
+    itemBotsTuning.tooltip_pzTextUpper = "Adjust aim, reaction time and tactics";
+    itemBotsMatch.tooltip_pzTextUpper = "Game type, map, frag and time limits, weapons, items, mutators";
+    itemBotsStart.tooltip_pzTextUpper = "Play! (ESC pauses the match)";
+
+    menuBotsTuning.Add(&itemBotsTuningTitle, false);
+    menuBotsTuning.Add(&itemBotsAccuracy, true);
+    menuBotsTuning.Add(&itemBotsReaction, false);
+    menuBotsTuning.Add(&itemBotsAggression, false);
+    menuBotsTuning.Add(&itemBotsJumping, false);
+    menuBotsTuning.Add(&itemBotsAmbush, false);
+    menuBotsTuning.Add(&itemBotsFlank, false);
+    menuBotsTuning.Add(&itemBotsCamping, false);
+    menuBotsTuning.Add(&itemBotsTaunts, false);
+    menuBotsTuning.Add(&itemBotsCultists, false);
+    menuBotsTuning.Add(&itemBotsDebug, false);
+    menuBotsTuning.Add(&itemBotsTuningHelp1, false);
+    menuBotsTuning.Add(&itemBotsTuningHelp2, false);
+    menuBotsTuning.Add(&itemBloodQAV, false);
+    itemBotsAmbush.tooltip_pzTextUpper = "Waiting beside a doorway you're about to come through";
+    itemBotsFlank.tooltip_pzTextUpper = "Taking another way round to come at you from the side";
+    itemBotsCamping.tooltip_pzTextUpper = "Staying in a good spot and waiting";
+    itemBotsDebug.tooltip_pzTextUpper = "Lists every bot's plan at the top of the screen";
+
+    menuBotsEach.Add(&itemBotsEachTitle, false);
+    menuBotsEach.Add(&itemBotsEachWhich, true);
+    menuBotsEach.Add(&itemBotsEachSkill, false);
+    menuBotsEach.Add(&itemBotsEachPersona, false);
+    menuBotsEach.Add(&itemBotsEachHelp1, false);
+    menuBotsEach.Add(&itemBotsEachHelp2, false);
+    menuBotsEach.Add(&itemBloodQAV, false);
+
     menuLanGames.Add(&itemLanTitle, false);
     for (int i = 0; i < kMaxLanGames; i++)
         menuLanGames.Add(pLanItems[i], i == 0);

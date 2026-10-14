@@ -1,0 +1,85 @@
+---
+name: Bots test build
+
+# Windows test build of the "bots" branch, published to its own "bots-test" release so the
+# normal "latest" release stays as it is.
+
+'on':
+  push:
+    branches: [bots]
+    paths-ignore:
+      - '**.md'
+      - 'server/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Windows x64
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: >-
+          msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
+        with:
+          msystem: mingw64
+          update: true
+          cache: true
+          install: git mingw-w64-x86_64-toolchain make
+      - name: Build
+        run: make -j$(nproc) blood SDLCONFIG= LTO=0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notblood-win64
+          path: ./notblood.exe
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: [build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Package
+        run: |
+          dir="pkg/NotBlood"
+          mkdir -p "$dir/autoload" "$dir/addons" "$dir/mods" "$dir/movie"
+          cp artifacts/notblood-win64/* "$dir/"
+          cp notblood.pk3 "$dir/"
+          cp package/common/*.txt "$dir/"
+          mv "$dir/addons.txt" "$dir/autoload/"
+          cp package/release/README.txt "$dir/README - NotBlood Chosen.txt"
+          cp package/release/BOTS.md "$dir/README - Bots.txt"
+          cp package/release/addons.txt "$dir/addons/Put add-on episodes here.txt"
+          cp package/release/mods.txt "$dir/mods/Put mods here.txt"
+          cp package/release/movie.txt "$dir/movie/Put the movie files here.txt"
+          (cd pkg && zip -9 -r ../NotBlood-Chosen-bots-win64.zip NotBlood)
+          ls -l NotBlood-Chosen-bots-win64.zip
+      - name: Publish to the "bots-test" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}" -q .sha)
+          if [ "$HEAD_SHA" != "$GITHUB_SHA" ]; then
+            echo "Branch head is $HEAD_SHA, this run built $GITHUB_SHA - not publishing."
+            exit 0
+          fi
+          TITLE="NotBlood Chosen with bots - test build ${{ github.run_number }} (Windows)"
+          # a fresh release each time, so its tag points at this commit
+          if gh release view bots-test >/dev/null 2>&1; then
+            gh release delete bots-test --cleanup-tag -y
+          fi
+          gh release create bots-test NotBlood-Chosen-bots-win64.zip --target "$GITHUB_SHA" --prerelease --latest=false --title "$TITLE" --notes-file package/release/BOTS.md

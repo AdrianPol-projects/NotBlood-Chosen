@@ -31,6 +31,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "ai.h"
 #include "asound.h"
 #include "blood.h"
+#include "bot.h"
 #include "demo.h"
 #include "globals.h"
 #include "db.h"
@@ -144,6 +145,7 @@ void LoadSave::LoadGame(char *pzFile)
     const char bGameWasStarted = gGameStarted;
     if (gDemo.bPlaying || gDemo.bRecording)
         gDemo.Close();
+    botEndMatch(); // loading a single player save ends a bot match
 
     gViewPos = VIEWPOS_0;
     gViewIndex = myconnectindex;

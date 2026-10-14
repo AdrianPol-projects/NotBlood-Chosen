@@ -514,6 +514,7 @@ blood_game_objs := \
 	netrelay.cpp \
 	mods.cpp \
 	menuchosen.cpp \
+	bot.cpp \
 	controls.cpp \
 	credits.cpp \
 	db.cpp \

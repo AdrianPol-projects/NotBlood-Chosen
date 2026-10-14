@@ -185,6 +185,7 @@
     <ClCompile Include="..\..\source\blood\src\netrelay.cpp" />
     <ClCompile Include="..\..\source\blood\src\mods.cpp" />
     <ClCompile Include="..\..\source\blood\src\menuchosen.cpp" />
+    <ClCompile Include="..\..\source\blood\src\bot.cpp" />
     <ClCompile Include="..\..\source\blood\src\controls.cpp" />
     <ClCompile Include="..\..\source\blood\src\credits.cpp" />
     <ClCompile Include="..\..\source\blood\src\db.cpp" />
@@ -303,6 +304,7 @@
     <ClInclude Include="..\..\source\blood\src\netrelay.h" />
     <ClInclude Include="..\..\source\blood\src\mods.h" />
     <ClInclude Include="..\..\source\blood\src\menuchosen.h" />
+    <ClInclude Include="..\..\source\blood\src\bot.h" />
     <ClInclude Include="..\..\source\blood\src\controls.h" />
     <ClInclude Include="..\..\source\blood\src\credits.h" />
     <ClInclude Include="..\..\source\blood\src\db.h" />
