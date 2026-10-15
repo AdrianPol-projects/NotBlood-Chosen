@@ -26,6 +26,8 @@ extern CGameMenu menuMods;
 extern CGameMenu menuLanGames;
 extern CGameMenu menuBots;
 extern CGameMenuItemChain itemNetworkBots;
+extern CGameMenu menuMatchStats;
+extern CGameMenu menuBotOrders;
 
 // menu.cpp: bot matches use the multiplayer game setup
 void SetupBotMatchMenu(CGameMenuItemChain *pItem);
@@ -34,6 +36,9 @@ void StartBotMatch(CGameMenuItemChain *pItem);
 void BotMatchInfo(char *pzBuffer, int nSize);
 void BotMatchSetLimits(int nFrags, int nMinutes);
 void BotMatchSetMap(int nEpisode, int nLevel);
+void BotMatchSetMode(int nGameType, int nMode);
+void BotMatchSetLives(int nLives);
+void BotMatchResetMutators(void);
 
 void SetupChosenMenus(void);
 void SetupOnlineMenu(CGameMenuItemChain *pItem);

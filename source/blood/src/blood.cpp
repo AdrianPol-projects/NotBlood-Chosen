@@ -34,6 +34,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "db.h"
 #include "blood.h"
 #include "bot.h"
+#include "chosenmodes.h"
 #include "chatpipe.h"
 #include "choke.h"
 #include "config.h"
@@ -720,6 +721,7 @@ void StartLevel(GAMEOPTIONS *pOpt)
         Bstrncpyz(pOpt->szRandomizerSeed, gzRandomizerSeed, sizeof(pOpt->szRandomizerSeed));
         pOpt->nRandomizerCheat = -1;
         ///////
+        modesClear();
     }
     else if (!(pOpt->uGameFlags&kGameFlagContinuing))
     {
@@ -777,6 +779,7 @@ void StartLevel(GAMEOPTIONS *pOpt)
         pOpt->bDamage2X = 0;
         pOpt->uSpriteBannedFlags = gPacketStartGame.uSpriteBannedFlags;
         ///////
+        modesSetFromPacket();
     }
     if (pOpt->nGameType != kGameTypeSinglePlayer)
     {
@@ -921,6 +924,7 @@ void StartLevel(GAMEOPTIONS *pOpt)
         gChokeCounter[i] = 0;
     }
     playerInitRoundCheck();
+    modesStartLevel();
     if (pOpt->uGameFlags&kGameFlagContinuing) // if episode is in progress, restore player stats
     {
         for (int i = connecthead; i >= 0; i = connectpoint2[i])
@@ -1064,7 +1068,7 @@ void LocalKeys(void)
     if (BUTTON(gamefunc_See_Coop_View))
     {
         CONTROL_ClearButton(gamefunc_See_Coop_View);
-        if ((gGameOptions.nGameType == kGameTypeCoop) || ((gGameOptions.uNetGameFlags&kNetGameFlagSpectatingAllow) && gMe && !gMe->pXSprite->health)) // only allow spectating if co-op or spectating is allowed and player is dead
+        if ((gGameOptions.nGameType == kGameTypeCoop) || (((gGameOptions.uNetGameFlags&kNetGameFlagSpectatingAllow) || modesOutOfLives(myconnectindex)) && gMe && !gMe->pXSprite->health)) // only allow spectating if co-op or spectating is allowed and player is dead
         {
             gViewIndex = connectpoint2[gViewIndex];
             if ((gGameOptions.nGameType != kGameTypeCoop) && (gViewIndex == myconnectindex)) // always skip over self if spectating match while dead
@@ -1368,6 +1372,7 @@ void ProcessFrame(void)
             }
         }
     }
+    modesFrame();
     trProcessBusy();
     evProcess((int)gFrameClock);
     seqProcess(kTicsPerFrame);

@@ -83,7 +83,7 @@ int gNetPortLocal = -1;
 
 // 0x4000: NotBlood Chosen (co-op saves: packets 243-246, bCoopContinue); bits 10-13: its network
 // protocol number, bumped whenever packets change
-const short kNetVersion = 0x248 | 0x4000 | (1 << 10);
+const short kNetVersion = 0x248 | 0x4000 | (2 << 10); // 2: match types and mutators
 
 PKT_STARTGAME gPacketStartGame;
 

@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "music.h"
 #include "blood.h"
 #include "bot.h"
+#include "chosenmodes.h"
 #include "demo.h"
 #include "config.h"
 #include "coopsave.h"
@@ -618,6 +619,13 @@ CGameMenuItemZCycle itemNetGameCycleSpawnProtection("SPAWN PROTECTION:", 3, 66, 
 CGameMenuItemZCycle itemNetGameCycleSpawnWeapon("SPAWN WITH WEAPON:", 3, 66, 153, 180, 0, SetNetGameMode, zSpawnWeaponStrings, ARRAY_SSIZE(zSpawnWeaponStrings), 0);
 CGameMenuItemZCycle itemNetGameCycleMirrorModeOverride("MIRROR MODE:", 3, 66, 161, 180, 0, NULL, pzMirrorModeStrings, ARRAY_SSIZE(pzMirrorModeStrings), 0);
 
+// NotBlood Chosen match types (chosenmodes.h): the choice depends on the game type
+void SetNetChosenMode(CGameMenuItemZCycle *pItem);
+CGameMenuItemZCycle itemNetGameChosenMode("MODE:", 3, 66, 169, 180, 0, SetNetChosenMode, NULL, 0, 0);
+CGameMenuItemSlider itemNetGameChosenLives("LIVES EACH:", 3, 66, 44, 180, 3, 1, 20, 1, NULL, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemNetGameChosenPool("SHARED LIVES (0 ENDLESS):", 3, 66, 54, 180, 0, 0, 50, 1, NULL, -1, -1, kMenuSliderValue);
+static char zNetStartGameText[48];
+
 CGameMenuItemTitle itemNetMonsterTitle("MONSTERS", 1, 160, 20, 2038);
 CGameMenuItemZCycle itemNetMonsterSettings("MONSTERS:", 3, 66, 40, 180, 0, SetNetMonsterMenu, zMonsterStrings, ARRAY_SSIZE(zMonsterStrings), 0);
 CGameMenuItemSlider itemNetMonsterQuantity("MONSTER QUANTITY:", 3, 66, 50, 180, 2, 0, 4, 1, NULL, -1, -1);
@@ -812,6 +820,18 @@ void SetVanillaMode(CGameMenuItemZCycle *pItem);
 
 ///////////////
 CGameMenuItemTitle itemGameMutatorsTitle("MUTATORS", 1, 160, 20, 2038);
+CGameMenu menuChosenMutators;
+CGameMenuItemChain itemNetMutatorMore("MORE MUTATORS", 3, 0, 174, 320, 1, &menuChosenMutators, -1, NULL, 0);
+static const char *pzChosenGravity[] = { "NORMAL", "LOW", "MOON" };
+static const char *pzChosenWeapons[] = { "NORMAL", "RANDOM AT EACH SPAWN", "FLARE GUN ONLY", "SHOTGUN ONLY", "TOMMY GUN ONLY", "NAPALM ONLY", "TNT ONLY",
+    "SPRAY CAN ONLY", "TESLA ONLY", "LIFE LEECH ONLY", "VOODOO DOLL ONLY" };
+CGameMenuItemTitle itemChosenMutatorsTitle("MORE MUTATORS", 1, 160, 20, 2038);
+CGameMenuItemZCycle itemChosenMutatorGravity("GRAVITY:", 3, 66, 50, 180, 0, NULL, pzChosenGravity, ARRAY_SSIZE(pzChosenGravity), 0);
+CGameMenuItemZBool itemChosenMutatorVampire("VAMPIRE (HITS HEAL YOU):", 3, 66, 62, 180, false, NULL, NULL, NULL);
+CGameMenuItemZBool itemChosenMutatorOneHit("ONE-HIT KILLS:", 3, 66, 74, 180, false, NULL, NULL, NULL);
+CGameMenuItemZCycle itemChosenMutatorWeapons("WEAPONS:", 3, 66, 86, 180, 0, NULL, pzChosenWeapons, ARRAY_SSIZE(pzChosenWeapons), 0);
+CGameMenuItemText itemChosenMutatorsHelp1("THESE WORK WITH REAL PLAYERS AND BOTS", 3, 160, 110, 1);
+CGameMenuItemText itemChosenMutatorsHelp2("(EVERYBODY NEEDS THE SAME VERSION)", 3, 160, 120, 1);
 CGameMenuItemZBool itemMutatorBoolQuadDamagePowerup("REPLACE AKIMBO WITH 4X DAMAGE:", 3, 66, 32, 180, false, SetQuadDamagePowerup, NULL, NULL);
 CGameMenuItemZCycle itemMutatorCycleBeastVisionReplacement("REPLACE BEAEST VISION:", 3, 66, 32, 180, 0, SetBeastVisionReplacement, pzBeastVisionReplacementStrings, ARRAY_SSIZE(pzBeastVisionReplacementStrings), 0);
 CGameMenuItemZCycle itemMutatorDamageInvul("INVULNERABILITY DURATION:", 3, 66, 42, 180, 0, SetDamageInvul, pzDamageInvulBehaviorStrings, ARRAY_SSIZE(pzDamageInvulBehaviorStrings), 0);
@@ -1695,6 +1715,12 @@ void SetupNetStartMenu(void)
     menuNetworkGameMode.Add(&itemNetGameCycleSpawnProtection, false);
     menuNetworkGameMode.Add(&itemNetGameCycleSpawnWeapon, false);
     menuNetworkGameMode.Add(&itemNetGameCycleMirrorModeOverride, false);
+    menuNetworkGameMode.Add(&itemNetGameChosenMode, false);
+    menuNetworkGameMode.Add(&itemNetGameChosenLives, false);
+    menuNetworkGameMode.Add(&itemNetGameChosenPool, false);
+    itemNetGameChosenMode.tooltip_pzTextUpper = "Gun game, hill, juggernaut, last man, survival";
+    itemNetGameChosenLives.tooltip_pzTextUpper = "Lives everybody has in last man standing";
+    itemNetGameChosenPool.tooltip_pzTextUpper = "Lives the whole team shares in survival";
     menuNetworkGameMode.Add(&itemBloodQAV, false);
     itemNetGameSliderScoreLimit.tooltip_pzTextUpper = "Set score limit";
     itemNetGameSliderScoreLimit.tooltip_pzTextLower = "(0 = no limit)";
@@ -1758,6 +1784,16 @@ void SetupNetStartMenu(void)
     menuNetworkGameMutators.Add(&itemNetMutatorPlayerWater, false);
     menuNetworkGameMutators.Add(&itemNetMutatorRandomizerMode, false);
     menuNetworkGameMutators.Add(&itemNetMutatorRandomizerSeed, false);
+    menuNetworkGameMutators.Add(&itemNetMutatorMore, false);
+    itemNetMutatorMore.tooltip_pzTextUpper = "Gravity, vampire, one-hit kills, weapon sets";
+    menuChosenMutators.Add(&itemChosenMutatorsTitle, false);
+    menuChosenMutators.Add(&itemChosenMutatorGravity, true);
+    menuChosenMutators.Add(&itemChosenMutatorVampire, false);
+    menuChosenMutators.Add(&itemChosenMutatorOneHit, false);
+    menuChosenMutators.Add(&itemChosenMutatorWeapons, false);
+    menuChosenMutators.Add(&itemChosenMutatorsHelp1, false);
+    menuChosenMutators.Add(&itemChosenMutatorsHelp2, false);
+    menuChosenMutators.Add(&itemBloodQAV, false);
     menuNetworkGameMutators.Add(&itemBloodQAV, false);
     menuNetworkGameMutators.OrganizeItems(true, true, 4);
     itemNetMutatorBoolQuadDamagePowerup.tooltip_pzTextUpper = "Replaces guns akimbo powerup";
@@ -2673,6 +2709,14 @@ void SetupMenus(void)
 
 void UpdateNetworkMenus(void)
 {
+    // in matches HELP and CREDITS of the game's menu become MATCH STATS and (with bots) BOT ORDERS
+    const bool bMatch = gGameOptions.nGameType != kGameTypeSinglePlayer || gBotMatch;
+    itemMainSave6.m_pzText = bMatch ? "MATCH STATS" : "CREDITS";
+    itemMainSave6.at24 = bMatch ? &menuMatchStats : &menuCredits;
+    itemMainSave6.bDisableForNet = !bMatch;
+    itemMainSave5.m_pzText = gBotMatch ? "BOT ORDERS" : "HELP";
+    itemMainSave5.at24 = gBotMatch ? &menuBotOrders : &menuHelp;
+    itemMainSave5.bDisableForNet = !gBotMatch;
     if (gBotMatch) // in a bot match NEW GAME sets up the next one
     {
         itemMain1.at24 = itemMainSave1.at24 = &menuBots;
@@ -3920,6 +3964,37 @@ void PreDrawDisplayPolymost(CGameMenuItem *pItem)
 }
 #endif
 
+static int ChosenModeFromMenu(void)
+{
+    const char **ppzNames;
+    const int *pnModes;
+    const int nCount = modesForGameType(itemNetGameMode.m_nFocus+1, &ppzNames, &pnModes);
+    return pnModes[ClipRange(itemNetGameChosenMode.m_nFocus, 0, nCount-1)];
+}
+
+void SetNetChosenMode(CGameMenuItemZCycle *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    const int nMode = ChosenModeFromMenu();
+    itemNetGameChosenLives.bEnable = nMode == kChosenModeLastManStanding;
+    itemNetGameChosenLives.bNoDraw = !itemNetGameChosenLives.bEnable;
+    itemNetGameChosenPool.bEnable = nMode == kChosenModeSurvival;
+    itemNetGameChosenPool.bNoDraw = !itemNetGameChosenPool.bEnable;
+    if ((itemNetGameMode.m_nFocus+1) != kGameTypeCoop) // last man standing: lives instead of a score limit
+    {
+        itemNetGameSliderScoreLimit.bEnable = nMode != kChosenModeLastManStanding && nMode != kChosenModeGunGame;
+        itemNetGameSliderScoreLimit.bNoDraw = !itemNetGameSliderScoreLimit.bEnable && nMode != kChosenModeGunGame;
+    }
+    // the GAME: line of the multiplayer menu shows the mode too
+    if (nMode == kChosenModeNormal)
+        itemNetStart1.m_pzText2 = zNetGameTypes[ClipRange(itemNetGameMode.m_nFocus, 0, ARRAY_SSIZE(zNetGameTypes)-1)];
+    else
+    {
+        Bsnprintf(zNetStartGameText, sizeof(zNetStartGameText), "%s: %s", zNetGameTypes[ClipRange(itemNetGameMode.m_nFocus, 0, ARRAY_SSIZE(zNetGameTypes)-1)], modesName(nMode));
+        itemNetStart1.m_pzText2 = zNetStartGameText;
+    }
+}
+
 void SetNetGameMode(CGameMenuItemZCycle *pItem)
 {
     if ((itemNetGameMode.m_nFocus+1) == kGameTypeCoop) // hide multiplayer game length settings
@@ -3947,6 +4022,18 @@ void SetNetGameMode(CGameMenuItemZCycle *pItem)
     {
         const int nGameType = pItem->m_nFocus+1;
         itemNetStart1.m_pzText2 = zNetGameTypes[pItem->m_nFocus];
+        {
+            const char **ppzNames;
+            const int *pnModes;
+            const int nCount = modesForGameType(nGameType, &ppzNames, &pnModes);
+            itemNetGameChosenMode.SetTextArray(ppzNames, nCount, 0);
+            SetNetChosenMode(&itemNetGameChosenMode);
+        }
+        if (nGameType == kGameTypeCoop && !itemNetMonsterSettings.m_nFocus) // co-op without monsters is an empty level
+        {
+            itemNetMonsterSettings.SetTextIndex(1);
+            SetNetMonsterMenu(&itemNetMonsterSettings);
+        }
         itemNetGameBoolExit.bEnable = nGameType != kGameTypeCoop;
         itemNetGameBoolExit.bNoDraw = !itemNetGameBoolExit.bEnable;
         itemNetGameBoolPlayerColors.bEnable = nGameType != kGameTypeTeams;
@@ -5005,7 +5092,11 @@ void BotMatchInfo(char *pzBuffer, int nSize)
         if (itemNetGameSliderTimeLimit.nValue)
             Bsnprintf(zLimits + strlen(zLimits), sizeof(zLimits) - strlen(zLimits), ", %d MIN", itemNetGameSliderTimeLimit.nValue);
     }
-    Bsnprintf(pzBuffer, nSize, "%s: %s%s", pzMode, pzMap ? pzMap : "", zLimits);
+    const int nChosen = ChosenModeFromMenu();
+    if (nChosen != kChosenModeNormal)
+        Bsnprintf(pzBuffer, nSize, "%s: %s%s", modesName(nChosen), pzMap ? pzMap : "", zLimits);
+    else
+        Bsnprintf(pzBuffer, nSize, "%s: %s%s", pzMode, pzMap ? pzMap : "", zLimits);
     Bstrupr(pzBuffer);
 }
 
@@ -5025,6 +5116,46 @@ void BotMatchSetMap(int nEpisode, int nLevel)
     itemNetStart2.SetTextIndex(nEpisode);
     SetupNetLevels(&itemNetStart2);
     itemNetStart3.SetTextIndex(ClipRange(nLevel, 0, gEpisodeInfo[nEpisode].nLevels-1));
+}
+
+void BotMatchSetMode(int nGameType, int nMode)
+{
+    SetupBotMatchMenu(NULL);
+    if (nGameType >= kGameTypeCoop && nGameType <= kGameTypeTeams)
+    {
+        itemNetGameMode.SetTextIndex(nGameType-1);
+        SetNetGameMode(&itemNetGameMode);
+    }
+    const char **ppzNames;
+    const int *pnModes;
+    const int nCount = modesForGameType(itemNetGameMode.m_nFocus+1, &ppzNames, &pnModes);
+    for (int i = 0; i < nCount; i++)
+        if (pnModes[i] == nMode)
+            itemNetGameChosenMode.SetTextIndex(i);
+    SetNetChosenMode(&itemNetGameChosenMode);
+    if (const char *pzMutators = getenv("NOTBLOOD_TEST_MUTATORS")) // testing: gravity,vampire,onehit,weapons
+    {
+        int g = 0, v = 0, o = 0, w = 0;
+        sscanf(pzMutators, "%d,%d,%d,%d", &g, &v, &o, &w);
+        itemChosenMutatorGravity.SetTextIndex(g);
+        itemChosenMutatorVampire.at20 = v;
+        itemChosenMutatorOneHit.at20 = o;
+        itemChosenMutatorWeapons.SetTextIndex(w);
+    }
+}
+
+void BotMatchSetLives(int nLives)
+{
+    itemNetGameChosenLives.nValue = ClipRange(nLives, 1, 20);
+    itemNetGameChosenPool.nValue = ClipRange(nLives, 0, 50);
+}
+
+void BotMatchResetMutators(void)
+{
+    itemChosenMutatorGravity.SetTextIndex(0);
+    itemChosenMutatorVampire.at20 = 0;
+    itemChosenMutatorOneHit.at20 = 0;
+    itemChosenMutatorWeapons.SetTextIndex(0);
 }
 
 void StartBotMatch(CGameMenuItemChain *pItem)
@@ -5134,6 +5265,12 @@ void StartNetGame(CGameMenuItemChain *pItem)
     if (gPacketStartGame.szRandomizerSeed[0] == '\0') // if no seed entered, generate new one before sending packet
         sprintf(gPacketStartGame.szRandomizerSeed, "%08X", QRandom2(gGameMenuMgr.m_mousepos.x*gGameMenuMgr.m_mousepos.y));
     gPacketStartGame.uSpriteBannedFlags = SetBannedSprites(0);
+    gPacketStartGame.nChosenMode = ChosenModeFromMenu();
+    gPacketStartGame.nChosenLives = gPacketStartGame.nChosenMode == kChosenModeSurvival ? itemNetGameChosenPool.nValue : itemNetGameChosenLives.nValue;
+    gPacketStartGame.nChosenGravity = itemChosenMutatorGravity.m_nFocus;
+    gPacketStartGame.nChosenWeapons = itemChosenMutatorWeapons.m_nFocus < 2 ? itemChosenMutatorWeapons.m_nFocus : kChosenWeaponsOnlyBase + itemChosenMutatorWeapons.m_nFocus - 2;
+    gPacketStartGame.bChosenVampire = itemChosenMutatorVampire.at20;
+    gPacketStartGame.bChosenOneHit = itemChosenMutatorOneHit.at20;
     ////
     Bstrncpy(gPacketStartGame.userMapName, zUserMapName, sizeof(zUserMapName));
     gPacketStartGame.userMap = gPacketStartGame.userMapName[0] != '\0';

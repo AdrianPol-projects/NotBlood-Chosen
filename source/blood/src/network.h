@@ -102,6 +102,8 @@ struct PKT_STARTGAME {
     char szRandomizerSeed[9];
     unsigned int uSpriteBannedFlags;
     char bCoopContinue; // co-op save continue: apply the loadouts sent just before (see coopsave.cpp)
+    // NotBlood Chosen match types and mutators (chosenmodes.h)
+    char nChosenMode, nChosenLives, nChosenGravity, nChosenWeapons, bChosenVampire, bChosenOneHit;
 };
 
 extern PKT_STARTGAME gPacketStartGame;

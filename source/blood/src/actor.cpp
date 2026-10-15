@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "mmulti.h"
 #include "common.h"
 #include "common_game.h"
+#include "chosenmodes.h"
 
 #include "actor.h"
 #include "ai.h"
@@ -3531,6 +3532,8 @@ int actDamageSprite(int nSource, spritetype *pSprite, DAMAGE_TYPE damageType, in
         }
     }
     
+    damage = modesDamage(nSource, pSprite, damage); // one-hit kills
+
     switch (pSprite->statnum) {
         case kStatDude: {
             if (!IsDudeSprite(pSprite)) {
@@ -3590,6 +3593,7 @@ int actDamageSprite(int nSource, spritetype *pSprite, DAMAGE_TYPE damageType, in
                         }
                     }
                 }
+                modesDamageDone(pSourcePlayer, pSprite, damage); // accuracy statistics, vampire
                 if (pSourcePlayer && (pSourcePlayer->pSprite != pSprite))
                 {
                     pSourcePlayer->damageAccumulatedTick = gShowDamageTicks;
@@ -4922,7 +4926,7 @@ void MoveDude(spritetype *pSprite)
 
     if (pSprite->flags & 2)
     {
-        int vc = 58254;
+        int vc = modesGravity(pSprite, 58254); // low gravity mutator
         if (bDepth)
         {
             if (bUnderwater)

@@ -35,6 +35,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "aihand.h"
 #include "blood.h"
 #include "bot.h"
+#include "chosenmodes.h"
 #include "choke.h"
 #include "config.h"
 #include "db.h"
@@ -5437,6 +5438,9 @@ RORHACK:
     viewDrawAimedPlayerName();
     viewPrintFPS();
     botDrawDebug();
+    modesDrawHud();
+    if (modesShowStats() && !gGameMenuMgr.m_bActive)
+        modesDrawStats(70);
     if (gPaused)
     {
         viewDrawText(1, "PAUSED", 160, 10, 0, 0, 1, 0);

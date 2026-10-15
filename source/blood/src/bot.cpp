@@ -44,9 +44,11 @@ See the GNU General Public License for more details.
 #include "trig.h"
 #include "view.h"
 #include "weapon.h"
+#include "config.h"
 #include "menu.h"
 #include "menuchosen.h"
 #include "bot.h"
+#include "chosenmodes.h"
 
 int gBotCount = 3;
 int gBotSkill = kBotSkillNormal;
@@ -65,10 +67,43 @@ int gBotDebug = 0;
 int gBotCultists = 1;
 int gBotHandicap = 2;
 int gBotHighGround = 100;
-static int gBotTuning = 0; // 2: the presets include the tuning players liked (old fine tuning is reset once)
+static int gBotTuning = 0;
+int gBotGrudges = 1;
+int gBotAdaptive = 0;
+static int nBotOrder = kBotOrderFree;      // for the bots on the human's side
+static int nHoldX, nHoldY, nHoldZ, nHoldSect;
+static int nAdapt = 100;                   // adaptive difficulty: percent of aim error and reaction time // 2: the presets include the tuning players liked (old fine tuning is reset once)
 static int gBotWatch = 0;
 
 bool gBotMatch = false;
+bool gBotWatchMode = false;
+
+int gCareerStage = 1, gCareerWins = 0, gCareerMatches = 0, gCareerKills = 0, gCareerDeaths = 0, gCareerBestStreak = 0;
+char gCareerRivals[128] = "";
+int gBotCareer = 0;
+
+struct CAREERSTAGE
+{
+    short nLevel;          // in the BloodBath episode
+    char nGameType, nMode, nSkill;
+    char nFrags, nLives;
+    const char *pzNames[6];
+    char nPersonas[6];
+};
+
+// the ladder: more and better opponents, the match types mixed in
+static const CAREERSTAGE gCareer[kCareerStages] = {
+    { 1, kGameTypeBloodBath, kChosenModeNormal, kBotSkillEasy, 5, 0, { "Barnabas" }, { kBotPersonaBalanced } },
+    { 2, kGameTypeBloodBath, kChosenModeNormal, kBotSkillEasy, 8, 0, { "Silas", "Josiah" }, { kBotPersonaRusher, kBotPersonaCamper } },
+    { 3, kGameTypeBloodBath, kChosenModeGunGame, kBotSkillNormal, 0, 0, { "Gideon", "Ishmael", "Zebulon" }, { kBotPersonaJumper, kBotPersonaBalanced, kBotPersonaCoward } },
+    { 4, kGameTypeBloodBath, kChosenModeNormal, kBotSkillNormal, 10, 0, { "Thaddeus", "Jericho", "Lazarus" }, { kBotPersonaTrickster, kBotPersonaRusher, kBotPersonaCamper } },
+    { 5, kGameTypeBloodBath, kChosenModeKingOfTheHill, kBotSkillNormal, 45, 0, { "Obadiah", "Jedidiah", "Mordecai" }, { kBotPersonaCamper, kBotPersonaRusher, kBotPersonaTrickster } },
+    { 6, kGameTypeBloodBath, kChosenModeJuggernaut, kBotSkillNormal, 10, 0, { "Ezekiel", "Silas", "Gideon", "Barnabas" }, { kBotPersonaRusher, kBotPersonaJumper, kBotPersonaBalanced, kBotPersonaTrickster } },
+    { 7, kGameTypeBloodBath, kChosenModeNormal, kBotSkillHard, 12, 0, { "Malachi", "Ishmael", "Josiah", "Lazarus" }, { kBotPersonaTrickster, kBotPersonaCamper, kBotPersonaJumper, kBotPersonaRusher } },
+    { 8, kGameTypeBloodBath, kChosenModeLastManStanding, kBotSkillHard, 0, 3, { "Mordecai", "Zebulon", "Jericho", "Thaddeus", "Ezekiel" }, { kBotPersonaCoward, kBotPersonaCamper, kBotPersonaTrickster, kBotPersonaRusher, kBotPersonaBalanced } },
+    { 9, kGameTypeBloodBath, kChosenModeGunGame, kBotSkillHard, 0, 0, { "Obadiah", "Gideon", "Silas", "Malachi", "Jedidiah" }, { kBotPersonaJumper, kBotPersonaRusher, kBotPersonaTrickster, kBotPersonaBalanced, kBotPersonaCamper } },
+    { 10, kGameTypeBloodBath, kChosenModeNormal, kBotSkillNightmare, 15, 0, { "Malachi", "Ezekiel", "Mordecai", "Ishmael", "Lazarus", "Jericho" }, { kBotPersonaTrickster, kBotPersonaRusher, kBotPersonaCamper, kBotPersonaJumper, kBotPersonaBalanced, kBotPersonaCoward } },
+};
 
 const char *gBotSkillNames[kBotSkillMax] = { "EASY", "NORMAL", "HARD", "NIGHTMARE" };
 const char *gBotPersonaNames[kBotPersonaMax] = { "MIXED", "BALANCED", "RUSHER", "CAMPER", "TRICKSTER", "COWARD", "JUMPER" };
@@ -81,6 +116,10 @@ static const char *pzBotNames[] = {
 static const char *pzBotKillLines[] = {
     "Rest in pieces.", "Next!", "Too slow.", "Stay down.", "That's gotta hurt.", "Back to the grave with you.",
     "Is that all?", "You should see the other guy... oh wait.", "Burn.", "Another one for the pile.",
+};
+
+static const char *pzBotGrudgeLines[] = {
+    "Payback!", "That's for last time.", "Remember me?", "We're even now... almost.", "I told you I'd find you.",
 };
 
 static const char *pzBotDeathLines[] = {
@@ -98,10 +137,11 @@ enum {
     kBotStateCamp,
     kBotStateDead,
     kBotStateHighGround,
+    kBotStateObjective,
     kBotStateMax
 };
 
-static const char *pzBotStateNames[kBotStateMax] = { "roam", "collect", "fight", "hunt", "ambush", "flank", "flee", "camp", "dead", "high ground" };
+static const char *pzBotStateNames[kBotStateMax] = { "roam", "collect", "fight", "hunt", "ambush", "flank", "flee", "camp", "dead", "high ground", "objective" };
 
 struct BOTSKILL
 {
@@ -1071,7 +1111,14 @@ void botSetupMatch(void)
         gBotAccuracy = gBotReaction = gBotAggression = gBotJumping = gBotAmbush = gBotFlank = gBotCamping = gBotHighGround = 100;
         gBotTuning = 2;
     }
-    const int nBots = ClipRange(gBotCount, 1, kMaxPlayers - 1);
+    const CAREERSTAGE *pStage = gBotCareer > 0 ? &gCareer[ClipRange(gBotCareer, 1, kCareerStages) - 1] : NULL;
+    int nBots = ClipRange(gBotCount, 1, kMaxPlayers - 1);
+    if (pStage)
+    {
+        nBots = 0;
+        while (nBots < 6 && pStage->pzNames[nBots])
+            nBots++;
+    }
     gBotMatch = true;
     myconnectindex = connecthead = 0;
     numplayers = 1; // still a local game as far as the network code is concerned
@@ -1080,6 +1127,13 @@ void botSetupMatch(void)
         connectpoint2[i] = (i + 1 < gNetPlayers) ? i + 1 : -1;
     netBroadcastPlayerInfo(myconnectindex);
     gProfileNet[myconnectindex].skill = gProfile[myconnectindex].skill = gSkill;
+    if (gBotWatchMode)
+    {
+        // watching: the human is a spectator (Blood's own spectating), the camera goes from bot to bot
+        Bstrncpyz(gProfileNet[myconnectindex].name, "spectator", sizeof(gProfileNet[myconnectindex].name));
+        gProfile[myconnectindex] = gProfileNet[myconnectindex];
+        gPacketStartGame.uNetGameFlags |= kNetGameFlagSpectatingAllow;
+    }
     uint32_t nSeed = ((uint32_t)totalclock + (uint32_t)time(NULL)) * 2654435761u + 12345u;
     int nNameStart = (nSeed >> 8) % ARRAY_SSIZE(pzBotNames);
     ShuffleMixed(nSeed);
@@ -1099,6 +1153,15 @@ void botSetupMatch(void)
         PROFILE *pProfile = &gProfileNet[i];
         Bmemset(pProfile, 0, sizeof(PROFILE));
         Bstrncpyz(pProfile->name, pzBotNames[(nNameStart + nBot) % ARRAY_SSIZE(pzBotNames)], sizeof(pProfile->name));
+        if (pStage)
+        {
+            // the career's opponents: always the same names, how they play and how good they are
+            pBot->nSkill = pStage->nSkill;
+            pBot->nPersona = pStage->nPersonas[nBot];
+            pBot->skill = gBotSkillInfo[pBot->nSkill];
+            pBot->persona = gBotPersonaInfo[pBot->nPersona];
+            Bstrncpyz(pProfile->name, pStage->pzNames[nBot], sizeof(pProfile->name));
+        }
         pProfile->nAutoAim = pBot->skill.nAutoAim;
         pProfile->nWeaponSwitch = 1;
         pProfile->bWeaponFastSwitch = 0;
@@ -1114,10 +1177,16 @@ void botSetupMatch(void)
     gGameOptions.uGameFlags &= ~(kGameFlagContinuing|kGameFlagEnding);
     gPlayerRoundEnding = 0;
     UpdateNetworkMenus(); // NEW GAME in the game's menu now sets up the next bot match
+    nBotOrder = gGameOptions.nGameType == kGameTypeCoop ? kBotOrderFollow : kBotOrderFree;
+    LOG_F(INFO, "Bot match: game type %d, mode %d, %d bots", (int)gGameOptions.nGameType, (int)gPacketStartGame.nChosenMode, nBots);
+    nHoldSect = -1;
+    nAdapt = 100;
 }
 
 void botEndMatch(void)
 {
+    gBotWatchMode = false;
+    gBotCareer = 0;
     if (!gBotMatch)
         return;
     gBotMatch = false;
@@ -1503,6 +1572,12 @@ static int BotPerceive(BOT *pBot, PLAYER *pPlayer)
             int nScore = nDist;
             if (pTarget->index == pBot->nTarget)
                 nScore -= 2000; // stick with who it is fighting
+            if (modesJuggernaut() == p)
+                nScore -= 3000; // everybody hunts the juggernaut
+            if (gBotGrudges && pOther->fragInfo[pPlayer->nPlayer] - pPlayer->fragInfo[p] >= 2)
+                nScore -= 1500; // it has a score to settle with that one
+            if (pOther->hasFlag)
+                nScore -= 2500; // stop the flag carrier
             if (nScore < nBestScore)
                 nBest = pTarget->index, nBestScore = nScore;
             continue;
@@ -2008,6 +2083,162 @@ static bool OthersFighting(BOT *pBot, PLAYER *pPlayer, spritetype *pTarget)
     return false;
 }
 
+// the human it plays with (co-op, teams), -1 none
+static PLAYER *TeamHuman(PLAYER *pPlayer)
+{
+    PLAYER *pHuman = &gPlayer[myconnectindex];
+    if (pHuman == pPlayer || IsEnemyPlayer(pPlayer, pHuman) || !pHuman->pXSprite)
+        return NULL;
+    return pHuman;
+}
+
+void botOrder(int nOrder)
+{
+    nBotOrder = ClipRange(nOrder, kBotOrderFree, kBotOrderHold);
+    PLAYER *pHuman = &gPlayer[myconnectindex];
+    if (nBotOrder == kBotOrderHold && pHuman->pSprite)
+        nHoldX = pHuman->pSprite->x, nHoldY = pHuman->pSprite->y, nHoldZ = pHuman->pSprite->z, nHoldSect = pHuman->pSprite->sectnum;
+    static const char *pzOrders[] = { "Bots: going ahead", "Bots: following you", "Bots: holding this spot" };
+    viewSetMessage(pzOrders[nBotOrder], 8, MESSAGE_PRIORITY_NORMAL);
+    for (int i = 0; i < kMaxPlayers; i++)
+        if (gBot[i].bActive)
+            gBot[i].nNextThink = 0; // think again now
+}
+
+static int FindItemOfType(int nType)
+{
+    for (int i = headspritestat[kStatItem]; i >= 0; i = nextspritestat[i])
+        if (sprite[i].type == nType)
+            return i;
+    return -1;
+}
+
+// Something to do for the match type or its orders: where to go, how much it matters, whether to stay there.
+static bool BotObjective(BOT *pBot, PLAYER *pPlayer, int *px, int *py, int *pz, int *pSector, int *pScore, bool *pbStay)
+{
+    spritetype *pSprite = pPlayer->pSprite;
+    *pbStay = false;
+    // orders from the human on its side
+    PLAYER *pHuman = TeamHuman(pPlayer);
+    if (pHuman && pHuman->pXSprite->health > 0)
+    {
+        spritetype *pHumanSprite = pHuman->pSprite;
+        if (nBotOrder == kBotOrderHold && nHoldSect >= 0)
+        {
+            *px = nHoldX + BotRand(pBot, 400) - 200, *py = nHoldY + BotRand(pBot, 400) - 200, *pz = nHoldZ;
+            short nSector = nHoldSect;
+            updatesector(*px, *py, &nSector);
+            if (nSector < 0)
+                *px = nHoldX, *py = nHoldY, nSector = nHoldSect;
+            *pSector = nSector;
+            *pScore = 140;
+            *pbStay = true;
+            return true;
+        }
+        if (nBotOrder == kBotOrderFollow)
+        {
+            const int nDist = BotDist(pSprite->x, pSprite->y, pHumanSprite->x, pHumanSprite->y);
+            const bool bSee = cansee(pSprite->x, pSprite->y, pPlayer->zView, pSprite->sectnum, pHumanSprite->x, pHumanSprite->y, pHuman->zView, pHumanSprite->sectnum);
+            if (nDist > 900 || !bSee)
+            {
+                *px = pHumanSprite->x, *py = pHumanSprite->y, *pz = pHumanSprite->z, *pSector = pHumanSprite->sectnum;
+                *pScore = nDist > 3000 || !bSee ? 160 : 90;
+                return true;
+            }
+            // close by: hang about near it, a step to the side
+            const int nAng = (pHumanSprite->ang + 1024 + BotRand(pBot, 900) - 450) & 2047;
+            int x = pHumanSprite->x + mulscale30(Cos(nAng), 400), y = pHumanSprite->y + mulscale30(Sin(nAng), 400);
+            short nSector = pHumanSprite->sectnum;
+            updatesector(x, y, &nSector);
+            if (nSector < 0)
+                x = pHumanSprite->x, y = pHumanSprite->y, nSector = pHumanSprite->sectnum;
+            *px = x, *py = y, *pz = pHumanSprite->z, *pSector = nSector;
+            *pScore = 55;
+            *pbStay = true;
+            return true;
+        }
+    }
+    // king of the hill: get on it and stay there
+    int hx, hy, hr;
+    if (modesHill(&hx, &hy, &hr))
+    {
+        short nSector = -1;
+        int x = hx + BotRand(pBot, hr) - hr / 2, y = hy + BotRand(pBot, hr) - hr / 2;
+        updatesector(x, y, &nSector);
+        if (nSector < 0)
+        {
+            x = hx, y = hy;
+            updatesector(x, y, &nSector);
+        }
+        if (nSector >= 0)
+        {
+            *px = x, *py = y, *pz = getflorzofslope(nSector, x, y), *pSector = nSector;
+            *pScore = 70 + pBot->persona.nAggression / 3 + pBot->persona.nCamping / 4;
+            *pbStay = true;
+            return true;
+        }
+    }
+    // capture the flag
+    if (gGameOptions.nGameType == kGameTypeTeams && !(gGameOptions.uNetGameFlags & kNetGameFlagNoTeamFlags))
+    {
+        const int nTeam = pPlayer->teamId & 1;
+        const int nOwnBase = FindItemOfType(nTeam == 0 ? kItemFlagABase : kItemFlagBBase);
+        const int nEnemyBase = FindItemOfType(nTeam == 0 ? kItemFlagBBase : kItemFlagABase);
+        const int nOwnBit = nTeam == 0 ? 1 : 2, nEnemyBit = nTeam == 0 ? 2 : 1;
+        if (nOwnBase >= 0 && nEnemyBase >= 0)
+        {
+            const bool bOwnHome = sprite[nOwnBase].extra > 0 && xsprite[sprite[nOwnBase].extra].state;
+            const bool bEnemyHome = sprite[nEnemyBase].extra > 0 && xsprite[sprite[nEnemyBase].extra].state;
+            int nGoal = -1, nScore = 0;
+            bool bStay = false;
+            if (pPlayer->hasFlag & nEnemyBit)
+                nGoal = nOwnBase, nScore = 170; // bring it home
+            else if (!bOwnHome)
+            {
+                // ours is gone: pick it up where it was dropped, or go after whoever has it
+                const int nDropped = FindItemOfType(nTeam == 0 ? kItemFlagA : kItemFlagB);
+                if (nDropped >= 0)
+                    nGoal = nDropped, nScore = 130;
+                else
+                {
+                    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+                        if (IsEnemyPlayer(pPlayer, &gPlayer[p]) && (gPlayer[p].hasFlag & nOwnBit) && gPlayer[p].pXSprite->health > 0)
+                            nGoal = gPlayer[p].nSprite, nScore = 120;
+                }
+            }
+            else if (bEnemyHome && (pBot->persona.nAggression > 45 || (pPlayer->nPlayer & 1)))
+                nGoal = nEnemyBase, nScore = 60 + pBot->persona.nAggression / 2; // attack
+            else
+            {
+                const int nEnemyDropped = FindItemOfType(nTeam == 0 ? kItemFlagB : kItemFlagA);
+                if (nEnemyDropped >= 0)
+                    nGoal = nEnemyDropped, nScore = 110;
+                else
+                    nGoal = nOwnBase, nScore = 40 + pBot->persona.nCamping / 2, bStay = true; // defend
+            }
+            if (nGoal >= 0)
+            {
+                spritetype *pGoal = &sprite[nGoal];
+                int x = pGoal->x, y = pGoal->y;
+                if (bStay)
+                {
+                    const int nAng = BotRand(pBot, 2048);
+                    x += mulscale30(Cos(nAng), 500), y += mulscale30(Sin(nAng), 500);
+                }
+                short nSector = pGoal->sectnum;
+                updatesector(x, y, &nSector);
+                if (nSector < 0)
+                    x = pGoal->x, y = pGoal->y, nSector = pGoal->sectnum;
+                *px = x, *py = y, *pz = pGoal->z, *pSector = nSector;
+                *pScore = nScore;
+                *pbStay = bStay;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 struct BOTOPTION { int nScore, nId; };
 
 static void SortOptions(BOTOPTION *pOptions, int nCount)
@@ -2017,7 +2248,7 @@ static void SortOptions(BOTOPTION *pOptions, int nCount)
             swap(&pOptions[j], &pOptions[j-1]);
 }
 
-enum { kOptFight, kOptFlee, kOptHigh, kOptFlank, kOptWait, kOptCollect, kOptHunt, kOptAmbush, kOptCamp, kOptRoam };
+enum { kOptFight, kOptFlee, kOptHigh, kOptFlank, kOptWait, kOptCollect, kOptHunt, kOptAmbush, kOptCamp, kOptRoam, kOptObjective };
 
 static void BotThink(BOT *pBot, PLAYER *pPlayer)
 {
@@ -2042,7 +2273,9 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
         const bool bUnaware = !FacingMe(pEnemy, pSprite, 300);
         BOTOPTION options[5];
         int nOptions = 0;
+        const int nJuggernaut = modesJuggernaut();
         const int nFight = 50 + pPersona->nAggression / 2 + ClipRange((view.nRatio - 100) / 3, -40, 40) + view.nMomentum * 12
+            + (nJuggernaut == pPlayer->nPlayer ? 30 : 0) + (pPlayer->hasFlag ? -25 : 0)
             + (bUnaware ? 10 : 0) + (view.nScoreDiff < 0 ? 8 : 0) + (pBot->nState == kBotStateFight ? 10 : 0) + BotRand(pBot, 15);
         options[nOptions++] = { nFight, kOptFight };
         if (pEnemyPlayer && !powerupCheck(pPlayer, kPwUpDeathMask))
@@ -2134,7 +2367,14 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
         if (pBot->nGoalSect >= 0 && !GoalReached(pBot, pSprite, 200) && nNow - pBot->nStateTime < 30*8)
             return;
         break;
+    case kBotStateObjective:
+        if (pBot->nGoalSect >= 0 && !GoalReached(pBot, pSprite, 250) && nNow - pBot->nStateTime < 30*3)
+            return; // things move (players, flags): look again every few seconds
+        break;
     case kBotStateCollect:
+        if (nBotOrder == kBotOrderFollow && TeamHuman(pPlayer) && TeamHuman(pPlayer)->pXSprite->health > 0
+            && BotDist(pSprite->x, pSprite->y, TeamHuman(pPlayer)->pSprite->x, TeamHuman(pPlayer)->pSprite->y) > 3000)
+            break; // it's getting left behind
         if (pBot->nGoalSprite >= 0 && sprite[pBot->nGoalSprite].statnum == kStatItem && pBot->nGoalSect >= 0)
         {
             // standing on it and it's still there: it can't take it (full up), forget it for a while
@@ -2180,9 +2420,14 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
     for (int a = connecthead; a >= 0 && !bFightHeard && pMem; a = connectpoint2[a])
         if (a != p && pBot->mem[a].bValid && nNow - pBot->mem[a].nTime < 30*3 && BotDist(pBot->mem[a].x, pBot->mem[a].y, pMem->x, pMem->y) < 3000)
             bFightHeard = true;
-    BOTOPTION options[6];
+    BOTOPTION options[8];
     int nOptions = 0;
-    if (nItem >= 0)
+    // told to follow: only items close to the human
+    PLAYER *pFollow = nBotOrder == kBotOrderFollow ? TeamHuman(pPlayer) : NULL;
+    if (pFollow && (!pFollow->pXSprite || pFollow->pXSprite->health <= 0))
+        pFollow = NULL;
+    const bool bItemNear = nItem >= 0 && (!pFollow || BotDist(sprite[nItem].x, sprite[nItem].y, pFollow->pSprite->x, pFollow->pSprite->y) < 2500);
+    if (nItem >= 0 && bItemNear)
     {
         const bool bUrgent = nValue >= 80 - pPersona->nAggression / 4;
         options[nOptions++] = { nValue * 2 / 3 + (bUrgent ? 35 : 0) + (nHealth < 50 ? 20 : 0) + BotRand(pBot, 10), kOptCollect };
@@ -2199,7 +2444,13 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
     }
     if (pBot->nState != kBotStateCamp && (!pBot->nLastCamp || nNow - pBot->nLastCamp > 30*25))
         options[nOptions++] = { pPersona->nCamping * 2 / 3 + (view.bNearEnd && view.nScoreDiff > 0 ? 20 : 0) + (nHealth < 50 ? 10 : 0) + BotRand(pBot, 15), kOptCamp };
-    options[nOptions++] = { 30 + BotRand(pBot, 10), kOptRoam };
+    int ox = 0, oy = 0, oz = 0, nObjSect = -1, nObjScore = 0;
+    bool bObjStay = false;
+    if (nOptions < 6 && BotObjective(pBot, pPlayer, &ox, &oy, &oz, &nObjSect, &nObjScore, &bObjStay))
+        options[nOptions++] = { nObjScore + BotRand(pBot, 10), kOptObjective };
+    // told to follow: wandering off isn't on
+    if (!pFollow)
+        options[nOptions++] = { 30 + BotRand(pBot, 10), kOptRoam };
     SortOptions(options, nOptions);
     for (int i = 0; i < nOptions; i++)
     {
@@ -2245,9 +2496,37 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
             continue;
         }
         case kOptCamp:
+            if (pFollow)
+                continue;
             SetState(pBot, kBotStateCamp);
             if (PickCampSpot(pBot, pSprite))
                 return;
+            continue;
+        case kOptObjective:
+            if (bObjStay && BotDist(pSprite->x, pSprite->y, ox, oy) < 600)
+            {
+                // there already: wait and watch
+                pBot->nState = -1;
+                SetState(pBot, kBotStateCamp);
+                pBot->nGoalX = pSprite->x, pBot->nGoalY = pSprite->y, pBot->nGoalZ = pSprite->z, pBot->nGoalSect = pSprite->sectnum;
+                pBot->nWaitUntil = nNow + 30*3 + BotRand(pBot, 30*3);
+                pBot->nWatchAng = BotRand(pBot, 2048);
+                pBot->nLastCamp = 0;
+                return;
+            }
+            pBot->nState = -1;
+            SetState(pBot, kBotStateObjective);
+            if (SetGoal(pBot, ox, oy, oz, nObjSect))
+                return;
+            if (pFollow)
+            {
+                // no way it knows to the human: head straight for it and find one
+                pBot->nGoalX = ox, pBot->nGoalY = oy, pBot->nGoalZ = oz, pBot->nGoalSect = nObjSect;
+                pBot->nPathGoalSect = nObjSect;
+                pBot->nPathLen = pBot->nPathPos = 0;
+                pBot->nRepathTime = nNow;
+                return;
+            }
             continue;
         case kOptRoam:
         default:
@@ -2516,6 +2795,228 @@ static void BotTalk(BOT *pBot, PLAYER *pPlayer)
     pBot->pzTalk = NULL;
 }
 
+//
+// the career
+//
+
+void careerDescribe(int nStage, char *pzLine1, char *pzLine2, int nSize)
+{
+    nStage = ClipRange(nStage, 1, kCareerStages);
+    const CAREERSTAGE *pStage = &gCareer[nStage - 1];
+    const char *pzMap = gEpisodeCount > 4 && pStage->nLevel - 1 < gEpisodeInfo[4].nLevels ? gEpisodeInfo[4].levelsInfo[pStage->nLevel - 1].Title : "";
+    char zGoal[32] = "";
+    if (pStage->nMode == kChosenModeGunGame)
+        Bsnprintf(zGoal, sizeof(zGoal), "ALL 10 WEAPONS");
+    else if (pStage->nMode == kChosenModeLastManStanding)
+        Bsnprintf(zGoal, sizeof(zGoal), "%d LIVES", pStage->nLives);
+    else if (pStage->nMode == kChosenModeKingOfTheHill)
+        Bsnprintf(zGoal, sizeof(zGoal), "%d POINTS", pStage->nFrags);
+    else
+        Bsnprintf(zGoal, sizeof(zGoal), "%d FRAGS", pStage->nFrags);
+    Bsnprintf(pzLine1, nSize, "STAGE %d/%d: %s ON %s, %s", nStage, kCareerStages,
+        pStage->nMode == kChosenModeNormal ? "BLOODBATH" : modesName(pStage->nMode), pzMap, zGoal);
+    int n = Bsnprintf(pzLine2, nSize, "%s: ", gBotSkillNames[(int)pStage->nSkill]);
+    for (int i = 0; i < 6 && pStage->pzNames[i] && n < nSize - 1; i++)
+        n += Bsnprintf(pzLine2 + n, nSize - n, "%s%s", i ? ", " : "", pStage->pzNames[i]);
+    Bstrupr(pzLine1);
+    Bstrupr(pzLine2);
+}
+
+// "Name=count,Name=count": who killed the human how often over the career
+static void AddRival(const char *pzName, int nKills)
+{
+    char names[8][MAXPLAYERNAME];
+    int counts[8], n = 0;
+    char buffer[sizeof(gCareerRivals)];
+    Bstrncpyz(buffer, gCareerRivals, sizeof(buffer));
+    for (char *pzTok = strtok(buffer, ","); pzTok && n < 8; pzTok = strtok(NULL, ","))
+    {
+        char *pEq = strchr(pzTok, '=');
+        if (!pEq)
+            continue;
+        *pEq = 0;
+        Bstrncpyz(names[n], pzTok, MAXPLAYERNAME);
+        counts[n++] = atoi(pEq + 1);
+    }
+    int i = 0;
+    while (i < n && Bstrcasecmp(names[i], pzName))
+        i++;
+    if (i == n)
+    {
+        if (n == 8) // keep the 8 worst
+        {
+            i = 0;
+            for (int j = 1; j < n; j++)
+                if (counts[j] < counts[i])
+                    i = j;
+        }
+        else
+            n++;
+        Bstrncpyz(names[i], pzName, MAXPLAYERNAME);
+        counts[i] = 0;
+    }
+    counts[i] += nKills;
+    int nLen = 0;
+    gCareerRivals[0] = 0;
+    for (int j = 0; j < n; j++)
+        nLen += Bsnprintf(gCareerRivals + nLen, sizeof(gCareerRivals) - nLen, "%s%s=%d", j ? "," : "", names[j], counts[j]);
+}
+
+void careerNemesis(char *pzBuffer, int nSize)
+{
+    char buffer[sizeof(gCareerRivals)];
+    Bstrncpyz(buffer, gCareerRivals, sizeof(buffer));
+    char zBest[MAXPLAYERNAME] = "";
+    int nBest = 0;
+    for (char *pzTok = strtok(buffer, ","); pzTok; pzTok = strtok(NULL, ","))
+    {
+        char *pEq = strchr(pzTok, '=');
+        if (!pEq)
+            continue;
+        *pEq = 0;
+        if (atoi(pEq + 1) > nBest)
+            nBest = atoi(pEq + 1), Bstrncpyz(zBest, pzTok, sizeof(zBest));
+    }
+    if (nBest)
+        Bsnprintf(pzBuffer, nSize, "NEMESIS: %s (KILLED YOU %d TIMES)", zBest, nBest);
+    else
+        pzBuffer[0] = 0;
+    Bstrupr(pzBuffer);
+}
+
+void careerPlay(void)
+{
+    const int nStage = ClipRange(gCareerStage, 1, kCareerStages);
+    const CAREERSTAGE *pStage = &gCareer[nStage - 1];
+    BotMatchSetMap(4, pStage->nLevel - 1);
+    BotMatchSetMode(pStage->nGameType, pStage->nMode);
+    BotMatchSetLimits(pStage->nFrags, 0);
+    BotMatchSetLives(pStage->nLives ? pStage->nLives : 3);
+    BotMatchResetMutators();
+    gBotWatchMode = false;
+    gBotCareer = nStage; // botSetupMatch takes the opponents from it
+    StartBotMatch(NULL);
+}
+
+void careerReset(void)
+{
+    gCareerStage = 1;
+    gCareerWins = gCareerMatches = gCareerKills = gCareerDeaths = gCareerBestStreak = 0;
+    gCareerRivals[0] = 0;
+    CONFIG_WriteSetup(2);
+}
+
+static void CareerMatchOver(void)
+{
+    PLAYER *pMe = &gPlayer[myconnectindex];
+    // did the human win? the match type's winner, or the most frags/points
+    int nWinner = modesWinner();
+    if (nWinner < 0 && gChosenRules.nMode != kChosenModeSurvival)
+    {
+        int nBest = INT32_MIN;
+        for (int p = connecthead; p >= 0; p = connectpoint2[p])
+            if (gPlayer[p].fragCount > nBest)
+                nBest = gPlayer[p].fragCount, nWinner = p;
+    }
+    const bool bWon = nWinner == myconnectindex;
+    int nKills = 0, nWorst = -1, nWorstKills = 0;
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        if (p == myconnectindex)
+            continue;
+        nKills += pMe->fragInfo[p];
+        if (gPlayer[p].fragInfo[myconnectindex] > 0)
+            AddRival(gProfile[p].name, gPlayer[p].fragInfo[myconnectindex]);
+        if (gPlayer[p].fragInfo[myconnectindex] > nWorstKills)
+            nWorst = p, nWorstKills = gPlayer[p].fragInfo[myconnectindex];
+    }
+    UNREFERENCED_PARAMETER(nWorst);
+    gCareerMatches++;
+    gCareerKills += nKills;
+    gCareerDeaths += modesDeaths(myconnectindex);
+    gCareerBestStreak = max(gCareerBestStreak, modesBestStreak(myconnectindex));
+    char buffer[96];
+    if (bWon)
+    {
+        gCareerWins++;
+        if (gBotCareer >= kCareerStages)
+            Bsnprintf(buffer, sizeof(buffer), "You beat the whole ladder! Champion of the Chosen!");
+        else
+        {
+            gCareerStage = ClipHigh(gBotCareer + 1, kCareerStages);
+            Bsnprintf(buffer, sizeof(buffer), "Stage %d won! Stage %d is next (CAREER in the bots menu)", gBotCareer, gCareerStage);
+        }
+    }
+    else
+        Bsnprintf(buffer, sizeof(buffer), "Stage %d lost. Try it again from CAREER in the bots menu", gBotCareer);
+    viewSetMessage(buffer, 8, MESSAGE_PRIORITY_NORMAL);
+    CONFIG_WriteSetup(2);
+}
+
+static void BotMatchFrame(void)
+{
+    static bool bWasEnding;
+    if (gPlayerRoundEnding && !bWasEnding && gBotCareer > 0)
+        CareerMatchOver();
+    bWasEnding = gPlayerRoundEnding;
+    if (!gBotWatchMode || gPaused)
+        return;
+    gPlayer[myconnectindex].fragCount = 0; // the spectator doesn't play (it "dies" every spawn)
+    // the camera: stay with a bot a while, then go where the action is
+    static int nNextSwitch, nDeadSince;
+    PLAYER *pView = gView;
+    const bool bDead = !pView || !pView->pXSprite || pView->pXSprite->health <= 0 || pView->nPlayer == myconnectindex;
+    if (bDead && !nDeadSince)
+        nDeadSince = gLevelTime;
+    else if (!bDead)
+        nDeadSince = 0;
+    if (gLevelTime < nNextSwitch && !(bDead && gLevelTime - nDeadSince > 45) && gLevelTime >= 30)
+        return;
+    int nBest = -1, nBestScore = -1;
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        if (!botIsBot(p) || !gPlayer[p].pXSprite || gPlayer[p].pXSprite->health <= 0)
+            continue;
+        int nScore = 10 + (gBot[p].nTarget >= 0 ? 100 : 0) + (gBot[p].nState == kBotStateFight ? 50 : 0) + gPlayer[p].fragCount;
+        if (pView && p == pView->nPlayer)
+            nScore -= 40; // something else for a change
+        nScore += (int)(((uint32_t)(gLevelTime * 2654435761u) >> (p * 3)) & 31);
+        if (nScore > nBestScore)
+            nBest = p, nBestScore = nScore;
+    }
+    if (nBest >= 0)
+    {
+        gViewIndex = nBest;
+        gView = &gPlayer[nBest];
+    }
+    nNextSwitch = gLevelTime + 30*12;
+    nDeadSince = 0;
+}
+
+// adaptive difficulty: the human doing well makes the bots a bit sharper, doing badly a bit slower
+static void BotAdapt(void)
+{
+    static int nLastCheck;
+    if (!gBotAdaptive || gLevelTime - nLastCheck < 30*10 || gLevelTime < nLastCheck)
+    {
+        if (gLevelTime < nLastCheck)
+            nLastCheck = gLevelTime;
+        return;
+    }
+    nLastCheck = gLevelTime;
+    int nBots = 0, nBotFrags = 0;
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+        if (botIsBot(p))
+            nBots++, nBotFrags += gPlayer[p].fragCount;
+    if (!nBots)
+        return;
+    const int nDiff = gPlayer[myconnectindex].fragCount * nBots - nBotFrags; // ahead of the average bot, times bots
+    if (nDiff >= nBots * 2)
+        nAdapt = ClipLow(nAdapt - 5, 60);
+    else if (nDiff <= -nBots * 2)
+        nAdapt = ClipHigh(nAdapt + 5, 160);
+}
+
 void botGetInput(int nPlayer, GINPUT *pInput)
 {
     Bmemset(pInput, 0, sizeof(GINPUT));
@@ -2524,10 +3025,14 @@ void botGetInput(int nPlayer, GINPUT *pInput)
     BOT *pBot = &gBot[nPlayer];
     PLAYER *pPlayer = &gPlayer[nPlayer];
     spritetype *pSprite = pPlayer->pSprite;
+    if (nPlayer == connectpoint2[connecthead])
+        BotMatchFrame();
     if (!pSprite || !pPlayer->pXSprite || gPaused || gGameMenuMgr.m_bActive || gEndGameMgr.at0 || gPlayerRoundEnding)
         return;
     nNow = gLevelTime;
     pInput->syncFlags.run = 1;
+    if (nPlayer == connectpoint2[connecthead])
+        BotAdapt();
     BotTalk(pBot, pPlayer);
 
     // dead: wait a moment, then respawn
@@ -2562,7 +3067,11 @@ void botGetInput(int nPlayer, GINPUT *pInput)
     }
     if (pPlayer->fragCount > pBot->nLastFrags)
     {
-        if (BotChance(pBot, 35))
+        const int nVictim = gPlayerLastVictim;
+        const bool bPayback = gBotGrudges && nVictim >= 0 && nVictim < kMaxPlayers && gPlayer[nVictim].fragInfo[pPlayer->nPlayer] - pPlayer->fragInfo[nVictim] >= 1;
+        if (bPayback && BotChance(pBot, 60))
+            BotSay(pBot, pzBotGrudgeLines[BotRand(pBot, ARRAY_SSIZE(pzBotGrudgeLines))], 15 + BotRand(pBot, 30));
+        else if (BotChance(pBot, 35))
         {
             BotSay(pBot, pzBotKillLines[BotRand(pBot, ARRAY_SSIZE(pzBotKillLines))], 15 + BotRand(pBot, 40));
             if (gBotTaunts)
@@ -2583,6 +3092,8 @@ void botGetInput(int nPlayer, GINPUT *pInput)
             spritetype *pEnemy = &sprite[pBot->nTarget];
             const int nOff = klabs(AngDiff(pSprite->ang, getangle(pEnemy->x - pSprite->x, pEnemy->y - pSprite->y)));
             int nReact = pBot->skill.nReaction;
+            if (gBotAdaptive)
+                nReact = nReact * nAdapt / 100;
             nReact += nReact * nOff / 700;
             if (pBot->nState == kBotStateAmbush || pBot->nState == kBotStateCamp)
                 nReact /= 2; // was expecting it
@@ -2886,6 +3397,8 @@ void botGetInput(int nPlayer, GINPUT *pInput)
             {
                 int nErr = pBot->skill.nAimError;
                 nErr = nErr * ClipLow(100 - pBot->nTrackFrames, 35) / 100;
+                if (gBotAdaptive)
+                    nErr = nErr * nAdapt / 100;
                 const int nSideSpeed = klabs(dmulscale30(xvel[pEnemy->index], Sin(nAngTo), -yvel[pEnemy->index], Cos(nAngTo)));
                 nErr += nErr * ClipHigh(nSideSpeed >> 14, 8) / 8;
                 if (!bOnGround)
@@ -3218,6 +3731,8 @@ static int osdcmd_bot_match(osdcmdptr_t parm)
         BotMatchSetLimits(Batol(parm->parms[0]), parm->numparms >= 2 ? Batol(parm->parms[1]) : -1);
     if (parm->numparms >= 4)
         BotMatchSetMap(Batol(parm->parms[2]) - 1, Batol(parm->parms[3]) - 1);
+    if (parm->numparms >= 6)
+        BotMatchSetMode(Batol(parm->parms[4]), Batol(parm->parms[5]));
     StartBotMatch(NULL);
     return OSDCMD_OK;
 }
@@ -3247,10 +3762,24 @@ static int osdcmd_bot_sector(osdcmdptr_t parm) // map debugging: how bots see a 
     return OSDCMD_OK;
 }
 
+static int osdcmd_bot_order(osdcmdptr_t parm)
+{
+    if (parm->numparms < 1 || !gBotMatch)
+        return OSDCMD_SHOWHELP;
+    if (!Bstrcasecmp(parm->parms[0], "follow"))
+        botOrder(kBotOrderFollow);
+    else if (!Bstrcasecmp(parm->parms[0], "hold"))
+        botOrder(kBotOrderHold);
+    else
+        botOrder(kBotOrderFree);
+    return OSDCMD_OK;
+}
+
 void botRegisterCvars(void)
 {
+    OSD_RegisterFunction("bot_order", "bot_order <follow|hold|free>: orders for the bots on your side", osdcmd_bot_order);
     OSD_RegisterFunction("bot_sector", "bot_sector <sector>: writes how bots see that sector's openings to the log", osdcmd_bot_sector);
-    OSD_RegisterFunction("bot_match", "bot_match [frag limit] [time limit] [episode] [level]: starts a bot match with the BOTS menu's settings", osdcmd_bot_match);
+    OSD_RegisterFunction("bot_match", "bot_match [frag limit] [time limit] [episode] [level] [game type 1-3] [mode 0-5]: starts a bot match with the BOTS menu's settings", osdcmd_bot_match);
     static osdcvardata_t cvars[] = {
         { "bot_count", "number of bots in a bot match", (void *)&gBotCount, CVAR_INT, 1, kMaxPlayers - 1 },
         { "bot_skill", "bot difficulty (0: easy, 1: normal, 2: hard, 3: nightmare)", (void *)&gBotSkill, CVAR_INT, 0, kBotSkillMax - 1 },
@@ -3263,7 +3792,16 @@ void botRegisterCvars(void)
         { "bot_flank", "how often bots go round to flank, percent of the personality's", (void *)&gBotFlank, CVAR_INT, 0, 200 },
         { "bot_camping", "how much bots camp, percent of the personality's", (void *)&gBotCamping, CVAR_INT, 0, 200 },
         { "bot_taunts", "bots talk and taunt", (void *)&gBotTaunts, CVAR_BOOL, 0, 1 },
+        { "career_stage", "the career stage you're on", (void *)&gCareerStage, CVAR_INT, 1, kCareerStages },
+        { "career_wins", "career: matches won", (void *)&gCareerWins, CVAR_INT, 0, 1000000 },
+        { "career_matches", "career: matches played", (void *)&gCareerMatches, CVAR_INT, 0, 1000000 },
+        { "career_kills", "career: your kills", (void *)&gCareerKills, CVAR_INT, 0, 10000000 },
+        { "career_deaths", "career: your deaths", (void *)&gCareerDeaths, CVAR_INT, 0, 10000000 },
+        { "career_beststreak", "career: your longest killing streak", (void *)&gCareerBestStreak, CVAR_INT, 0, 1000000 },
+        { "career_rivals", "career: who killed you how often", (void *)gCareerRivals, CVAR_STRING, 0, sizeof(gCareerRivals) },
         { "bot_tuning", "version of the bot presets the fine tuning was made for", (void *)&gBotTuning, CVAR_INT, 0, 100 },
+        { "bot_grudges", "bots hold grudges against whoever kills them a lot, and hunt them", (void *)&gBotGrudges, CVAR_BOOL, 0, 1 },
+        { "bot_adaptive", "bots slowly get better or worse to keep the match close", (void *)&gBotAdaptive, CVAR_BOOL, 0, 1 },
         { "bot_highground", "how much bots go for high places that see a lot, percent of the personality's", (void *)&gBotHighGround, CVAR_INT, 0, 200 },
         { "bot_handicap", "how much damage bots take (0: much less, 2: normal, 4: much more)", (void *)&gBotHandicap, CVAR_INT, 0, 4 },
         { "bot_cultists", "half the bots look like cultists", (void *)&gBotCultists, CVAR_BOOL, 0, 1 },

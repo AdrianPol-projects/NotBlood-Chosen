@@ -59,10 +59,28 @@ extern int gBotDebug;
 extern int gBotCultists;
 extern int gBotHandicap;  // 0-4: how much damage bots take (2 normal), shown next to their names
 extern int gBotHighGround;
+extern int gBotGrudges;
+extern int gBotAdaptive;
 
 extern bool gBotMatch;
 extern const char *gBotSkillNames[kBotSkillMax];
 extern const char *gBotPersonaNames[kBotPersonaMax];
+
+enum { kBotOrderFree = 0, kBotOrderFollow, kBotOrderHold };
+void botOrder(int nOrder); // for the bots on the human's side
+
+// watching a bots-only match as a spectator
+extern bool gBotWatchMode;
+
+// the career: a ladder of matches against named bots
+#define kCareerStages 10
+extern int gCareerStage, gCareerWins, gCareerMatches, gCareerKills, gCareerDeaths, gCareerBestStreak;
+extern char gCareerRivals[128];
+extern int gBotCareer; // the stage being played (1-10), 0 none
+void careerDescribe(int nStage, char *pzLine1, char *pzLine2, int nSize);
+void careerNemesis(char *pzBuffer, int nSize);
+void careerPlay(void);
+void careerReset(void);
 
 bool botIsBot(int nPlayer);
 void botSetupMatch(void);   // called by StartNetGame() when offline: adds the bots as players

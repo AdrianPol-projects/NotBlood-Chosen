@@ -515,6 +515,7 @@ blood_game_objs := \
 	mods.cpp \
 	menuchosen.cpp \
 	bot.cpp \
+	chosenmodes.cpp \
 	controls.cpp \
 	credits.cpp \
 	db.cpp \

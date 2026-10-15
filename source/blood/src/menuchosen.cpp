@@ -23,6 +23,7 @@ See the GNU General Public License for more details.
 #include "common_game.h"
 #include "blood.h"
 #include "bot.h"
+#include "chosenmodes.h"
 #include "coopsave.h"
 #include "fx_man.h"
 #include "gamemenu.h"
@@ -454,6 +455,39 @@ static void ModChosen(CGameMenuItemChain *pItem)
         viewSetMessage("Could not save the mod choice");
 }
 
+// ---- MATCH STATS, BOT ORDERS (the game's menu during a match) ------------------------------
+
+CGameMenu menuMatchStats;
+CGameMenu menuBotOrders;
+
+static void DrawMatchStats(CGameMenuItem *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    modesDrawStats(40);
+}
+
+static void BotOrder(CGameMenuItemChain *pItem)
+{
+    botOrder(pItem->at30);
+    gGameMenuMgr.Deactivate();
+}
+
+CGameMenuItemTitle itemMatchStatsTitle("MATCH STATS", 1, 160, 20, 2038);
+CGameMenuItemText itemMatchStatsTable("", 3, 160, 40, 1);
+static void MatchStatsBack(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    gGameMenuMgr.PostPop();
+}
+CGameMenuItemChain itemMatchStatsBack("BACK", 1, 0, 170, 320, 1, NULL, -1, MatchStatsBack, 0);
+
+CGameMenuItemTitle itemBotOrdersTitle("BOT ORDERS", 1, 160, 20, 2038);
+CGameMenuItemChain itemBotOrderFollow("FOLLOW ME", 1, 0, 60, 320, 1, NULL, -1, BotOrder, kBotOrderFollow);
+CGameMenuItemChain itemBotOrderHold("HOLD THIS SPOT", 1, 0, 80, 320, 1, NULL, -1, BotOrder, kBotOrderHold);
+CGameMenuItemChain itemBotOrderFree("GO AHEAD", 1, 0, 100, 320, 1, NULL, -1, BotOrder, kBotOrderFree);
+CGameMenuItemText itemBotOrdersHelp1("FOR THE BOTS ON YOUR SIDE (CO-OP AND TEAMS)", 3, 160, 130, 1);
+CGameMenuItemText itemBotOrdersHelp2("ALSO: CONSOLE bot_order follow|hold|free", 3, 160, 140, 1);
+
 // ---- BOTS ---------------------------------------------------------------------------------
 
 CGameMenu menuBots;
@@ -478,29 +512,53 @@ static char zBotsInfo[80];
 
 CGameMenuItemChain itemNetworkBots("PLAY WITH BOTS", 1, 0, 118, 320, 1, &menuBots, -1, SetupBotsMenu, 0);
 
+static void BotsStart(CGameMenuItemChain *pItem);
+static void BotsWatch(CGameMenuItemChain *pItem);
+static void SetupCareerMenu(CGameMenuItemChain *pItem);
+
+CGameMenu menuCareer;
+
 CGameMenuItemTitle itemBotsTitle("BOTS", 1, 160, 20, 2038);
-CGameMenuItemSlider itemBotsCount("BOTS:", 3, 66, 42, 180, &gBotCount, 1, kBotMaxBots, 1, BotsSlider, -1, -1, kMenuSliderValue);
-CGameMenuItemZCycle itemBotsSkill("DIFFICULTY:", 3, 66, 54, 180, 0, BotsSetSkill, gBotSkillNames, kBotSkillMax, 0);
-CGameMenuItemZCycle itemBotsPersona("PERSONALITY:", 3, 66, 66, 180, 0, BotsSetPersona, gBotPersonaNames, kBotPersonaMax, 0);
-CGameMenuItemChain itemBotsEach("SET EACH BOT", 3, 0, 84, 320, 1, &menuBotsEach, -1, BotsSetupEach, 0);
-CGameMenuItemChain itemBotsTuning("FINE TUNING", 3, 0, 96, 320, 1, &menuBotsTuning, -1, NULL, 0);
-CGameMenuItemChain itemBotsMatch("MATCH SETTINGS", 3, 0, 108, 320, 1, &menuNetStart, 1, NULL, 0);
-CGameMenuItemText itemBotsInfo(zBotsInfo, 3, 160, 126, 1);
-CGameMenuItemChain itemBotsStart("START MATCH", 1, 0, 150, 320, 1, NULL, -1, StartBotMatch, 0);
+CGameMenuItemSlider itemBotsCount("BOTS:", 3, 66, 38, 180, &gBotCount, 1, kBotMaxBots, 1, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemZCycle itemBotsSkill("DIFFICULTY:", 3, 66, 48, 180, 0, BotsSetSkill, gBotSkillNames, kBotSkillMax, 0);
+CGameMenuItemZCycle itemBotsPersona("PERSONALITY:", 3, 66, 58, 180, 0, BotsSetPersona, gBotPersonaNames, kBotPersonaMax, 0);
+CGameMenuItemChain itemBotsEach("SET EACH BOT", 3, 0, 72, 320, 1, &menuBotsEach, -1, BotsSetupEach, 0);
+CGameMenuItemChain itemBotsTuning("FINE TUNING", 3, 0, 82, 320, 1, &menuBotsTuning, -1, NULL, 0);
+CGameMenuItemChain itemBotsMatch("MATCH SETTINGS", 3, 0, 92, 320, 1, &menuNetStart, 1, NULL, 0);
+CGameMenuItemChain itemBotsCareer("CAREER", 3, 0, 106, 320, 1, &menuCareer, -1, SetupCareerMenu, 0);
+CGameMenuItemChain itemBotsWatch("WATCH BOTS", 3, 0, 116, 320, 1, NULL, -1, BotsWatch, 0);
+CGameMenuItemText itemBotsInfo(zBotsInfo, 3, 160, 132, 1);
+CGameMenuItemChain itemBotsStart("START MATCH", 1, 0, 152, 320, 1, NULL, -1, BotsStart, 0);
+
+static char zCareer1[80], zCareer2[96], zCareer3[80], zCareer4[80];
+static bool bCareerResetArmed;
+static void CareerPlay(CGameMenuItemChain *pItem);
+static void CareerReset(CGameMenuItemChain *pItem);
+static void UpdateCareer(CGameMenuItem *pItem);
+CGameMenuItemTitle itemCareerTitle("CAREER", 1, 160, 20, 2038);
+CGameMenuItemText itemCareer1(zCareer1, 3, 160, 44, 1);
+CGameMenuItemText itemCareer2(zCareer2, 3, 160, 56, 1);
+CGameMenuItemText itemCareer3(zCareer3, 3, 160, 76, 1);
+CGameMenuItemText itemCareer4(zCareer4, 3, 160, 88, 1);
+CGameMenuItemChain itemCareerPlay("PLAY THIS STAGE", 1, 0, 112, 320, 1, NULL, -1, CareerPlay, 0);
+CGameMenuItemChain itemCareerReset("START THE CAREER OVER", 3, 0, 140, 320, 1, NULL, -1, CareerReset, 0);
+CGameMenuItemText itemCareerHelp("WIN A STAGE TO GO ON TO THE NEXT; 10 STAGES", 3, 160, 160, 1);
 
 CGameMenuItemTitle itemBotsTuningTitle("FINE TUNING", 1, 160, 20, 2038);
-CGameMenuItemSlider itemBotsAccuracy("AIM %:", 3, 66, 40, 180, &gBotAccuracy, 10, 300, 10, BotsSlider, -1, -1, kMenuSliderValue);
-CGameMenuItemSlider itemBotsReaction("REACTION TIME %:", 3, 66, 50, 180, &gBotReaction, 10, 300, 10, BotsSlider, -1, -1, kMenuSliderValue);
-CGameMenuItemSlider itemBotsAggression("AGGRESSION %:", 3, 66, 60, 180, &gBotAggression, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
-CGameMenuItemSlider itemBotsJumping("JUMPING %:", 3, 66, 70, 180, &gBotJumping, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
-CGameMenuItemSlider itemBotsAmbush("AMBUSHES %:", 3, 66, 80, 180, &gBotAmbush, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
-CGameMenuItemSlider itemBotsFlank("FLANKING %:", 3, 66, 90, 180, &gBotFlank, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
-CGameMenuItemSlider itemBotsCamping("CAMPING %:", 3, 66, 100, 180, &gBotCamping, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
-CGameMenuItemSlider itemBotsHighGround("HIGH GROUND %:", 3, 66, 110, 180, &gBotHighGround, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
-CGameMenuItemZCycle itemBotsHandicap("BOTS TAKE DAMAGE:", 3, 66, 120, 180, 0, BotsSetHandicap, pzBotsHandicap, 5, 0);
-CGameMenuItemZBool itemBotsTaunts("TAUNTS:", 3, 66, 130, 180, true, BotsToggle, NULL, NULL);
-CGameMenuItemZBool itemBotsCultists("LOOK:", 3, 66, 140, 180, true, BotsToggle, "CULTISTS/CALEB", "CALEB");
-CGameMenuItemZBool itemBotsDebug("SHOW WHAT BOTS DO:", 3, 66, 150, 180, false, BotsToggle, NULL, NULL);
+CGameMenuItemSlider itemBotsAccuracy("AIM %:", 3, 66, 34, 180, &gBotAccuracy, 10, 300, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsReaction("REACTION TIME %:", 3, 66, 43, 180, &gBotReaction, 10, 300, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsAggression("AGGRESSION %:", 3, 66, 52, 180, &gBotAggression, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsJumping("JUMPING %:", 3, 66, 61, 180, &gBotJumping, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsAmbush("AMBUSHES %:", 3, 66, 70, 180, &gBotAmbush, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsFlank("FLANKING %:", 3, 66, 79, 180, &gBotFlank, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsCamping("CAMPING %:", 3, 66, 88, 180, &gBotCamping, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsHighGround("HIGH GROUND %:", 3, 66, 97, 180, &gBotHighGround, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemZCycle itemBotsHandicap("BOTS TAKE DAMAGE:", 3, 66, 107, 180, 0, BotsSetHandicap, pzBotsHandicap, 5, 0);
+CGameMenuItemZBool itemBotsGrudges("GRUDGES:", 3, 66, 116, 180, true, BotsToggle, NULL, NULL);
+CGameMenuItemZBool itemBotsAdaptive("ADAPTIVE DIFFICULTY:", 3, 66, 125, 180, false, BotsToggle, NULL, NULL);
+CGameMenuItemZBool itemBotsTaunts("TAUNTS:", 3, 66, 134, 180, true, BotsToggle, NULL, NULL);
+CGameMenuItemZBool itemBotsCultists("LOOK:", 3, 66, 143, 180, true, BotsToggle, "CULTISTS/CALEB", "CALEB");
+CGameMenuItemZBool itemBotsDebug("SHOW WHAT BOTS DO:", 3, 66, 152, 180, false, BotsToggle, NULL, NULL);
 CGameMenuItemText itemBotsTuningHelp1("100% IS THE DIFFICULTY'S OR PERSONALITY'S OWN VALUE", 3, 160, 166, 1);
 CGameMenuItemText itemBotsTuningHelp2("AIM ABOVE 100% IS BETTER, REACTION ABOVE 100% IS SLOWER", 3, 160, 176, 1);
 
@@ -536,6 +594,8 @@ static void BotsToggle(CGameMenuItemZBool *pItem)
 {
     UNREFERENCED_PARAMETER(pItem);
     gBotTaunts = itemBotsTaunts.at20;
+    gBotGrudges = itemBotsGrudges.at20;
+    gBotAdaptive = itemBotsAdaptive.at20;
     gBotCultists = itemBotsCultists.at20;
     gBotDebug = itemBotsDebug.at20;
 }
@@ -571,8 +631,57 @@ void SetupBotsMenu(CGameMenuItemChain *pItem)
     itemBotsPersona.SetTextIndex(ClipRange(gBotPersona, 0, kBotPersonaMax-1));
     itemBotsHandicap.SetTextIndex(ClipRange(gBotHandicap, 0, 4));
     itemBotsTaunts.at20 = !!gBotTaunts;
+    itemBotsGrudges.at20 = !!gBotGrudges;
+    itemBotsAdaptive.at20 = !!gBotAdaptive;
     itemBotsCultists.at20 = !!gBotCultists;
     itemBotsDebug.at20 = !!gBotDebug;
+}
+
+static void BotsStart(CGameMenuItemChain *pItem)
+{
+    gBotWatchMode = false;
+    gBotCareer = 0;
+    StartBotMatch(pItem);
+}
+
+static void BotsWatch(CGameMenuItemChain *pItem)
+{
+    gBotCareer = 0;
+    gBotWatchMode = true;
+    StartBotMatch(pItem);
+}
+
+static void UpdateCareer(CGameMenuItem *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    careerDescribe(gCareerStage, zCareer1, zCareer2, sizeof(zCareer1));
+    Bsnprintf(zCareer3, sizeof(zCareer3), "WON %d OF %d  KILLS %d  DEATHS %d  BEST STREAK %d", gCareerWins, gCareerMatches, gCareerKills, gCareerDeaths, gCareerBestStreak);
+    careerNemesis(zCareer4, sizeof(zCareer4));
+    itemCareerReset.m_pzText = bCareerResetArmed ? "PRESS AGAIN TO START OVER" : "START THE CAREER OVER";
+}
+
+static void SetupCareerMenu(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    bCareerResetArmed = false;
+}
+
+static void CareerPlay(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    careerPlay();
+}
+
+static void CareerReset(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    if (!bCareerResetArmed)
+    {
+        bCareerResetArmed = true;
+        return;
+    }
+    bCareerResetArmed = false;
+    careerReset();
 }
 
 static void UpdateBotsInfo(CGameMenuItem *pItem)
@@ -588,6 +697,22 @@ static void UpdateEpisodeBots(CGameMenuItem *pItem)
 
 void SetupChosenMenus(void)
 {
+    menuMatchStats.Add(&itemMatchStatsTitle, false);
+    menuMatchStats.Add(&itemMatchStatsTable, false);
+    menuMatchStats.Add(&itemMatchStatsBack, true);
+    menuMatchStats.Add(&itemBloodQAV, false);
+    itemMatchStatsTable.pPreDrawCallback = DrawMatchStats;
+
+    menuBotOrders.Add(&itemBotOrdersTitle, false);
+    menuBotOrders.Add(&itemBotOrderFollow, true);
+    menuBotOrders.Add(&itemBotOrderHold, false);
+    menuBotOrders.Add(&itemBotOrderFree, false);
+    menuBotOrders.Add(&itemBotOrdersHelp1, false);
+    menuBotOrders.Add(&itemBotOrdersHelp2, false);
+    menuBotOrders.Add(&itemBloodQAV, false);
+    itemBotOrderFollow.tooltip_pzTextUpper = "They stay with you and fight what comes";
+    itemBotOrderHold.tooltip_pzTextUpper = "They guard where you're standing now";
+    itemBotOrderFree.tooltip_pzTextUpper = "They go on their own: hunt, take objectives, collect";
     menuBots.Add(&itemBotsTitle, false);
     menuBots.Add(&itemBotsCount, true);
     menuBots.Add(&itemBotsSkill, false);
@@ -595,6 +720,8 @@ void SetupChosenMenus(void)
     menuBots.Add(&itemBotsEach, false);
     menuBots.Add(&itemBotsTuning, false);
     menuBots.Add(&itemBotsMatch, false);
+    menuBots.Add(&itemBotsCareer, false);
+    menuBots.Add(&itemBotsWatch, false);
     menuBots.Add(&itemBotsInfo, false);
     menuBots.Add(&itemBotsStart, false);
     menuBots.Add(&itemBloodQAV, false);
@@ -608,6 +735,19 @@ void SetupChosenMenus(void)
     itemBotsTuning.tooltip_pzTextUpper = "Adjust aim, reaction time and tactics";
     itemBotsMatch.tooltip_pzTextUpper = "Game type, map, frag and time limits, weapons, items, mutators";
     itemBotsStart.tooltip_pzTextUpper = "Play! (ESC pauses the match)";
+    itemBotsCareer.tooltip_pzTextUpper = "A ladder of 10 matches against named bots";
+    itemBotsWatch.tooltip_pzTextUpper = "A match of bots only; the camera follows the action";
+
+    menuCareer.Add(&itemCareerTitle, false);
+    menuCareer.Add(&itemCareer1, false);
+    menuCareer.Add(&itemCareer2, false);
+    menuCareer.Add(&itemCareer3, false);
+    menuCareer.Add(&itemCareer4, false);
+    menuCareer.Add(&itemCareerPlay, true);
+    menuCareer.Add(&itemCareerReset, false);
+    menuCareer.Add(&itemCareerHelp, false);
+    menuCareer.Add(&itemBloodQAV, false);
+    itemCareer1.pPreDrawCallback = UpdateCareer;
 
     menuBotsTuning.Add(&itemBotsTuningTitle, false);
     menuBotsTuning.Add(&itemBotsAccuracy, true);
@@ -619,6 +759,8 @@ void SetupChosenMenus(void)
     menuBotsTuning.Add(&itemBotsCamping, false);
     menuBotsTuning.Add(&itemBotsHighGround, false);
     menuBotsTuning.Add(&itemBotsHandicap, false);
+    menuBotsTuning.Add(&itemBotsGrudges, false);
+    menuBotsTuning.Add(&itemBotsAdaptive, false);
     menuBotsTuning.Add(&itemBotsTaunts, false);
     menuBotsTuning.Add(&itemBotsCultists, false);
     menuBotsTuning.Add(&itemBotsDebug, false);
@@ -628,6 +770,8 @@ void SetupChosenMenus(void)
     itemBotsAmbush.tooltip_pzTextUpper = "Waiting beside a doorway you're about to come through";
     itemBotsFlank.tooltip_pzTextUpper = "Taking another way round to come at you from the side";
     itemBotsCamping.tooltip_pzTextUpper = "Staying in a good spot and waiting";
+    itemBotsGrudges.tooltip_pzTextUpper = "A bot you kill a lot hunts you down and taunts you";
+    itemBotsAdaptive.tooltip_pzTextUpper = "Bots slowly get better or worse to keep it close";
     itemBotsHighGround.tooltip_pzTextUpper = "Going for high places that see a lot, and holding them";
     itemBotsHandicap.tooltip_pzTextUpper = "More damage makes them easier to kill";
     itemBotsDebug.tooltip_pzTextUpper = "Lists every bot's plan at the top of the screen";

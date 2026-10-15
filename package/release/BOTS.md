@@ -29,6 +29,25 @@ On every map they work out the good high places: how much you can see from there
 
 Console: `bot_match [frag limit] [time limit]` starts a match with the menu's settings; all settings are `bot_*` variables (type `bot_` and press TAB).
 
+### Match types and mutators (with bots, real players, or both)
+
+MULTIPLAYER match settings (or MATCH SETTINGS in the bots menu) > GAME > **MODE**:
+
+- **Bloodbath**: normal, *gun game* (every kill moves you on to the next of 10 weapons; a pitchfork kill with the last one wins), *king of the hill* (a point a second for holding the flag-marked area alone; it moves every 90 seconds), *juggernaut* (whoever kills the juggernaut becomes it: 200 health, armor, double guns; only kills by or of the juggernaut score), *last man standing* (LIVES EACH; the last one with lives left wins)
+- **Teams**: capture the flag (the bots carry, return and defend flags), king of the hill
+- **Co-op**: normal, *survival* (waves of monsters that get bigger and nastier, ammo between waves, shared lives (0: endless), your best wave per map is kept)
+
+SET MUTATORS > **MORE MUTATORS**: low or moon gravity, vampire (hits heal you), one-hit kills, and weapon sets (a random weapon at every spawn, or one weapon only).
+
+During a match ESC shows **MATCH STATS** (frags, deaths, aim, best streak, favourite weapon, your nemesis and favourite victim; also shown when a match ends). Everybody in a network game needs the same version (1.1).
+
+### More with bots
+
+- **BOT ORDERS** (ESC during a bot match): follow me, hold this spot, go ahead - for the bots on your side in co-op and teams. In co-op they follow you by default and fight the monsters with you through the episodes.
+- **CAREER** (bots menu): a ladder of 10 matches against named bots, getting harder and mixing the match types; win a stage to unlock the next. Your record, kills, deaths, best streak and nemesis are kept.
+- **WATCH BOTS** (bots menu): a match of bots only; the camera follows the action (the see-co-op-view key switches bots).
+- FINE TUNING: **GRUDGES** (a bot you kill a lot hunts you and taunts you when it gets you back) and **ADAPTIVE DIFFICULTY** (bots slowly get better or worse to keep it close).
+
 ### Feedback
 
 Set FINE TUNING > SHOW WHAT BOTS DO, or type `bot_debug 2` in the console: every bot's plan is shown on screen, and every 2 seconds it is written to `notblood.log` in the game folder, with places where bots got stuck. Send that file along with what felt wrong.

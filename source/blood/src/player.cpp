@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "compat.h"
 #include "build.h"
 #include "mmulti.h"
+#include "chosenmodes.h"
 #include "actor.h"
 #include "blood.h"
 #include "callback.h"
@@ -1398,6 +1399,8 @@ void playerStart(int nPlayer, int bNewLevel)
         memcpy(gPlayerScores, bakPlayerScores, sizeof(bakPlayerScores));
         pPlayer->fragCount = bakFragCount;
     }
+    if (!bNewLevel)
+        modesPlayerSpawned(pPlayer); // match types and weapon mutators (StartLevel does it for everybody)
 }
 
 void playerReset(PLAYER *pPlayer)
@@ -1776,6 +1779,8 @@ char PickupWeapon(PLAYER *pPlayer, spritetype *pWeapon) {
     WEAPONITEMDATA *pWeaponItemData = &gWeaponItemData[pWeapon->type - kItemWeaponBase];
     int nWeaponType = pWeaponItemData->type;
     int nAmmoType = pWeaponItemData->ammoType;
+    if (!modesWeaponPickup(pPlayer, nWeaponType)) // gun game, one weapon only
+        return 0;
     if (!pPlayer->hasWeapon[nWeaponType] || gGameOptions.nWeaponSettings == 2 || gGameOptions.nWeaponSettings == 3) {
         if ((pWeapon->type == kItemWeaponLifeLeech) && (gGameOptions.nGameType >= kGameTypeBloodBath) && findDroppedLeech(pPlayer, NULL))
             return 0;
@@ -2057,6 +2062,8 @@ void ProcessInput(PLAYER *pPlayer)
             const char bSpectator = (gGameOptions.uNetGameFlags&kNetGameFlagSpectatingAllow) && !strncmp(gProfile[pPlayer->nPlayer].name, "spectator", MAXPLAYERNAME);
             if ((gGameOptions.nGameType == kGameTypeCoop) && (gGameOptions.uNetGameFlags&kNetGameFlagScoresLimitMask))
                 bAllowRespawn = gPlayerCoopLives[pPlayer->nPlayer] < gPlayerRoundScoreLimit;
+            if (!modesCanRespawn(pPlayer)) // last man standing, survival lives
+                bAllowRespawn = 0;
             if (bSeqStat)
             {
                 if (pPlayer->deathTime > 360)
@@ -2089,7 +2096,7 @@ void ProcessInput(PLAYER *pPlayer)
                 else
                     playerStart(pPlayer->nPlayer);
             }
-            else if (!gDemo.bPlaying && (seqGetStatus(3, pPlayer->pSprite->extra) < 0) && !bAllowRespawn && !bSpectator) // all players are dead, restart level
+            else if (!gDemo.bPlaying && (seqGetStatus(3, pPlayer->pSprite->extra) < 0) && !bAllowRespawn && !bSpectator && (gGameOptions.nGameType == kGameTypeCoop) && (gChosenRules.nMode == kChosenModeNormal)) // all players are dead, restart level
             {
                 char bAllPlayersDead = 1;
                 for (int i = connecthead; i >= 0 && bAllPlayersDead; i = connectpoint2[i])
@@ -2742,6 +2749,7 @@ void playerFrag(PLAYER *pKiller, PLAYER *pVictim)
             gDominationCount[nVictim][nKiller] = 0; // reset victim's count for killer
         }
     }
+    modesFrag(pKiller, pVictim);
 }
 
 void FragPlayer(PLAYER *pPlayer, int nSprite)
@@ -3228,6 +3236,8 @@ int playerDamageSprite(int nSource, PLAYER *pPlayer, DAMAGE_TYPE nDamageType, in
 
 int UseAmmo(PLAYER *pPlayer, int nAmmoType, int nDec)
 {
+    if (nDec > 0)
+        modesShot(pPlayer); // accuracy statistics
     if (gInfiniteAmmo)
         return 9999;
     if (nAmmoType == -1)
