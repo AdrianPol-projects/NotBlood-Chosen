@@ -20,6 +20,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-linux:
+    name: Linux x86_64
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install libsdl2-dev libgtk2.0-dev libasound2-dev
+      - name: Build
+        # FLAC and libvpx sonames differ between distributions; Blood needs neither
+        run: make -j$(nproc) blood HAVE_FLAC=0 USE_LIBVPX=0 LTO=0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notblood-linux-x64
+          path: ./notblood
+          if-no-files-found: error
+
   build-windows:
     name: Windows x64
     if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
@@ -85,7 +104,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: [build-windows, build-android]
+    needs: [build-linux, build-windows, build-android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -94,18 +113,21 @@ jobs:
           path: artifacts
       - name: Package
         run: |
-          dir="pkg/NotBlood"
-          mkdir -p "$dir/autoload" "$dir/addons" "$dir/mods" "$dir/movie"
-          cp artifacts/notblood-win64/* "$dir/"
-          cp notblood.pk3 "$dir/"
-          cp package/common/*.txt "$dir/"
-          mv "$dir/addons.txt" "$dir/autoload/"
-          cp package/release/README.txt "$dir/README - NotBlood Chosen.txt"
-          cp package/release/BOTS.md "$dir/README - Bots.txt"
-          cp package/release/addons.txt "$dir/addons/Put add-on episodes here.txt"
-          cp package/release/mods.txt "$dir/mods/Put mods here.txt"
-          cp package/release/movie.txt "$dir/movie/Put the movie files here.txt"
-          (cd pkg && zip -9 -r ../NotBlood-Chosen-bots-win64.zip NotBlood)
+          for target in win64 linux-x64; do
+            dir="pkg/$target/NotBlood"
+            mkdir -p "$dir/autoload" "$dir/addons" "$dir/mods" "$dir/movie"
+            cp artifacts/notblood-$target/* "$dir/"
+            cp notblood.pk3 "$dir/"
+            cp package/common/*.txt "$dir/"
+            mv "$dir/addons.txt" "$dir/autoload/"
+            cp package/release/README.txt "$dir/README - NotBlood Chosen.txt"
+            cp package/release/BOTS.md "$dir/README - Bots.txt"
+            cp package/release/addons.txt "$dir/addons/Put add-on episodes here.txt"
+            cp package/release/mods.txt "$dir/mods/Put mods here.txt"
+            cp package/release/movie.txt "$dir/movie/Put the movie files here.txt"
+            chmod +x "$dir/notblood" 2>/dev/null || true
+            (cd "pkg/$target" && zip -9 -r "../../NotBlood-Chosen-bots-$target.zip" NotBlood)
+          done
           cp artifacts/notblood-android/NotBlood.apk NotBlood-Chosen-bots-android.apk
           ls -l NotBlood-Chosen-bots-*
       - name: Publish to the "bots-test" release
@@ -117,9 +139,9 @@ jobs:
             echo "Branch head is $HEAD_SHA, this run built $GITHUB_SHA - not publishing."
             exit 0
           fi
-          TITLE="NotBlood Chosen with bots - test build ${{ github.run_number }} (Windows, Android)"
+          TITLE="NotBlood Chosen with bots - test build ${{ github.run_number }} (Windows, Linux, Android)"
           # a fresh release each time, so its tag points at this commit
           if gh release view bots-test >/dev/null 2>&1; then
             gh release delete bots-test --cleanup-tag -y
           fi
-          gh release create bots-test NotBlood-Chosen-bots-win64.zip NotBlood-Chosen-bots-android.apk --target "$GITHUB_SHA" --prerelease --latest=false --title "$TITLE" --notes-file package/release/BOTS.md
+          gh release create bots-test NotBlood-Chosen-bots-win64.zip NotBlood-Chosen-bots-linux-x64.zip NotBlood-Chosen-bots-android.apk --target "$GITHUB_SHA" --prerelease --latest=false --title "$TITLE" --notes-file package/release/BOTS.md
