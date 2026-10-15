@@ -15,11 +15,13 @@ MULTIPLAYER > **PLAY WITH BOTS**
   - *balanced* a bit of everything
   - *mixed* gives every bot a different one
 - **SET EACH BOT**: a different difficulty or personality for single bots
-- **FINE TUNING**: aim, reaction time, aggression, jumping, ambushes, flanking and camping in percent of the difficulty's/personality's own value; taunts; cultist look; how much damage bots take (shown next to their names when not normal); showing what every bot is doing
+- **FINE TUNING**: aim, reaction time, aggression, jumping, ambushes, flanking, camping and high ground in percent of the difficulty's/personality's own value; taunts; cultist look; how much damage bots take (shown next to their names when not normal); showing what every bot is doing
 - **MATCH SETTINGS**: the multiplayer setup - bloodbath or teams, map, frag and time limits, weapons, items, mutators
-- **START MATCH**. ESC pauses the match. END GAME goes back to normal single player.
+- **START MATCH**. ESC pauses the match; NEW GAME there sets up the next bot match (bots and match settings); END GAME goes back to normal single player.
 
-The bots only know what a player could: they see what's in front of them and not behind walls, hear shots, jumps and running, and remember where they last saw you. They take a moment to react, their aim wobbles and settles while they track you, and they pause their shooting now and then. On easy and normal they don't use autoaim. They open doors and sliding walls (from the side the button is on), never press a level exit, and when they're lost they look around for a way out.
+The bots only know what a player could: they see what's in front of them and not behind walls, hear shots, jumps and running, and remember where they last saw you. They take a moment to react, their aim wobbles and settles while they track you, and they pause their shooting now and then. On easy and normal they don't use autoaim. They open doors and sliding walls (from the side the button is on), never press a level exit, and when they're lost they look around for a way out. They ride lifts: they call them, ride them up and down and walk over to a lift's switch when that's what works it, so they climb out of pits too.
+
+On every map they work out the good high places: how much you can see from there, how far you look down on it, and weapons close by. Depending on their personality and the HIGH GROUND setting they go up there, hold it, don't step off ledges, shoot down at you instead of jumping after you, and go for splash weapons (napalm, TNT, flares) when you have the high ground.
 
 Console: `bot_match [frag limit] [time limit]` starts a match with the menu's settings; all settings are `bot_*` variables (type `bot_` and press TAB).
 

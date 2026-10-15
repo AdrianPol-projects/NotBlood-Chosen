@@ -464,7 +464,7 @@ static void BotsSlider(CGameMenuItemSlider *pItem);
 static void BotsSetSkill(CGameMenuItemZCycle *pItem);
 static void BotsSetPersona(CGameMenuItemZCycle *pItem);
 static void BotsSetEach(CGameMenuItemZCycle *pItem);
-static void BotsSetupMenu(CGameMenuItemChain *pItem);
+
 static void BotsSetupEach(CGameMenuItemChain *pItem);
 static void BotsToggle(CGameMenuItemZBool *pItem);
 static void BotsSetHandicap(CGameMenuItemZCycle *pItem);
@@ -476,7 +476,7 @@ static const char *pzBotsHandicap[5] = { "MUCH LESS", "LESS", "NORMAL", "MORE", 
 static const char *pzBotsNumbers[kBotMaxBots] = { "1", "2", "3", "4", "5", "6", "7" };
 static char zBotsInfo[80];
 
-CGameMenuItemChain itemNetworkBots("PLAY WITH BOTS", 1, 0, 118, 320, 1, &menuBots, -1, BotsSetupMenu, 0);
+CGameMenuItemChain itemNetworkBots("PLAY WITH BOTS", 1, 0, 118, 320, 1, &menuBots, -1, SetupBotsMenu, 0);
 
 CGameMenuItemTitle itemBotsTitle("BOTS", 1, 160, 20, 2038);
 CGameMenuItemSlider itemBotsCount("BOTS:", 3, 66, 42, 180, &gBotCount, 1, kBotMaxBots, 1, BotsSlider, -1, -1, kMenuSliderValue);
@@ -496,12 +496,13 @@ CGameMenuItemSlider itemBotsJumping("JUMPING %:", 3, 66, 70, 180, &gBotJumping, 
 CGameMenuItemSlider itemBotsAmbush("AMBUSHES %:", 3, 66, 80, 180, &gBotAmbush, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
 CGameMenuItemSlider itemBotsFlank("FLANKING %:", 3, 66, 90, 180, &gBotFlank, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
 CGameMenuItemSlider itemBotsCamping("CAMPING %:", 3, 66, 100, 180, &gBotCamping, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
-CGameMenuItemZCycle itemBotsHandicap("BOTS TAKE DAMAGE:", 3, 66, 110, 180, 0, BotsSetHandicap, pzBotsHandicap, 5, 0);
-CGameMenuItemZBool itemBotsTaunts("TAUNTS:", 3, 66, 120, 180, true, BotsToggle, NULL, NULL);
-CGameMenuItemZBool itemBotsCultists("LOOK:", 3, 66, 130, 180, true, BotsToggle, "CULTISTS/CALEB", "CALEB");
-CGameMenuItemZBool itemBotsDebug("SHOW WHAT BOTS DO:", 3, 66, 140, 180, false, BotsToggle, NULL, NULL);
-CGameMenuItemText itemBotsTuningHelp1("100% IS THE DIFFICULTY'S OR PERSONALITY'S OWN VALUE", 3, 160, 154, 1);
-CGameMenuItemText itemBotsTuningHelp2("AIM ABOVE 100% IS BETTER, REACTION ABOVE 100% IS SLOWER", 3, 160, 164, 1);
+CGameMenuItemSlider itemBotsHighGround("HIGH GROUND %:", 3, 66, 110, 180, &gBotHighGround, 0, 200, 10, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemZCycle itemBotsHandicap("BOTS TAKE DAMAGE:", 3, 66, 120, 180, 0, BotsSetHandicap, pzBotsHandicap, 5, 0);
+CGameMenuItemZBool itemBotsTaunts("TAUNTS:", 3, 66, 130, 180, true, BotsToggle, NULL, NULL);
+CGameMenuItemZBool itemBotsCultists("LOOK:", 3, 66, 140, 180, true, BotsToggle, "CULTISTS/CALEB", "CALEB");
+CGameMenuItemZBool itemBotsDebug("SHOW WHAT BOTS DO:", 3, 66, 150, 180, false, BotsToggle, NULL, NULL);
+CGameMenuItemText itemBotsTuningHelp1("100% IS THE DIFFICULTY'S OR PERSONALITY'S OWN VALUE", 3, 160, 166, 1);
+CGameMenuItemText itemBotsTuningHelp2("AIM ABOVE 100% IS BETTER, REACTION ABOVE 100% IS SLOWER", 3, 160, 176, 1);
 
 CGameMenuItemTitle itemBotsEachTitle("EACH BOT", 1, 160, 20, 2038);
 CGameMenuItemZCycle itemBotsEachWhich("BOT:", 3, 66, 50, 180, 0, BotsSetEach, pzBotsNumbers, kBotMaxBots, 0);
@@ -563,7 +564,7 @@ static void BotsSetupEach(CGameMenuItemChain *pItem)
     BotsSetEach(&itemBotsEachWhich);
 }
 
-static void BotsSetupMenu(CGameMenuItemChain *pItem)
+void SetupBotsMenu(CGameMenuItemChain *pItem)
 {
     SetupBotMatchMenu(pItem);
     itemBotsSkill.SetTextIndex(ClipRange(gBotSkill, 0, kBotSkillMax-1));
@@ -616,6 +617,7 @@ void SetupChosenMenus(void)
     menuBotsTuning.Add(&itemBotsAmbush, false);
     menuBotsTuning.Add(&itemBotsFlank, false);
     menuBotsTuning.Add(&itemBotsCamping, false);
+    menuBotsTuning.Add(&itemBotsHighGround, false);
     menuBotsTuning.Add(&itemBotsHandicap, false);
     menuBotsTuning.Add(&itemBotsTaunts, false);
     menuBotsTuning.Add(&itemBotsCultists, false);
@@ -626,6 +628,7 @@ void SetupChosenMenus(void)
     itemBotsAmbush.tooltip_pzTextUpper = "Waiting beside a doorway you're about to come through";
     itemBotsFlank.tooltip_pzTextUpper = "Taking another way round to come at you from the side";
     itemBotsCamping.tooltip_pzTextUpper = "Staying in a good spot and waiting";
+    itemBotsHighGround.tooltip_pzTextUpper = "Going for high places that see a lot, and holding them";
     itemBotsHandicap.tooltip_pzTextUpper = "More damage makes them easier to kill";
     itemBotsDebug.tooltip_pzTextUpper = "Lists every bot's plan at the top of the screen";
 

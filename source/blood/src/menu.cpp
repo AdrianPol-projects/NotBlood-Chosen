@@ -2673,6 +2673,14 @@ void SetupMenus(void)
 
 void UpdateNetworkMenus(void)
 {
+    if (gBotMatch) // in a bot match NEW GAME sets up the next one
+    {
+        itemMain1.at24 = itemMainSave1.at24 = &menuBots;
+        itemMain1.at28 = itemMainSave1.at28 = -1;
+        itemMain1.at2c = itemMainSave1.at2c = SetupBotsMenu;
+        return;
+    }
+    itemMain1.at2c = itemMainSave1.at2c = NULL;
     if (gGameOptions.nGameType != kGameTypeSinglePlayer)
     {
         itemMain1.at24 = &menuNetStart;
@@ -5007,6 +5015,16 @@ void BotMatchSetLimits(int nFrags, int nMinutes)
         itemNetGameSliderScoreLimit.nValue = ClipRange(nFrags, 0, 255);
     if (nMinutes >= 0)
         itemNetGameSliderTimeLimit.nValue = ClipRange(nMinutes, 0, 60);
+}
+
+void BotMatchSetMap(int nEpisode, int nLevel)
+{
+    SetupBotMatchMenu(NULL);
+    if (nEpisode < 0 || nEpisode >= gEpisodeCount)
+        return;
+    itemNetStart2.SetTextIndex(nEpisode);
+    SetupNetLevels(&itemNetStart2);
+    itemNetStart3.SetTextIndex(ClipRange(nLevel, 0, gEpisodeInfo[nEpisode].nLevels-1));
 }
 
 void StartBotMatch(CGameMenuItemChain *pItem)

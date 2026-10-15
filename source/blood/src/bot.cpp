@@ -44,6 +44,7 @@ See the GNU General Public License for more details.
 #include "trig.h"
 #include "view.h"
 #include "weapon.h"
+#include "menu.h"
 #include "menuchosen.h"
 #include "bot.h"
 
@@ -63,6 +64,7 @@ int gBotTaunts = 1;
 int gBotDebug = 0;
 int gBotCultists = 1;
 int gBotHandicap = 2;
+int gBotHighGround = 100;
 static int gBotWatch = 0;
 
 bool gBotMatch = false;
@@ -94,10 +96,11 @@ enum {
     kBotStateFlee,
     kBotStateCamp,
     kBotStateDead,
+    kBotStateHighGround,
     kBotStateMax
 };
 
-static const char *pzBotStateNames[kBotStateMax] = { "roam", "collect", "fight", "hunt", "ambush", "flank", "flee", "camp", "dead" };
+static const char *pzBotStateNames[kBotStateMax] = { "roam", "collect", "fight", "hunt", "ambush", "flank", "flee", "camp", "dead", "high ground" };
 
 struct BOTSKILL
 {
@@ -128,16 +131,17 @@ struct BOTPERSONA
     int nJump;       // jump around in fights
     int nFlee;       // health below which it backs off
     int nStrafe;     // dodge sideways in fights
+    int nHighGround; // go for (and hold) places high up that see a lot
 };
 
 static const BOTPERSONA gBotPersonaInfo[kBotPersonaMax] = {
-    { 55, 20, 45, 40, 35, 30, 60 }, // mixed (not used directly)
-    { 55, 20, 45, 40, 35, 30, 60 }, // balanced
-    { 95, 0, 10, 25, 50, 10, 50 },  // rusher
-    { 30, 90, 75, 15, 10, 40, 30 }, // camper
-    { 55, 25, 85, 90, 35, 35, 65 }, // trickster
-    { 20, 50, 50, 30, 45, 65, 70 }, // coward
-    { 70, 5, 20, 30, 95, 25, 90 },  // jumper
+    { 55, 20, 45, 40, 35, 30, 60, 50 }, // mixed (not used directly)
+    { 55, 20, 45, 40, 35, 30, 60, 50 }, // balanced
+    { 95, 0, 10, 25, 50, 10, 50, 25 },  // rusher
+    { 30, 90, 75, 15, 10, 40, 30, 85 }, // camper
+    { 55, 25, 85, 90, 35, 35, 65, 60 }, // trickster
+    { 20, 50, 50, 30, 45, 65, 70, 55 }, // coward
+    { 70, 5, 20, 30, 95, 25, 90, 35 },  // jumper
 };
 
 #define kBotMaxPath 96
@@ -194,6 +198,12 @@ struct BOT
     int nAvoidSide, nAvoidUntil;
     int nCampSpot, nLastCamp;
     int nGlance, nGlanceNext;
+    int nVantage, nHoldUntil, nLastHighTry; // the high spot it is going to or holding
+    int nLiftSince, nLiftWall;      // waiting for a lift at this opening since
+    bool bDetour;                   // gone to push a lift's switch; then back to its goal
+    bool bStayAbove;                // the enemy is below: shoot down rather than follow (decided now and then)
+    int nAboveDecideAt;
+    int nDetourAng, nSavedX, nSavedY, nSavedZ, nSavedSect;
 };
 
 static BOT gBot[kMaxPlayers];
@@ -203,6 +213,13 @@ static vec3_t campSpot[kBotMaxCampSpots];
 static short campSect[kBotMaxCampSpots];
 static short campAng[kBotMaxCampSpots];
 static uint8_t nCampFails[kBotMaxCampSpots];
+#define kBotMaxVantage 24
+static vec3_t vantageSpot[kBotMaxVantage]; // high places that see a lot: what the bots know about a map
+static short vantageSect[kBotMaxVantage];
+static int vantageValue[kBotMaxVantage];
+static int vantageHeight[kBotMaxVantage];
+static uint8_t nVantageFails[kBotMaxVantage];
+static int nVantageSpots;
 static int nItemSpots;
 static vec2_t itemSpot[kBotMaxItemSpots];
 static short itemSpotSect[kBotMaxItemSpots];
@@ -302,19 +319,32 @@ static bool IsMovingSectorType(int nType)
         || nType == kSectorZMotionSprite || nType == kSectorRotateStep;
 }
 
-// where the buttons are: for every channel the sectors that have something you can push sending to it
+// where the buttons are: for every channel the things you can push that send to it, and where to
+// stand to push them
 #define kMaxOpeners 8
-static short nOpenerSect[1024][kMaxOpeners];
+struct OPENER
+{
+    short nSector;
+    int x, y;    // where to stand
+    short nAng;  // facing it
+};
+static OPENER openers[1024][kMaxOpeners];
 static uint8_t nOpeners[1024];
 
-static void AddOpener(int nChannel, int nSector)
+static void AddOpener(int nChannel, int nSector, int tx, int ty)
 {
     nChannel &= 1023;
-    for (int i = 0; i < nOpeners[nChannel]; i++)
-        if (nOpenerSect[nChannel][i] == nSector)
-            return;
-    if (nOpeners[nChannel] < kMaxOpeners)
-        nOpenerSect[nChannel][nOpeners[nChannel]++] = nSector;
+    if (nOpeners[nChannel] >= kMaxOpeners)
+        return;
+    // stand a step away from it, towards the middle of its room
+    const int nAway = getangle(sectCenter[nSector].x - tx, sectCenter[nSector].y - ty);
+    int x = tx + mulscale30(Cos(nAway), 140), y = ty + mulscale30(Sin(nAway), 140);
+    if (!inside(x, y, nSector))
+        x = sectCenter[nSector].x, y = sectCenter[nSector].y;
+    OPENER *pOpener = &openers[nChannel][nOpeners[nChannel]++];
+    pOpener->nSector = nSector;
+    pOpener->x = x, pOpener->y = y;
+    pOpener->nAng = getangle(tx - x, ty - y);
 }
 
 // can someone standing in nFrom open door sector nDoor?
@@ -325,7 +355,7 @@ static bool CanOpenFrom(int nDoor, int nFrom)
         return true;
     const int nChannel = pXSector->rxID & 1023;
     for (int i = 0; i < nOpeners[nChannel]; i++)
-        if (nOpenerSect[nChannel][i] == nFrom || nOpenerSect[nChannel][i] == nDoor)
+        if (openers[nChannel][i].nSector == nFrom || openers[nChannel][i].nSector == nDoor)
             return true;
     return false;
 }
@@ -340,7 +370,7 @@ static void FindDoors(void)
         if (wall[w].extra > 0 && xwall[wall[w].extra].triggerPush && xwall[wall[w].extra].txID)
         {
             bPushChannel[xwall[wall[w].extra].txID & 1023] = 1;
-            AddOpener(xwall[wall[w].extra].txID, sectorofwall(w));
+            AddOpener(xwall[wall[w].extra].txID, sectorofwall(w), (wall[w].x + wall[wall[w].point2].x) >> 1, (wall[w].y + wall[wall[w].point2].y) >> 1);
         }
     }
     for (int i = 0; i < kMaxSprites; i++)
@@ -348,7 +378,7 @@ static void FindDoors(void)
         if (sprite[i].statnum < kMaxStatus && sprite[i].extra > 0 && xsprite[sprite[i].extra].Push && xsprite[sprite[i].extra].txID)
         {
             bPushChannel[xsprite[sprite[i].extra].txID & 1023] = 1;
-            AddOpener(xsprite[sprite[i].extra].txID, sprite[i].sectnum);
+            AddOpener(xsprite[sprite[i].extra].txID, sprite[i].sectnum, sprite[i].x, sprite[i].y);
         }
     }
     for (int s = 0; s < numsectors; s++)
@@ -400,6 +430,7 @@ enum {
     kEdgeJump = 1,
     kEdgeDoor = 2,
     kEdgeBlocked = 3,
+    kEdgeLift = 4,  // only with the lift at the right height: ride it, call it, or push its switch
 };
 
 static int EdgeType(int nWall)
@@ -421,7 +452,7 @@ static int EdgeType(int nWall)
     const int nGap = PortalGap(nWall, x, y);
     const int nRiseNow = getflorzofslope(nFrom, x, y) - getflorzofslope(nNext, x, y);
     if ((IsLift(nNext) || IsLift(nFrom)) && nRiseNow > (54<<8))
-        return kEdgeBlocked; // a lift that is up (or down): bots don't ride lifts yet
+        return kEdgeBlocked; // a lift that is up (or down) right now (see EdgeTypePlan)
     if (nGap < (28<<8))
         return bDoor ? kEdgeDoor : kEdgeBlocked;
     const int nRise = getflorzofslope(nFrom, x, y) - getflorzofslope(nNext, x, y);
@@ -430,6 +461,69 @@ static int EdgeType(int nWall)
     if (nRise > (18<<8))
         return kEdgeJump;
     return kEdgeWalk;
+}
+
+// the lift on either side of an opening (-1 none)
+static int EdgeLift(int nWall)
+{
+    if (IsLift(wall[nWall].nextsector))
+        return wall[nWall].nextsector;
+    if (IsLift(sectorofwall(nWall)))
+        return sectorofwall(nWall);
+    return -1;
+}
+
+// the lift's floor height at which this opening can be walked (INT32_MIN none)
+static int LiftFloorFor(int nWall)
+{
+    const int nLift = EdgeLift(nWall);
+    if (nLift < 0 || (wall[nWall].cstat & 1))
+        return INT32_MIN;
+    const int nFrom = sectorofwall(nWall), nNext = wall[nWall].nextsector;
+    const int x = (wall[nWall].x + wall[wall[nWall].point2].x) >> 1, y = (wall[nWall].y + wall[wall[nWall].point2].y) >> 1;
+    XSECTOR *pXSector = &xsector[sector[nLift].extra];
+    const int nOther = nLift == nNext ? getflorzofslope(nFrom, x, y) : getflorzofslope(nNext, x, y);
+    const int nHeights[2] = { pXSector->onFloorZ, pXSector->offFloorZ };
+    for (int z : nHeights)
+    {
+        const int nRise = nLift == nNext ? nOther - z : z - nOther; // floor going on minus floor coming from
+        if (nRise <= (54<<8) && nRise >= -(160<<8))
+            return z;
+    }
+    return INT32_MIN;
+}
+
+static bool bStrictLifts; // finding pits: a switch elsewhere doesn't count (you can't get to it from down there)
+
+// can someone in nFrom get this lift moving: press use on it (standing on it), on its wall (from
+// beside it), or on a switch for it
+static bool LiftUsableFrom(int nLift, int nFrom)
+{
+    XSECTOR *pXSector = &xsector[sector[nLift].extra];
+    if (pXSector->locked || pXSector->Key)
+        return false;
+    if ((pXSector->Push && nFrom == nLift) || (pXSector->Wallpush && nFrom != nLift))
+        return true;
+    const int nChannel = pXSector->rxID & 1023;
+    if (!pXSector->rxID)
+        return false;
+    for (int i = 0; i < nOpeners[nChannel]; i++)
+        if (!bStrictLifts || openers[nChannel][i].nSector == nFrom || openers[nChannel][i].nSector == nLift)
+            return true;
+    return false;
+}
+
+// For planning: like EdgeType, but an opening to or from a lift counts when the lift can be at its height.
+static int EdgeTypePlan(int nWall)
+{
+    const int nType = EdgeType(nWall);
+    if (nType != kEdgeBlocked)
+        return nType;
+    if (wall[nWall].nextsector < 0 || approxDist(wall[nWall].x - wall[wall[nWall].point2].x, wall[nWall].y - wall[wall[nWall].point2].y) < 48)
+        return kEdgeBlocked;
+    if (LiftFloorFor(nWall) == INT32_MIN || !LiftUsableFrom(EdgeLift(nWall), sectorofwall(nWall)))
+        return kEdgeBlocked;
+    return kEdgeLift;
 }
 
 static void PortalPoint(int nWall, int tx, int ty, int *px, int *py)
@@ -453,6 +547,8 @@ static void PortalPoint(int nWall, int tx, int ty, int *px, int *py)
 
 static uint8_t nWallFails[kMaxWalls]; // openings bots got stuck at, this level
 static uint8_t nItemFails[kMaxSprites]; // items bots couldn't get to (secret lifts and the like)
+static uint8_t bPitWall[kMaxWalls];     // a drop with no way back up
+static uint8_t bPitSect[MAXSECTORS];    // down in such a pit
 
 // An opening it couldn't get through: avoid it for a while; when several times, for good.
 static void BlockWall(BOT *pBot, int nWall)
@@ -637,7 +733,7 @@ static int PathSearch(BOT *pBot, int nStart, int sx, int sy, int nGoal, int gx, 
             const int n = wall[w].nextsector;
             if (n < 0 || pathState[n] == 2)
                 continue;
-            const int nEdge = EdgeType(w);
+            const int nEdge = EdgeTypePlan(w);
             if (nEdge == kEdgeBlocked || WallBlocked(pBot, w))
                 continue;
             int px, py;
@@ -647,8 +743,22 @@ static int PathSearch(BOT *pBot, int nStart, int sx, int sy, int nGoal, int gx, 
                 nCost += 400;
             else if (nEdge == kEdgeDoor)
                 nCost += 600;
+            else if (nEdge == kEdgeLift)
+            {
+                nCost += 1500; // waiting for it
+                const bool bWasStrict = bStrictLifts;
+                bStrictLifts = true;
+                if (!LiftUsableFrom(EdgeLift(w), s))
+                    nCost += 5000; // its switch is somewhere else: a long way round
+                bStrictLifts = bWasStrict;
+            }
             if (IsHurtSector(n))
                 nCost += 6000;
+            if (bPitWall[w])
+                nCost += 25000; // only if there's no other way
+            const int nDrop = getflorzofslope(n, px, py) - getflorzofslope(s, px, py);
+            if (nDrop > (48<<8)) // jumping down: easy to do, but it gives up the high ground and may be a pit
+                nCost += (nDrop >> 8) * (pBot ? 4 + pBot->persona.nHighGround / 8 : 4);
             if (nSectPenalty[n])
                 nCost += nCost * nSectPenalty[n] / 100 + nSectPenalty[n] * 8;
             nCost += pathCost[s];
@@ -703,6 +813,128 @@ static void BotClearPenalties(void)
 //
 // level setup
 //
+
+// How good a place is: how much it sees, how far it looks down on it, weapons close by
+static int SpotValue(int x, int y, int nSector, int *pHeight)
+{
+    const int zFloor = getflorzofslope(nSector, x, y);
+    const int zEye = zFloor - (40<<8);
+    int nSeen = 0, nDrop = 0, nChecks = 0;
+    const int nStep = numsectors / 250 + 1;
+    for (int s = (x & 7) % nStep; s < numsectors && nChecks < 250; s += nStep)
+    {
+        if (s == nSector)
+            continue;
+        const int cx = sectCenter[s].x, cy = sectCenter[s].y;
+        if (BotDist(x, y, cx, cy) > 9000 || !inside(cx, cy, s))
+            continue;
+        nChecks++;
+        const int f = getflorzofslope(s, cx, cy);
+        if (getceilzofslope(s, cx, cy) > f - (32<<8))
+            continue;
+        if (!cansee(x, y, zEye, nSector, cx, cy, f - (40<<8), s))
+            continue;
+        nSeen++;
+        nDrop += ClipRange((f - zFloor) >> 8, -64, 160);
+    }
+    *pHeight = nSeen ? nDrop / nSeen : 0;
+    int nValue = nSeen * nStep * (100 + ClipRange(*pHeight, -50, 120)) / 100;
+    int nItems = 0;
+    for (int i = headspritestat[kStatItem]; i >= 0 && nItems < 3; i = nextspritestat[i])
+    {
+        const int nType = sprite[i].type;
+        if (((nType > kItemWeaponBase && nType < kItemWeaponMax) || nType == kItemTwoGuns || nType == kItemDeathMask) && BotDist(x, y, sprite[i].x, sprite[i].y) < 1500)
+            nItems++, nValue += nValue / 6 + 4;
+    }
+    return nValue;
+}
+
+static void AddVantage(int x, int y, int nSector)
+{
+    if (nSector < 0 || IsHurtSector(nSector) || !inside(x, y, nSector))
+        return;
+    const int z = getflorzofslope(nSector, x, y);
+    if (getceilzofslope(nSector, x, y) > z - (56<<8))
+        return;
+    for (int i = 0; i < nVantageSpots; i++)
+        if (BotDist(vantageSpot[i].x, vantageSpot[i].y, x, y) < 800)
+            return;
+    int nHeight;
+    const int nValue = SpotValue(x, y, nSector, &nHeight);
+    if (nHeight < 24) // only places above what they see
+        return;
+    int nSlot = nVantageSpots;
+    if (nVantageSpots >= kBotMaxVantage)
+    {
+        nSlot = 0;
+        for (int i = 1; i < kBotMaxVantage; i++)
+            if (vantageValue[i] < vantageValue[nSlot])
+                nSlot = i;
+        if (vantageValue[nSlot] >= nValue)
+            return;
+    }
+    else
+        nVantageSpots++;
+    vantageSpot[nSlot].x = x, vantageSpot[nSlot].y = y, vantageSpot[nSlot].z = z;
+    vantageSect[nSlot] = nSector;
+    vantageValue[nSlot] = nValue;
+    vantageHeight[nSlot] = nHeight;
+}
+
+static void FindVantageSpots(void)
+{
+    nVantageSpots = 0;
+    Bmemset(nVantageFails, 0, sizeof(nVantageFails));
+    // places above a neighbouring area (ledges, balconies, towers), item and camping spots
+    int nLedges = 0;
+    for (int s = 0; s < numsectors && nLedges < 96; s++)
+    {
+        const int f = sector[s].floorz;
+        bool bAbove = false;
+        for (int w = sector[s].wallptr; w < sector[s].wallptr + sector[s].wallnum && !bAbove; w++)
+            bAbove = wall[w].nextsector >= 0 && sector[wall[w].nextsector].floorz - f > (64<<8) && EdgeTypePlan(w) != kEdgeBlocked;
+        if (bAbove)
+            AddVantage(sectCenter[s].x, sectCenter[s].y, s), nLedges++;
+    }
+    for (int i = 0; i < nItemSpots; i++)
+        AddVantage(itemSpot[i].x, itemSpot[i].y, itemSpotSect[i]);
+    for (int i = 0; i < nCampSpots; i++)
+        AddVantage(campSpot[i].x, campSpot[i].y, campSect[i]);
+    if (gBotDebug == 2)
+        for (int i = 0; i < nVantageSpots; i++)
+            LOG_F(INFO, "Bot vantage spot %d: %d,%d sector %d value %d height %d", i, vantageSpot[i].x, vantageSpot[i].y, vantageSect[i], vantageValue[i], vantageHeight[i]);
+}
+
+// Drops that a player can't climb back up from (only a lift or nothing gets you out): pits.
+static void FindPits(void)
+{
+    Bmemset(bPitWall, 0, sizeof(bPitWall));
+    Bmemset(bPitSect, 0, sizeof(bPitSect));
+    static short path[kBotMaxPath];
+    bStrictLifts = true;
+    int nChecked = 0;
+    for (int w = 0; w < numwalls && nChecked < 400; w++)
+    {
+        const int n = wall[w].nextsector;
+        if (n < 0 || EdgeType(w) == kEdgeBlocked)
+            continue;
+        const int s = sectorofwall(w);
+        const int x = (wall[w].x + wall[wall[w].point2].x) >> 1, y = (wall[w].y + wall[wall[w].point2].y) >> 1;
+        if (getflorzofslope(n, x, y) - getflorzofslope(s, x, y) <= (54<<8))
+            continue; // can jump back up
+        if (sector[n].extra > 0 && xsector[sector[n].extra].Underwater)
+            continue; // swim up
+        nChecked++;
+        if (PathSearch(NULL, n, sectCenter[n].x, sectCenter[n].y, s, x, y, path, kBotMaxPath, NULL) < 0)
+        {
+            bPitWall[w] = 1;
+            bPitSect[n] = 1;
+            if (gBotDebug == 2)
+                LOG_F(INFO, "Bot pit: opening %d from sector %d down to sector %d", w, s, n);
+        }
+    }
+    bStrictLifts = false;
+}
 
 static void BotFindSpots(void)
 {
@@ -766,6 +998,8 @@ static void BotFindSpots(void)
         campAng[nCampSpots] = nAng;
         nCampSpots++;
     }
+    FindVantageSpots();
+    FindPits();
 }
 
 // "mixed": the personalities in a random order, so the bots of a match all differ
@@ -808,6 +1042,7 @@ static void BotResolveSettings(BOT *pBot, int nBot)
     pPersona->nAmbush = ClipRange(pPersona->nAmbush * gBotAmbush / 100, 0, 100);
     pPersona->nFlank = ClipRange(pPersona->nFlank * gBotFlank / 100, 0, 100);
     pPersona->nCamping = ClipRange(pPersona->nCamping * gBotCamping / 100, 0, 100);
+    pPersona->nHighGround = ClipRange(pPersona->nHighGround * gBotHighGround / 100, 0, 100);
 }
 
 bool botIsBot(int nPlayer)
@@ -866,6 +1101,7 @@ void botSetupMatch(void)
     gGameOptions.nGameType = gPacketStartGame.gameType;
     gGameOptions.uGameFlags &= ~(kGameFlagContinuing|kGameFlagEnding);
     gPlayerRoundEnding = 0;
+    UpdateNetworkMenus(); // NEW GAME in the game's menu now sets up the next bot match
 }
 
 void botEndMatch(void)
@@ -897,6 +1133,19 @@ void botLevelStart(void)
         for (int i = 0; i < kMaxSprites; i++)
             if (sprite[i].statnum < kMaxStatus && sprite[i].extra > 0 && xsprite[sprite[i].extra].txID == nTx)
                 LOG_F(INFO, "tx %d: sprite %d type %d sector %d push %d", nTx, i, sprite[i].type, sprite[i].sectnum, xsprite[sprite[i].extra].Push);
+    }
+    if (const char *pzPath = getenv("NOTBLOOD_BOT_PATH")) // testing: "from,to" sectors: the way bots plan
+    {
+        int a = 0, b = 0;
+        if (sscanf(pzPath, "%d,%d", &a, &b) == 2 && a >= 0 && b >= 0 && a < numsectors && b < numsectors)
+        {
+            short path[kBotMaxPath];
+            int nCost = 0;
+            const int n = PathSearch(NULL, a, sectCenter[a].x, sectCenter[a].y, b, sectCenter[b].x, sectCenter[b].y, path, kBotMaxPath, &nCost);
+            LOG_F(INFO, "path %d -> %d: %d openings, cost %d", a, b, n, nCost);
+            for (int i = 0; i < n; i++)
+                LOG_F(INFO, "  opening %d: %d -> %d plan %d", path[i], sectorofwall(path[i]), wall[path[i]].nextsector, EdgeTypePlan(path[i]));
+        }
     }
     if (const char *pzDump = getenv("NOTBLOOD_BOT_SECTORS")) // testing: dump these sectors (comma separated)
     {
@@ -932,6 +1181,11 @@ void botLevelStart(void)
         pBot->nWeaponNext = 0;
         pBot->nCampSpot = -1;
         pBot->nLastCamp = 0;
+        pBot->nVantage = -1;
+        pBot->nHoldUntil = 0;
+        pBot->nLastHighTry = 0;
+        pBot->nLiftWall = -1;
+        pBot->bDetour = false;
         pBot->nFirePauseUntil = 0;
         pBot->nAimErrZ = 0;
         pBot->nFireHold = pBot->nFireRelease = 0;
@@ -974,6 +1228,8 @@ static const BOTWEAPON gBotWeapon[kWeaponMax] = {
     { 90, 0, 0, 900, 140, 0 },                // beast hands
 };
 
+static bool bTargetAbove; // the enemy is up high: splash weapons drive it out of there
+
 static int WeaponScore(PLAYER *pPlayer, int nWeapon, int nDist)
 {
     const BOTWEAPON *pInfo = &gBotWeapon[nWeapon];
@@ -993,6 +1249,8 @@ static int WeaponScore(PLAYER *pPlayer, int nWeapon, int nDist)
         const int nOff = klabs(nDist - pInfo->nBestDist);
         nScore -= nScore * ClipHigh(nOff, 6000) / 20000;
     }
+    if (bTargetAbove && (nWeapon == kWeaponNapalm || nWeapon == kWeaponTNT || nWeapon == kWeaponFlare))
+        nScore += nScore / 4;
     if (powerupCheck(pPlayer, kPwUpTwoGuns) && (nWeapon == kWeaponFlare || nWeapon == kWeaponShotgun || nWeapon == kWeaponTommy || nWeapon == kWeaponNapalm || nWeapon == kWeaponTesla))
         nScore += nScore / 3;
     return nScore;
@@ -1123,7 +1381,11 @@ static int FindBestItem(BOT *pBot, PLAYER *pPlayer, int *pValue, int nAvoidX, in
         spritetype *pItem = &sprite[i];
         if ((pItem->cstat & CSTAT_SPRITE_INVISIBLE) || ItemIgnored(pBot, i))
             continue;
-        const int nValue = ItemValue(pPlayer, pItem);
+        int nValue = ItemValue(pPlayer, pItem);
+        if (bPitSect[pItem->sectnum] && pPlayer->pSprite->sectnum != pItem->sectnum)
+            nValue = nValue >= 100 ? nValue / 2 : 0; // down in a pit: only for something really good
+        else if (pItem->z - pSprite->z > (96<<8) && nValue < 100)
+            nValue = nValue * (100 - pBot->persona.nHighGround * 7 / 10) / 100; // far down: giving up the high ground for it
         if (nValue <= 0)
             continue;
         const int nDist = BotDist(pSprite->x, pSprite->y, pItem->x, pItem->y);
@@ -1289,6 +1551,7 @@ static void SetState(BOT *pBot, int nState)
     pBot->nGoalSect = -1;
     pBot->nGoalSprite = -1;
     pBot->nWaitUntil = 0;
+    pBot->bDetour = false;
 }
 
 static bool SetGoal(BOT *pBot, int x, int y, int z, int nSector)
@@ -1309,7 +1572,10 @@ static bool SetGoal(BOT *pBot, int x, int y, int z, int nSector)
 
 static bool GoalReached(BOT *pBot, spritetype *pSprite, int nRange)
 {
-    return pBot->nGoalSect >= 0 && BotDist(pSprite->x, pSprite->y, pBot->nGoalX, pBot->nGoalY) < nRange;
+    if (pBot->nGoalSect < 0 || BotDist(pSprite->x, pSprite->y, pBot->nGoalX, pBot->nGoalY) >= nRange)
+        return false;
+    // right below or above it doesn't count (a ledge over a pit)
+    return pSprite->sectnum == pBot->nGoalSect || klabs(pSprite->z - pBot->nGoalZ) < (48<<8);
 }
 
 // Somewhere to go when there is nothing better to do: places where items lie (where
@@ -1360,23 +1626,58 @@ static bool PickRoamGoal(BOT *pBot, PLAYER *pPlayer)
             if (!inside(x, y, nSector))
                 continue;
         }
-        if (BotDist(pSprite->x, pSprite->y, x, y) < 1200)
+        if (BotDist(pSprite->x, pSprite->y, x, y) < 1200 || (bPitSect[nSector] && pSprite->sectnum != nSector))
             continue;
+        if (getflorzofslope(nSector, x, y) - pSprite->z > (96<<8) && BotChance(pBot, pBot->persona.nHighGround))
+            continue; // rather not go down there
         if (SetGoal(pBot, x, y, getflorzofslope(nSector, x, y), nSector))
             return true;
     }
     return false;
 }
 
+static bool VantageTaken(BOT *pBot, int i);
+
 static bool PickCampSpot(BOT *pBot, spritetype *pSprite)
 {
+    // the good high places first, as much as it likes them
+    if (nVantageSpots > 0 && BotChance(pBot, pBot->persona.nHighGround))
+    {
+        int nBest = -1, nBestScore = 0;
+        for (int i = 0; i < nVantageSpots; i++)
+        {
+            if (nVantageFails[i] >= 2 || VantageTaken(pBot, i))
+                continue;
+            const int nDist = BotDist(pSprite->x, pSprite->y, vantageSpot[i].x, vantageSpot[i].y);
+            const int nScore = vantageValue[i] * 100 / (100 + nDist / 60) + BotRand(pBot, vantageValue[i] / 3 + 1);
+            if (nScore > nBestScore)
+                nBest = i, nBestScore = nScore;
+        }
+        if (nBest >= 0 && SetGoal(pBot, vantageSpot[nBest].x, vantageSpot[nBest].y, vantageSpot[nBest].z, vantageSect[nBest]))
+        {
+            pBot->nVantage = nBest;
+            pBot->nCampSpot = -1;
+            pBot->nLastCamp = nNow;
+            pBot->nWatchAng = getangle(sectCenter[vantageSect[nBest]].x - vantageSpot[nBest].x, sectCenter[vantageSect[nBest]].y - vantageSpot[nBest].y);
+            // look out over what it sees: towards the lower ground around
+            int nLow = -1, nLowZ = vantageSpot[nBest].z;
+            const int s = vantageSect[nBest];
+            for (int w = sector[s].wallptr; w < sector[s].wallptr + sector[s].wallnum; w++)
+                if (wall[w].nextsector >= 0 && sector[wall[w].nextsector].floorz > nLowZ)
+                    nLow = wall[w].nextsector, nLowZ = sector[nLow].floorz;
+            if (nLow >= 0)
+                pBot->nWatchAng = getangle(sectCenter[nLow].x - vantageSpot[nBest].x, sectCenter[nLow].y - vantageSpot[nBest].y);
+            return true;
+        }
+    }
+    pBot->nVantage = -1;
     if (nCampSpots <= 0)
         return false;
     int nBest = -1, nBestScore = 0x7fffffff;
     for (int nTry = 0; nTry < 6; nTry++)
     {
         const int i = BotRand(pBot, nCampSpots);
-        if (nCampFails[i] >= 2)
+        if (nCampFails[i] >= 2 || bPitSect[campSect[i]])
             continue;
         bool bTaken = false; // two bots in the same corner looks silly
         for (int j = 0; j < kMaxPlayers && !bTaken; j++)
@@ -1509,6 +1810,43 @@ static bool PlanFlank(BOT *pBot, PLAYER *pPlayer, BOTMEMORY *pMem)
     return true;
 }
 
+static bool VantageTaken(BOT *pBot, int i)
+{
+    for (int j = 0; j < kMaxPlayers; j++)
+        if (gBot[j].bActive && &gBot[j] != pBot && gBot[j].nVantage == i && (gBot[j].nState == kBotStateHighGround || nNow < gBot[j].nHoldUntil))
+            return true;
+    return false;
+}
+
+// A high place near it that sees the enemy (and that the enemy isn't standing on).
+static bool PlanHighGround(BOT *pBot, PLAYER *pPlayer, spritetype *pEnemy)
+{
+    spritetype *pSprite = pPlayer->pSprite;
+    int nBest = -1, nBestScore = 0;
+    for (int i = 0; i < nVantageSpots; i++)
+    {
+        if (nVantageFails[i] >= 2 || VantageTaken(pBot, i))
+            continue;
+        const vec3_t *pSpot = &vantageSpot[i];
+        const int nDist = BotDist(pSprite->x, pSprite->y, pSpot->x, pSpot->y);
+        if (nDist > 3500 || nDist < 200 || BotDist(pEnemy->x, pEnemy->y, pSpot->x, pSpot->y) < 700)
+            continue;
+        if (pEnemy->z - pSpot->z < (40<<8)) // not above it
+            continue;
+        if (!cansee(pSpot->x, pSpot->y, pSpot->z - (40<<8), vantageSect[i], pEnemy->x, pEnemy->y, SpriteCenterZ(pEnemy), pEnemy->sectnum))
+            continue;
+        const int nScore = vantageValue[i] * 100 / (100 + nDist / 40);
+        if (nScore > nBestScore)
+            nBest = i, nBestScore = nScore;
+    }
+    if (nBest < 0 || !SetGoal(pBot, vantageSpot[nBest].x, vantageSpot[nBest].y, vantageSpot[nBest].z, vantageSect[nBest]))
+        return false;
+    pBot->nState = kBotStateHighGround; // keep the path SetState would clear
+    pBot->nStateTime = nNow;
+    pBot->nVantage = nBest;
+    return true;
+}
+
 // Run somewhere out of sight, preferably to health.
 static bool PlanFlee(BOT *pBot, PLAYER *pPlayer, spritetype *pEnemy)
 {
@@ -1609,6 +1947,15 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
         }
         if (pBot->nState == kBotStateFlee && nNow - pBot->nStateTime < 30*6 && pBot->nGoalSect >= 0)
             return; // keep running for a while
+        if (pBot->nState == kBotStateHighGround && pBot->nGoalSect >= 0 && nNow - pBot->nStateTime < 30*7)
+            return; // on its way up there
+        // a high place close by that looks down on the enemy: get up there
+        if (pBot->nState != kBotStateHighGround && nNow >= pBot->nHoldUntil && nNow - pBot->nLastHighTry > 45 && nDist > 1200)
+        {
+            pBot->nLastHighTry = nNow;
+            if (BotChance(pBot, pPersona->nHighGround * 2 / 3) && PlanHighGround(pBot, pPlayer, pEnemy))
+                return;
+        }
         if (pBot->nState != kBotStateFight)
         {
             SetState(pBot, kBotStateFight);
@@ -1616,6 +1963,10 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
         }
         return;
     }
+
+    // up on a good spot after a fight: stay a while, watching
+    if (nNow < pBot->nHoldUntil && pBot->nVantage >= 0 && BotDist(pSprite->x, pSprite->y, vantageSpot[pBot->nVantage].x, vantageSpot[pBot->nVantage].y) < 400)
+        return;
 
     // keep doing what it does while it still makes sense
     switch (pBot->nState)
@@ -1781,6 +2132,87 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
 // moving, turning and shooting
 //
 
+// Getting a lift to the height it needs: wait while it moves, start it (use on it when standing
+// on it, use on its wall from beside it), or walk over to its switch and back. Returns true
+// while it takes care of moving.
+static bool LiftAction(BOT *pBot, PLAYER *pPlayer, int nPortal, int tx, int ty, int *pMoveAng, int *pMoveSpeed, int *pLookAng, bool *pUse)
+{
+    spritetype *pSprite = pPlayer->pSprite;
+    const int nLift = EdgeLift(nPortal);
+    const int zWant = LiftFloorFor(nPortal);
+    if (nLift < 0 || zWant == INT32_MIN)
+        return false;
+    if (pBot->nLiftWall != nPortal)
+        pBot->nLiftWall = nPortal, pBot->nLiftSince = nNow;
+    if (nNow - pBot->nLiftSince > 30*20)
+    {
+        // it never came: another way
+        BlockWall(pBot, nPortal);
+        pBot->nLiftWall = -1;
+        if (pBot->nGoalSect >= 0)
+            BotFindPath(pBot, pBot->nGoalSect, pBot->nGoalX, pBot->nGoalY);
+        return false;
+    }
+    XSECTOR *pXSector = &xsector[sector[nLift].extra];
+    const bool bOnLift = pSprite->sectnum == nLift;
+    const int nAngTo = getangle(tx - pSprite->x, ty - pSprite->y);
+    *pLookAng = nAngTo;
+    if (!bOnLift && BotDist(pSprite->x, pSprite->y, tx, ty) > 300)
+    {
+        // walk up to it first
+        *pMoveAng = nAngTo;
+        *pMoveSpeed = 2048;
+        return true;
+    }
+    *pMoveSpeed = 0;
+    if (bOnLift)
+    {
+        // stay in the middle of the lift so it doesn't step off as it moves
+        const int cx = sectCenter[nLift].x, cy = sectCenter[nLift].y;
+        if (inside(cx, cy, nLift) && BotDist(pSprite->x, pSprite->y, cx, cy) > 200)
+            *pMoveAng = getangle(cx - pSprite->x, cy - pSprite->y), *pMoveSpeed = 1024;
+    }
+    if (pXSector->busy)
+        return true; // on its way: wait
+    if (nNow - pBot->nLiftSince < 10)
+        return true; // give it a moment (somebody else may have called it)
+    if ((nNow + pBot->nPlayer) % 20)
+        return true;
+    if (bOnLift && pXSector->Push)
+    {
+        *pUse = true;
+        return true;
+    }
+    if (!bOnLift && pXSector->Wallpush)
+    {
+        if (klabs(AngDiff(pSprite->ang, nAngTo)) < 128)
+            *pUse = UseCheck(pPlayer) >= 0;
+        return true;
+    }
+    // its switch: the closest one it can walk to
+    const int nChannel = pXSector->rxID & 1023;
+    int nBest = -1, nBestDist = 0x7fffffff;
+    for (int i = 0; i < nOpeners[nChannel]; i++)
+    {
+        const int nDist = BotDist(pSprite->x, pSprite->y, openers[nChannel][i].x, openers[nChannel][i].y);
+        if (nDist < nBestDist)
+            nBest = i, nBestDist = nDist;
+    }
+    if (nBest < 0 || pBot->bDetour)
+        return true;
+    const OPENER *pOpener = &openers[nChannel][nBest];
+    pBot->nSavedX = pBot->nGoalX, pBot->nSavedY = pBot->nGoalY, pBot->nSavedZ = pBot->nGoalZ, pBot->nSavedSect = pBot->nGoalSect;
+    if (SetGoal(pBot, pOpener->x, pOpener->y, getflorzofslope(pOpener->nSector, pOpener->x, pOpener->y), pOpener->nSector))
+    {
+        pBot->bDetour = true;
+        pBot->nDetourAng = pOpener->nAng;
+        pBot->nLiftSince = nNow; // the waiting starts again when it comes back
+    }
+    else
+        SetGoal(pBot, pBot->nSavedX, pBot->nSavedY, pBot->nSavedZ, pBot->nSavedSect);
+    return true;
+}
+
 static void FollowPath(BOT *pBot, spritetype *pSprite, int *tx, int *ty, int *pEdge, int *pPortal)
 {
     *pEdge = kEdgeWalk;
@@ -1831,6 +2263,8 @@ static void FollowPath(BOT *pBot, spritetype *pSprite, int *tx, int *ty, int *pE
         nx = pBot->nGoalX, ny = pBot->nGoalY;
     PortalPoint(w, (pSprite->x + nx) >> 1, (pSprite->y + ny) >> 1, tx, ty);
     *pEdge = EdgeType(w);
+    if (*pEdge == kEdgeBlocked && EdgeTypePlan(w) == kEdgeLift)
+        *pEdge = kEdgeLift;
     *pPortal = w;
     // close to the opening: aim past it so it doesn't slow down in the doorway
     if (*pEdge == kEdgeWalk && BotDist(pSprite->x, pSprite->y, *tx, *ty) < 256)
@@ -1839,6 +2273,33 @@ static void FollowPath(BOT *pBot, spritetype *pSprite, int *tx, int *ty, int *pE
         *tx = px + (nx - px) / 4;
         *ty = py + (ny - py) / 4;
     }
+}
+
+static bool StayAbove(BOT *pBot)
+{
+    if (nNow >= pBot->nAboveDecideAt)
+    {
+        pBot->bStayAbove = BotChance(pBot, 50 + pBot->persona.nHighGround / 2);
+        pBot->nAboveDecideAt = nNow + 60 + BotRand(pBot, 60);
+    }
+    return pBot->bStayAbove;
+}
+
+// a drop (more than a jump back up) right in front, that way
+static bool LedgeAhead(spritetype *pSprite, int nAng)
+{
+    const int zHere = getflorzofslope(pSprite->sectnum, pSprite->x, pSprite->y);
+    for (int nDist = 96; nDist <= 224; nDist += 128)
+    {
+        const int x = pSprite->x + mulscale30(Cos(nAng), nDist), y = pSprite->y + mulscale30(Sin(nAng), nDist);
+        short nSector = pSprite->sectnum;
+        updatesector(x, y, &nSector);
+        if (nSector < 0)
+            return false; // a wall: the feelers deal with those
+        if (getflorzofslope(nSector, x, y) - zHere > (56<<8) && !(sector[nSector].extra > 0 && xsector[sector[nSector].extra].Underwater))
+            return true;
+    }
+    return false;
 }
 
 // how far it can walk that way before bumping into a wall (or someone)
@@ -1933,6 +2394,10 @@ void botGetInput(int nPlayer, GINPUT *pInput)
     if (pBot->bWasDead)
     {
         pBot->bWasDead = false;
+        pBot->nHoldUntil = 0;
+        pBot->nVantage = -1;
+        pBot->bDetour = false;
+        pBot->nLiftWall = -1;
         pBot->nState = -1;
         SetState(pBot, kBotStateRoam);
         pBot->nTarget = -1;
@@ -2030,7 +2495,21 @@ void botGetInput(int nPlayer, GINPUT *pInput)
             nMoveSpeed = 2048;
             nLookAng = nMoveAng;
         }
-        if (nPortal >= 0 && BotDist(pSprite->x, pSprite->y, tx, ty) < 500)
+        if (pBot->bDetour && GoalReached(pBot, pSprite, 100))
+        {
+            // at the lift's switch: face it, push it, back to where it was going
+            nMoveSpeed = 0;
+            nLookAng = pBot->nDetourAng;
+            if (klabs(AngDiff(pSprite->ang, pBot->nDetourAng)) < 100)
+            {
+                bWantUse = UseCheck(pPlayer) >= 0;
+                pBot->bDetour = false;
+                SetGoal(pBot, pBot->nSavedX, pBot->nSavedY, pBot->nSavedZ, pBot->nSavedSect);
+            }
+        }
+        else if (nEdge == kEdgeLift && nPortal >= 0)
+            LiftAction(pBot, pPlayer, nPortal, tx, ty, &nMoveAng, &nMoveSpeed, &nLookAng, &bWantUse);
+        else if (nPortal >= 0 && BotDist(pSprite->x, pSprite->y, tx, ty) < 500)
         {
             if (nEdge == kEdgeJump && bOnGround)
                 bWantJump = true;
@@ -2050,8 +2529,22 @@ void botGetInput(int nPlayer, GINPUT *pInput)
         }
     }
 
+    const bool bHolding = nNow < pBot->nHoldUntil && pBot->nVantage >= 0;
     switch (pBot->nState)
     {
+    case kBotStateHighGround:
+        if (pBot->nGoalSect >= 0 && GoalReached(pBot, pSprite, 140))
+        {
+            // made it: hold it
+            pBot->nHoldUntil = nNow + 30*6 + pBot->persona.nHighGround * 6;
+            pBot->nState = kBotStateFight;
+            pBot->nStateTime = nNow;
+            pBot->nGoalSect = -1;
+            pBot->nPathLen = 0;
+        }
+        else if (pBot->nGoalSect < 0)
+            pBot->nState = kBotStateFight;
+        break;
     case kBotStateAmbush:
     case kBotStateCamp:
         if (pBot->nGoalSect >= 0 && GoalReached(pBot, pSprite, 120))
@@ -2083,6 +2576,15 @@ void botGetInput(int nPlayer, GINPUT *pInput)
             bWantJump = true;
         break;
     }
+    if (bHolding && !pEnemy && pBot->nState != kBotStateHighGround)
+    {
+        const vec3_t *pSpot = &vantageSpot[pBot->nVantage];
+        if (BotDist(pSprite->x, pSprite->y, pSpot->x, pSpot->y) < 250)
+        {
+            nMoveSpeed = 0;
+            nLookAng = (pBot->nWatchAng + (((nNow / 50) & 3) == 3 ? 250 : 0)) & 2047;
+        }
+    }
     // walking about, it glances to the sides now and then instead of staring down the corridor
     if (!pEnemy && nMoveSpeed && pBot->nState != kBotStateFight && nEdge != kEdgeDoor && nNow >= pBot->nUnstickUntil)
     {
@@ -2107,8 +2609,10 @@ void botGetInput(int nPlayer, GINPUT *pInput)
         if (nNow >= pBot->nWeaponNext && !pBot->nFireHold)
         {
             int nBestScore;
+            bTargetAbove = pSprite->z - pEnemy->z > (48<<8);
             const int nBest = BestWeapon(pPlayer, nEnemyDist, &nBestScore);
             const int nCurScore = WeaponScore(pPlayer, nWeapon, nEnemyDist);
+            bTargetAbove = false;
             if (nBest && nBest != nWeapon && (nBestScore > nCurScore * 5 / 4 || !nCurScore))
             {
                 pInput->newWeapon = nBest;
@@ -2123,7 +2627,23 @@ void botGetInput(int nPlayer, GINPUT *pInput)
             if (pEnemyPlayer && powerupCheck(pEnemyPlayer, kPwUpDeathMask))
                 nWant = max(nWant, 4000); // can't hurt it: keep away
             const bool bSeeNow = nNow - pBot->mem[pEnemyPlayer ? pEnemyPlayer->nPlayer : 0].nTime < 3 || !pEnemyPlayer;
-            if (nEnemyDist > nWant + 700 || !bSeeNow)
+            if (bHolding)
+            {
+                // holding a high spot: stay on it, back to it if it drifted off
+                pBot->nWatchAng = getangle(pEnemy->x - pSprite->x, pEnemy->y - pSprite->y);
+                const vec3_t *pSpot = &vantageSpot[pBot->nVantage];
+                const int nOff = BotDist(pSprite->x, pSprite->y, pSpot->x, pSpot->y);
+                nMoveSpeed = 0;
+                if (nOff > 220)
+                    nMoveAng = getangle(pSpot->x - pSprite->x, pSpot->y - pSprite->y), nMoveSpeed = 2048;
+            }
+            else if (bSeeNow && pEnemy->z - pSprite->z > (64<<8) && nWeapon != kWeaponPitchfork && nWeapon != kWeaponSprayCan
+                && StayAbove(pBot) && nEnemyDist < 9000)
+            {
+                // it's down below and in sight: shoot down at it rather than jump after it
+                nMoveSpeed = 0;
+            }
+            else if (nEnemyDist > nWant + 700 || !bSeeNow)
             {
                 // close in; the path finds the way round things
                 if (pBot->nGoalSect != pEnemy->sectnum || nNow - pBot->nRepathTime > 20)
@@ -2167,7 +2687,7 @@ void botGetInput(int nPlayer, GINPUT *pInput)
                     nMoveSpeed = 2048;
                 }
             }
-            if (bOnGround && nNow >= pBot->nJumpNext)
+            if (bOnGround && nNow >= pBot->nJumpNext && !bHolding)
             {
                 if (BotChance(pBot, pBot->persona.nJump))
                     bWantJump = true;
@@ -2381,6 +2901,19 @@ void botGetInput(int nPlayer, GINPUT *pInput)
         nMoveAng = (nMoveAng + pBot->nUnstickStrafe) & 2047;
         nMoveSpeed = 2048;
     }
+    // don't step off a ledge unless the way it is going leads down there
+    if (nMoveSpeed && pPlayer->posture != kPostureSwim)
+    {
+        const bool bMeantDrop = bPathMove && nPortal >= 0 && BotDist(pSprite->x, pSprite->y, tx, ty) < 400 && !bHolding;
+        if (!bMeantDrop && LedgeAhead(pSprite, nMoveAng))
+        {
+            const int nOther = (nMoveAng + 1024) & 2047;
+            if (pBot->nStrafeDir && !LedgeAhead(pSprite, nOther))
+                nMoveAng = nOther, pBot->nStrafeDir = -pBot->nStrafeDir;
+            else
+                nMoveSpeed = 0;
+        }
+    }
 
     // swimming: up or down towards where it is going
     if (pPlayer->posture == kPostureSwim)
@@ -2460,9 +2993,9 @@ static void BotDescribe(int i, char *pzBuffer, int nSize)
         pzTarget = pTarget ? gProfile[pTarget->nPlayer].name : "monster";
     }
     const int nGoalDist = pBot->nGoalSect >= 0 && pPlayer->pSprite ? BotDist(pPlayer->pSprite->x, pPlayer->pSprite->y, pBot->nGoalX, pBot->nGoalY) : -1;
-    Bsnprintf(pzBuffer, nSize, "%s (%s %s): %s, hp %d, weapon %d, target %s, path %d/%d, goal %d away, frags %d, stuck %d", gProfile[i].name,
+    Bsnprintf(pzBuffer, nSize, "%s (%s %s): %s%s, hp %d, weapon %d, target %s, path %d/%d, goal %d away, frags %d, stuck %d", gProfile[i].name,
         gBotSkillNames[pBot->nSkill], gBotPersonaNames[pBot->nPersona], pBot->nState >= 0 && pBot->nState < kBotStateMax ? pzBotStateNames[pBot->nState] : "?",
-        pPlayer->pXSprite ? pPlayer->pXSprite->health >> 4 : 0, pPlayer->curWeapon, pzTarget, pBot->nPathPos, pBot->nPathLen, nGoalDist,
+        pBot->bDetour ? " (to a lift switch)" : (pBot->nLiftWall >= 0 && nNow - pBot->nLiftSince < 30 ? " (lift)" : ""), pPlayer->pXSprite ? pPlayer->pXSprite->health >> 4 : 0, pPlayer->curWeapon, pzTarget, pBot->nPathPos, pBot->nPathLen, nGoalDist,
         pPlayer->fragCount, pBot->nStuckCount);
 }
 
@@ -2497,6 +3030,8 @@ static int osdcmd_bot_match(osdcmdptr_t parm)
     }
     if (parm->numparms >= 1)
         BotMatchSetLimits(Batol(parm->parms[0]), parm->numparms >= 2 ? Batol(parm->parms[1]) : -1);
+    if (parm->numparms >= 4)
+        BotMatchSetMap(Batol(parm->parms[2]) - 1, Batol(parm->parms[3]) - 1);
     StartBotMatch(NULL);
     return OSDCMD_OK;
 }
@@ -2509,14 +3044,16 @@ static int osdcmd_bot_sector(osdcmdptr_t parm) // map debugging: how bots see a 
     if (s < 0 || s >= numsectors)
         return OSDCMD_OK;
     XSECTOR *pX = sector[s].extra > 0 ? &xsector[sector[s].extra] : NULL;
+    if (pX)
+        LOG_F(INFO, "sector %d: on floor %d off floor %d", s, pX->onFloorZ, pX->offFloorZ);
     LOG_F(INFO, "sector %d: type %d floor %d ceiling %d door %d lift %d x %d rx %d tx %d state %d busy %d push %d wallpush %d locked %d key %d",
         s, sector[s].type, sector[s].floorz, sector[s].ceilingz, bDoorSect[s], IsLift(s), sector[s].extra, pX ? pX->rxID : -1, pX ? pX->txID : -1,
         pX ? pX->state : -1, pX ? pX->busy : -1, pX ? pX->Push : -1, pX ? pX->Wallpush : -1, pX ? pX->locked : -1, pX ? pX->Key : -1);
     for (int w = sector[s].wallptr; w < sector[s].wallptr + sector[s].wallnum; w++)
     {
         XWALL *pXW = wall[w].extra > 0 ? &xwall[wall[w].extra] : NULL;
-        LOG_F(INFO, "  wall %d -> sector %d edge %d cstat %d fails %d xwall %d push %d tx %d rx %d", w, wall[w].nextsector,
-            wall[w].nextsector >= 0 ? EdgeType(w) : -1, wall[w].cstat, nWallFails[w], wall[w].extra, pXW ? pXW->triggerPush : -1, pXW ? pXW->txID : -1, pXW ? pXW->rxID : -1);
+        LOG_F(INFO, "  wall %d -> sector %d edge %d plan %d cstat %d fails %d xwall %d push %d tx %d rx %d", w, wall[w].nextsector,
+            wall[w].nextsector >= 0 ? EdgeType(w) : -1, wall[w].nextsector >= 0 ? EdgeTypePlan(w) : -1, wall[w].cstat, nWallFails[w], wall[w].extra, pXW ? pXW->triggerPush : -1, pXW ? pXW->txID : -1, pXW ? pXW->rxID : -1);
     }
     for (int i = headspritesect[s]; i >= 0; i = nextspritesect[i])
         LOG_F(INFO, "  sprite %d type %d stat %d cstat %d xsprite %d push %d tx %d", i, sprite[i].type, sprite[i].statnum, sprite[i].cstat, sprite[i].extra,
@@ -2527,7 +3064,7 @@ static int osdcmd_bot_sector(osdcmdptr_t parm) // map debugging: how bots see a 
 void botRegisterCvars(void)
 {
     OSD_RegisterFunction("bot_sector", "bot_sector <sector>: writes how bots see that sector's openings to the log", osdcmd_bot_sector);
-    OSD_RegisterFunction("bot_match", "bot_match [frag limit] [time limit]: starts a bot match with the BOTS menu's settings", osdcmd_bot_match);
+    OSD_RegisterFunction("bot_match", "bot_match [frag limit] [time limit] [episode] [level]: starts a bot match with the BOTS menu's settings", osdcmd_bot_match);
     static osdcvardata_t cvars[] = {
         { "bot_count", "number of bots in a bot match", (void *)&gBotCount, CVAR_INT, 1, kMaxPlayers - 1 },
         { "bot_skill", "bot difficulty (0: easy, 1: normal, 2: hard, 3: nightmare)", (void *)&gBotSkill, CVAR_INT, 0, kBotSkillMax - 1 },
@@ -2540,6 +3077,7 @@ void botRegisterCvars(void)
         { "bot_flank", "how often bots go round to flank, percent of the personality's", (void *)&gBotFlank, CVAR_INT, 0, 200 },
         { "bot_camping", "how much bots camp, percent of the personality's", (void *)&gBotCamping, CVAR_INT, 0, 200 },
         { "bot_taunts", "bots talk and taunt", (void *)&gBotTaunts, CVAR_BOOL, 0, 1 },
+        { "bot_highground", "how much bots go for high places that see a lot, percent of the personality's", (void *)&gBotHighGround, CVAR_INT, 0, 200 },
         { "bot_handicap", "how much damage bots take (0: much less, 2: normal, 4: much more)", (void *)&gBotHandicap, CVAR_INT, 0, 4 },
         { "bot_cultists", "half the bots look like cultists", (void *)&gBotCultists, CVAR_BOOL, 0, 1 },
         { "bot_debug", "show what every bot is doing (1: on screen, 2: also in the log every 2 seconds)", (void *)&gBotDebug, CVAR_INT, 0, 2 },
