@@ -462,6 +462,7 @@ public:
     int32_t m_mouselastactivity;
     int32_t m_mousewake_watchpoint, m_menuchange_watchpoint;
     int32_t m_mousecaught;
+    bool m_bIgnoreRelease; // a menu opened/closed: the release of the click (or tap) that did it isn't a new click
     vec2_t m_prevmousepos, m_mousepos, m_mousedownpos;
     bool m_postPop;
     CGameMenuMgr();

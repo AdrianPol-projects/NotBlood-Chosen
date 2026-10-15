@@ -126,6 +126,7 @@ bool CGameMenuMgr::Push(CGameMenu *pMenu, int nItem)
     InitializeMenu();
     m_menuchange_watchpoint = 1;
     m_mousecaught = 1;
+    m_bIgnoreRelease = true;
     if (pGameMenuItemZEdit) // deselect last actively edited item
         pGameMenuItemZEdit->at30 = 0, pGameMenuItemZEdit = NULL;
     return true;
@@ -150,6 +151,7 @@ void CGameMenuMgr::Pop(void)
             pGameMenuItemZEdit->at30 = 0, pGameMenuItemZEdit = NULL;
     }
     m_mousecaught = 1;
+    m_bIgnoreRelease = true;
 }
 
 void CGameMenuMgr::PostPop(void)
@@ -189,6 +191,16 @@ void CGameMenuMgr::Draw(void)
             m_mousewake_watchpoint = 0;
 
         m_mousecaught = 0;
+        if (m_bIgnoreRelease)
+        {
+            // touch screens deliver the release a frame late, after the tap already opened or
+            // closed a menu: without this the new menu takes it as a click (and its Blood logo
+            // closes it again)
+            if (g_mouseClickState == MOUSE_PRESSED)
+                m_bIgnoreRelease = false;
+            else if (g_mouseClickState == MOUSE_RELEASED)
+                m_mousecaught = 1, m_bIgnoreRelease = false;
+        }
     }
     else
     {

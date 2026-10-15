@@ -34,6 +34,8 @@ See the GNU General Public License for more details.
 #include "db.h"
 #include "endgame.h"
 #include "gamemenu.h"
+#include "eventq.h"
+#include "gameutil.h"
 #include "globals.h"
 #include "levels.h"
 #include "network.h"
@@ -60,6 +62,7 @@ int gBotCamping = 100;
 int gBotTaunts = 1;
 int gBotDebug = 0;
 int gBotCultists = 1;
+int gBotHandicap = 2;
 static int gBotWatch = 0;
 
 bool gBotMatch = false;
@@ -105,13 +108,15 @@ struct BOTSKILL
     int nHearing;   // how far it hears shots
     int nLead;      // percent of correct lead on projectiles
     int nTactics;   // chance of using its head (ambush, flank, retreat to health)
+    int nTrigger;   // percent of the time it keeps shooting while on target (lower: pauses like a nervous player)
+    int nAutoAim;   // the profile's autoaim (0 off, 2 hitscan weapons only, 1 on)
 };
 
 static const BOTSKILL gBotSkillInfo[kBotSkillMax] = {
-    { 150, 17, 48, 290, 7000, 20, 30 },
-    { 95, 11, 80, 360, 10000, 50, 55 },
-    { 55, 7, 120, 420, 13000, 75, 80 },
-    { 26, 4, 170, 480, 17000, 95, 100 },
+    { 240, 26, 30, 240, 4500, 10, 15, 50, 0 },
+    { 160, 17, 48, 290, 6500, 30, 35, 70, 0 },
+    { 100, 12, 75, 350, 9500, 55, 60, 85, 2 },
+    { 60, 8, 110, 410, 13000, 80, 85, 100, 1 },
 };
 
 struct BOTPERSONA
@@ -167,7 +172,7 @@ struct BOT
     int nTarget;          // sprite index, -1 none
     int nTargetSince;     // when it first saw the current target
     int nReactAt;         // can shoot/turn to it from then on
-    int nAimErr, nAimErrGoal, nAimErrNext, nTrackFrames;
+    int nAimErr, nAimErrGoal, nAimErrNext, nTrackFrames, nAimErrZ, nFirePauseUntil;
     int nStrafeDir, nStrafeUntil, nJumpNext, nCrouchUntil;
     int nWeaponNext;
     int nFireHold, nFireRelease;
@@ -187,6 +192,8 @@ struct BOT
     int nAtGoalSince;
     int nProgressDist, nProgressTime, nProgressX, nProgressY; // getting closer to where it's heading?
     int nAvoidSide, nAvoidUntil;
+    int nCampSpot, nLastCamp;
+    int nGlance, nGlanceNext;
 };
 
 static BOT gBot[kMaxPlayers];
@@ -195,6 +202,7 @@ static int nCampSpots;
 static vec3_t campSpot[kBotMaxCampSpots];
 static short campSect[kBotMaxCampSpots];
 static short campAng[kBotMaxCampSpots];
+static uint8_t nCampFails[kBotMaxCampSpots];
 static int nItemSpots;
 static vec2_t itemSpot[kBotMaxItemSpots];
 static short itemSpotSect[kBotMaxItemSpots];
@@ -286,15 +294,97 @@ static int PortalGap(int nWall, int x, int y)
     return min(f1, f2) - max(c1, c2);
 }
 
+static uint8_t bDoorSect[MAXSECTORS]; // doors a player can open by pressing "use" (on them or a switch beside them)
+
+static bool IsMovingSectorType(int nType)
+{
+    return nType == kSectorZMotion || nType == kSectorSlide || nType == kSectorRotate || nType == kSectorSlideMarked || nType == kSectorRotateMarked
+        || nType == kSectorZMotionSprite || nType == kSectorRotateStep;
+}
+
+// where the buttons are: for every channel the sectors that have something you can push sending to it
+#define kMaxOpeners 8
+static short nOpenerSect[1024][kMaxOpeners];
+static uint8_t nOpeners[1024];
+
+static void AddOpener(int nChannel, int nSector)
+{
+    nChannel &= 1023;
+    for (int i = 0; i < nOpeners[nChannel]; i++)
+        if (nOpenerSect[nChannel][i] == nSector)
+            return;
+    if (nOpeners[nChannel] < kMaxOpeners)
+        nOpenerSect[nChannel][nOpeners[nChannel]++] = nSector;
+}
+
+// can someone standing in nFrom open door sector nDoor?
+static bool CanOpenFrom(int nDoor, int nFrom)
+{
+    XSECTOR *pXSector = &xsector[sector[nDoor].extra];
+    if (pXSector->Push || pXSector->Wallpush)
+        return true;
+    const int nChannel = pXSector->rxID & 1023;
+    for (int i = 0; i < nOpeners[nChannel]; i++)
+        if (nOpenerSect[nChannel][i] == nFrom || nOpenerSect[nChannel][i] == nDoor)
+            return true;
+    return false;
+}
+
+static void FindDoors(void)
+{
+    Bmemset(nOpeners, 0, sizeof(nOpeners));
+    uint8_t bPushChannel[1024];
+    Bmemset(bPushChannel, 0, sizeof(bPushChannel));
+    for (int w = 0; w < numwalls; w++)
+    {
+        if (wall[w].extra > 0 && xwall[wall[w].extra].triggerPush && xwall[wall[w].extra].txID)
+        {
+            bPushChannel[xwall[wall[w].extra].txID & 1023] = 1;
+            AddOpener(xwall[wall[w].extra].txID, sectorofwall(w));
+        }
+    }
+    for (int i = 0; i < kMaxSprites; i++)
+    {
+        if (sprite[i].statnum < kMaxStatus && sprite[i].extra > 0 && xsprite[sprite[i].extra].Push && xsprite[sprite[i].extra].txID)
+        {
+            bPushChannel[xsprite[sprite[i].extra].txID & 1023] = 1;
+            AddOpener(xsprite[sprite[i].extra].txID, sprite[i].sectnum);
+        }
+    }
+    for (int s = 0; s < numsectors; s++)
+    {
+        bDoorSect[s] = 0;
+        if (sector[s].extra <= 0 || !IsMovingSectorType(sector[s].type))
+            continue;
+        XSECTOR *pXSector = &xsector[sector[s].extra];
+        if (pXSector->locked || pXSector->Key)
+            continue;
+        bDoorSect[s] = pXSector->Push || pXSector->Wallpush || (pXSector->rxID && bPushChannel[pXSector->rxID & 1023]);
+    }
+}
+
 static bool IsDoorSector(int nSector)
 {
-    if (nSector < 0 || sector[nSector].extra <= 0)
-        return false;
-    const int nType = sector[nSector].type;
-    if (nType != kSectorZMotion && nType != kSectorSlide && nType != kSectorRotate && nType != kSectorSlideMarked && nType != kSectorRotateMarked && nType != kSectorZMotionSprite)
+    return nSector >= 0 && nSector < numsectors && bDoorSect[nSector];
+}
+
+static bool IsLift(int nSector) // a moving sector whose floor goes up and down
+{
+    if (nSector < 0 || sector[nSector].extra <= 0 || !IsMovingSectorType(sector[nSector].type))
         return false;
     XSECTOR *pXSector = &xsector[sector[nSector].extra];
-    return (pXSector->Push || pXSector->Wallpush) && !pXSector->locked && !pXSector->Key;
+    return pXSector->onFloorZ != pXSector->offFloorZ;
+}
+
+static bool DoorClosed(int nSector) // rotating and sliding doors don't change height: closed is their "off" state
+{
+    if (!IsDoorSector(nSector))
+        return false;
+    const int nType = sector[nSector].type;
+    if (nType != kSectorSlide && nType != kSectorRotate && nType != kSectorSlideMarked && nType != kSectorRotateMarked && nType != kSectorRotateStep)
+        return false;
+    XSECTOR *pXSector = &xsector[sector[nSector].extra];
+    return !pXSector->state && !pXSector->busy;
 }
 
 static bool IsHurtSector(int nSector)
@@ -317,16 +407,23 @@ static int EdgeType(int nWall)
     const int nNext = wall[nWall].nextsector;
     if (nNext < 0)
         return kEdgeBlocked;
+    const int nFrom = sectorofwall(nWall);
+    // a door this side can open (some only open with a button on the other side)
+    const bool bDoor = (IsDoorSector(nNext) && CanOpenFrom(nNext, nFrom)) || (IsDoorSector(nFrom) && CanOpenFrom(nFrom, nFrom));
     if (wall[nWall].cstat & 1) // blocking wall
-        return kEdgeBlocked;
+        return bDoor ? kEdgeDoor : kEdgeBlocked;
+    if (DoorClosed(nNext) || DoorClosed(nFrom))
+        return bDoor ? kEdgeDoor : kEdgeBlocked;
     const int x = (wall[nWall].x + wall[wall[nWall].point2].x) >> 1;
     const int y = (wall[nWall].y + wall[wall[nWall].point2].y) >> 1;
-    const int nFrom = sectorofwall(nWall);
     if (approxDist(wall[nWall].x - wall[wall[nWall].point2].x, wall[nWall].y - wall[wall[nWall].point2].y) < 48)
         return kEdgeBlocked; // too narrow to walk through
     const int nGap = PortalGap(nWall, x, y);
+    const int nRiseNow = getflorzofslope(nFrom, x, y) - getflorzofslope(nNext, x, y);
+    if ((IsLift(nNext) || IsLift(nFrom)) && nRiseNow > (54<<8))
+        return kEdgeBlocked; // a lift that is up (or down): bots don't ride lifts yet
     if (nGap < (28<<8))
-        return (IsDoorSector(nNext) || IsDoorSector(nFrom)) ? kEdgeDoor : kEdgeBlocked;
+        return bDoor ? kEdgeDoor : kEdgeBlocked;
     const int nRise = getflorzofslope(nFrom, x, y) - getflorzofslope(nNext, x, y);
     if (nRise > (54<<8) && !(sector[nNext].extra > 0 && xsector[sector[nNext].extra].Underwater))
         return kEdgeBlocked;
@@ -355,6 +452,7 @@ static void PortalPoint(int nWall, int tx, int ty, int *px, int *py)
 }
 
 static uint8_t nWallFails[kMaxWalls]; // openings bots got stuck at, this level
+static uint8_t nItemFails[kMaxSprites]; // items bots couldn't get to (secret lifts and the like)
 
 // An opening it couldn't get through: avoid it for a while; when several times, for good.
 static void BlockWall(BOT *pBot, int nWall)
@@ -375,6 +473,69 @@ static void BlockWall(BOT *pBot, int nWall)
             wall[nWall].cstat, wall[nWall].nextwall >= 0 ? wall[wall[nWall].nextwall].cstat : -1,
             approxDist(wall[nWall].x - wall[wall[nWall].point2].x, wall[nWall].y - wall[wall[nWall].point2].y));
     }
+}
+
+enum { kDoorOpen, kDoorClosed, kDoorMoving };
+
+static int DoorState(int nWall)
+{
+    const int nSectors[2] = { wall[nWall].nextsector, sectorofwall(nWall) };
+    bool bAnyDoor = false;
+    for (int s : nSectors)
+    {
+        if (!IsDoorSector(s))
+            continue;
+        bAnyDoor = true;
+        XSECTOR *pXSector = &xsector[sector[s].extra];
+        if (pXSector->busy)
+            return kDoorMoving;
+        if (!pXSector->state)
+            return kDoorClosed;
+    }
+    if (!bAnyDoor)
+        return kDoorClosed;
+    return PortalGap(nWall, wall[nWall].x, wall[nWall].y) < (28<<8) ? kDoorClosed : kDoorOpen;
+}
+
+// What "use" would do right now: 1 push something, 0 nothing, -1 it's a level exit (never press).
+static int UseCheck(PLAYER *pPlayer)
+{
+    spritetype *pSprite = pPlayer->pSprite;
+    const int hit = HitScan(pSprite, pPlayer->zView, Cos(pSprite->ang)>>16, Sin(pSprite->ang)>>16, pPlayer->slope, 0x10000040, 128);
+    if ((approxDist(pSprite->x - gHitInfo.hitx, pSprite->y - gHitInfo.hity) >> 4) >= 64)
+        return 0;
+    int nTx = 0, nResult = 0;
+    switch (hit)
+    {
+    case 3:
+        if (sprite[gHitInfo.hitsprite].extra > 0 && sprite[gHitInfo.hitsprite].statnum != kStatDude)
+        {
+            XSPRITE *pXSprite = &xsprite[sprite[gHitInfo.hitsprite].extra];
+            nResult = pXSprite->Push, nTx = pXSprite->txID;
+        }
+        break;
+    case 0:
+    case 4:
+        if (wall[gHitInfo.hitwall].extra > 0 && xwall[wall[gHitInfo.hitwall].extra].triggerPush)
+            nResult = 1, nTx = xwall[wall[gHitInfo.hitwall].extra].txID;
+        else if (wall[gHitInfo.hitwall].nextsector >= 0 && sector[wall[gHitInfo.hitwall].nextsector].extra > 0)
+        {
+            XSECTOR *pXSector = &xsector[sector[wall[gHitInfo.hitwall].nextsector].extra];
+            nResult = pXSector->Wallpush, nTx = pXSector->txID;
+        }
+        break;
+    case 1:
+    case 2:
+        if (gHitInfo.hitsect >= 0 && sector[gHitInfo.hitsect].extra > 0)
+        {
+            XSECTOR *pXSector = &xsector[sector[gHitInfo.hitsect].extra];
+            nResult = pXSector->Push, nTx = pXSector->txID;
+        }
+        break;
+    }
+    if (nResult && (nTx == kChannelLevelExitNormal || nTx == kChannelLevelExitSecret))
+        return -1;
+    return nResult ? 1 : 0;
 }
 
 static bool WallBlocked(BOT *pBot, int nWall)
@@ -548,6 +709,9 @@ static void BotFindSpots(void)
     nCampSpots = 0;
     nItemSpots = 0;
     Bmemset(nWallFails, 0, sizeof(nWallFails));
+    Bmemset(nItemFails, 0, sizeof(nItemFails));
+    Bmemset(nCampFails, 0, sizeof(nCampFails));
+    FindDoors();
     for (int s = 0; s < numsectors; s++)
     {
         int x = 0, y = 0;
@@ -688,10 +852,10 @@ void botSetupMatch(void)
         PROFILE *pProfile = &gProfileNet[i];
         Bmemset(pProfile, 0, sizeof(PROFILE));
         Bstrncpyz(pProfile->name, pzBotNames[(nNameStart + nBot) % ARRAY_SSIZE(pzBotNames)], sizeof(pProfile->name));
-        pProfile->nAutoAim = 1;
+        pProfile->nAutoAim = pBot->skill.nAutoAim;
         pProfile->nWeaponSwitch = 1;
         pProfile->bWeaponFastSwitch = 0;
-        pProfile->skill = 2;
+        pProfile->skill = ClipRange(gBotHandicap, 0, 4);
         pProfile->nTeamPreference = 0;
         pProfile->nColorPreference = 0;
         pProfile->nModel = gBotCultists ? (nBot & 1) : 0;
@@ -714,11 +878,37 @@ void botEndMatch(void)
     netResetToSinglePlayer();
 }
 
+static int osdcmd_bot_sector(osdcmdptr_t parm);
+
 void botLevelStart(void)
 {
     if (!gBotMatch)
         return;
     BotFindSpots();
+    if (const char *pzTx = getenv("NOTBLOOD_BOT_TX")) // testing: who sends to this channel
+    {
+        const int nTx = atoi(pzTx);
+        for (int w = 0; w < numwalls; w++)
+            if (wall[w].extra > 0 && xwall[wall[w].extra].txID == nTx)
+                LOG_F(INFO, "tx %d: wall %d of sector %d push %d", nTx, w, sectorofwall(w), xwall[wall[w].extra].triggerPush);
+        for (int s = 0; s < numsectors; s++)
+            if (sector[s].extra > 0 && xsector[sector[s].extra].txID == nTx)
+                LOG_F(INFO, "tx %d: sector %d type %d enter %d push %d", nTx, s, sector[s].type, xsector[sector[s].extra].Enter, xsector[sector[s].extra].Push);
+        for (int i = 0; i < kMaxSprites; i++)
+            if (sprite[i].statnum < kMaxStatus && sprite[i].extra > 0 && xsprite[sprite[i].extra].txID == nTx)
+                LOG_F(INFO, "tx %d: sprite %d type %d sector %d push %d", nTx, i, sprite[i].type, sprite[i].sectnum, xsprite[sprite[i].extra].Push);
+    }
+    if (const char *pzDump = getenv("NOTBLOOD_BOT_SECTORS")) // testing: dump these sectors (comma separated)
+    {
+        char buffer[256];
+        Bstrncpyz(buffer, pzDump, sizeof(buffer));
+        for (char *pzTok = strtok(buffer, ","); pzTok; pzTok = strtok(NULL, ","))
+        {
+            const char *parms[1] = { pzTok };
+            osdfuncparm_t parm = { 1, "bot_sector", parms, "" };
+            osdcmd_bot_sector(&parm);
+        }
+    }
     BotClearPenalties();
     for (int i = 0; i < kMaxPlayers; i++)
     {
@@ -740,6 +930,10 @@ void botLevelStart(void)
         pBot->nTalkAt = 0;
         pBot->pzTalk = NULL;
         pBot->nWeaponNext = 0;
+        pBot->nCampSpot = -1;
+        pBot->nLastCamp = 0;
+        pBot->nFirePauseUntil = 0;
+        pBot->nAimErrZ = 0;
         pBot->nFireHold = pBot->nFireRelease = 0;
         pBot->bWasDead = false;
         for (int j = 0; j < kBotMaxBlocked; j++)
@@ -899,14 +1093,18 @@ static int ItemValue(PLAYER *pPlayer, spritetype *pItem)
 
 static bool ItemIgnored(BOT *pBot, int nSprite)
 {
+    if (nItemFails[nSprite] >= 2)
+        return true;
     for (int i = 0; i < 4; i++)
         if (pBot->ignoreSprite[i] == nSprite && pBot->ignoreUntil[i] > nNow)
             return true;
     return false;
 }
 
-static void IgnoreItem(BOT *pBot, int nSprite)
+static void IgnoreItem(BOT *pBot, int nSprite, bool bUnreachable = false)
 {
+    if (bUnreachable && nItemFails[nSprite] < 255)
+        nItemFails[nSprite]++;
     int nSlot = 0;
     for (int i = 1; i < 4; i++)
         if (pBot->ignoreUntil[i] < pBot->ignoreUntil[nSlot])
@@ -1178,6 +1376,13 @@ static bool PickCampSpot(BOT *pBot, spritetype *pSprite)
     for (int nTry = 0; nTry < 6; nTry++)
     {
         const int i = BotRand(pBot, nCampSpots);
+        if (nCampFails[i] >= 2)
+            continue;
+        bool bTaken = false; // two bots in the same corner looks silly
+        for (int j = 0; j < kMaxPlayers && !bTaken; j++)
+            bTaken = gBot[j].bActive && &gBot[j] != pBot && gBot[j].nCampSpot == i && (gBot[j].nState == kBotStateCamp || gBot[j].nState == kBotStateAmbush);
+        if (bTaken)
+            continue;
         const int nScore = BotDist(pSprite->x, pSprite->y, campSpot[i].x, campSpot[i].y) + BotRand(pBot, 3000);
         if (nScore < nBestScore)
             nBest = i, nBestScore = nScore;
@@ -1185,6 +1390,8 @@ static bool PickCampSpot(BOT *pBot, spritetype *pSprite)
     if (nBest < 0 || !SetGoal(pBot, campSpot[nBest].x, campSpot[nBest].y, campSpot[nBest].z, campSect[nBest]))
         return false;
     pBot->nWatchAng = campAng[nBest];
+    pBot->nCampSpot = nBest;
+    pBot->nLastCamp = nNow;
     return true;
 }
 
@@ -1454,7 +1661,7 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
                 pBot->nAtGoalSince = 0;
             if (nNow - pBot->nStateTime < 30*15)
                 return;
-            IgnoreItem(pBot, pBot->nGoalSprite); // couldn't get there
+            IgnoreItem(pBot, pBot->nGoalSprite, true); // couldn't get there
         }
         break;
     case kBotStateRoam:
@@ -1480,7 +1687,7 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
             pBot->nGoalSprite = nItem;
             return;
         }
-        IgnoreItem(pBot, nItem);
+        IgnoreItem(pBot, nItem, true);
     }
 
     // heard or remembers somebody: ambush, flank or chase
@@ -1537,14 +1744,37 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
     }
 
     // camp somewhere or walk around
-    if (BotChance(pBot, pPersona->nCamping) && pBot->nState != kBotStateCamp)
+    if (BotChance(pBot, pPersona->nCamping * 2 / 3) && pBot->nState != kBotStateCamp && (!pBot->nLastCamp || nNow - pBot->nLastCamp > 30*25))
     {
         SetState(pBot, kBotStateCamp);
         if (PickCampSpot(pBot, pSprite))
             return;
     }
     SetState(pBot, kBotStateRoam);
-    PickRoamGoal(pBot, pPlayer);
+    if (PickRoamGoal(pBot, pPlayer))
+        return;
+    // no way it knows anywhere (a lift that's away, stacked rooms, a door opened elsewhere):
+    // wander towards a neighbouring area like a lost player would; jumping and pressing use
+    // when it gets stuck, the game may well take it somewhere
+    const int nSector = pSprite->sectnum;
+    for (int nTry = 0; nTry < 8; nTry++)
+    {
+        const int w = sector[nSector].wallptr + BotRand(pBot, sector[nSector].wallnum);
+        const int nNext = wall[w].nextsector;
+        int x = (wall[w].x + wall[wall[w].point2].x) >> 1, y = (wall[w].y + wall[wall[w].point2].y) >> 1;
+        if (nNext < 0 && nTry < 6)
+            continue;
+        if (nNext >= 0 && inside(sectCenter[nNext].x, sectCenter[nNext].y, nNext))
+            x = sectCenter[nNext].x, y = sectCenter[nNext].y;
+        pBot->nGoalX = x;
+        pBot->nGoalY = y;
+        pBot->nGoalZ = pSprite->z;
+        pBot->nGoalSect = nNext >= 0 ? nNext : nSector;
+        pBot->nPathGoalSect = pBot->nGoalSect;
+        pBot->nPathLen = pBot->nPathPos = 0;
+        pBot->nRepathTime = nNow;
+        return;
+    }
 }
 
 //
@@ -1804,12 +2034,18 @@ void botGetInput(int nPlayer, GINPUT *pInput)
         {
             if (nEdge == kEdgeJump && bOnGround)
                 bWantJump = true;
-            else if (nEdge == kEdgeDoor && PortalGap(nPortal, tx, ty) < (28<<8))
+            else if (nEdge == kEdgeDoor)
             {
-                nLookAng = nMoveAng;
-                bWantUse = !((nNow + nPlayer) % 15);
-                if (BotDist(pSprite->x, pSprite->y, tx, ty) < 200)
-                    nMoveSpeed = 0;
+                const int nDoor = DoorState(nPortal);
+                if (nDoor != kDoorOpen)
+                {
+                    // walk up to it, face it and open it; wait while it moves
+                    nLookAng = nMoveAng;
+                    if (nDoor == kDoorClosed && !((nNow + nPlayer) % 12) && klabs(AngDiff(pSprite->ang, nMoveAng)) < 200)
+                        bWantUse = UseCheck(pPlayer) >= 0;
+                    if (BotDist(pSprite->x, pSprite->y, tx, ty) < 160)
+                        nMoveSpeed = 0;
+                }
             }
         }
     }
@@ -1822,8 +2058,8 @@ void botGetInput(int nPlayer, GINPUT *pInput)
         {
             if (!pBot->nWaitUntil)
             {
-                int nPatience = pBot->nState == kBotStateAmbush ? 30*4 + pBot->persona.nAmbush * 3 : 30*8 + pBot->persona.nCamping * 5;
-                pBot->nWaitUntil = nNow + nPatience + BotRand(pBot, 30*4);
+                int nPatience = pBot->nState == kBotStateAmbush ? 30*3 + pBot->persona.nAmbush * 2 : 30*4 + pBot->persona.nCamping * 3;
+                pBot->nWaitUntil = nNow + nPatience + BotRand(pBot, 30*3);
             }
             nMoveSpeed = 0;
             // watch the way in, glancing about now and then
@@ -1846,6 +2082,16 @@ void botGetInput(int nPlayer, GINPUT *pInput)
         if (bOnGround && BotChance(pBot, pBot->persona.nJump / 12))
             bWantJump = true;
         break;
+    }
+    // walking about, it glances to the sides now and then instead of staring down the corridor
+    if (!pEnemy && nMoveSpeed && pBot->nState != kBotStateFight && nEdge != kEdgeDoor && nNow >= pBot->nUnstickUntil)
+    {
+        if (nNow >= pBot->nGlanceNext)
+        {
+            pBot->nGlance = BotChance(pBot, 40) ? GaussRand(pBot, 260) : 0;
+            pBot->nGlanceNext = nNow + 20 + BotRand(pBot, 60);
+        }
+        nLookAng = (nLookAng + pBot->nGlance) & 2047;
     }
     if (pBot->nState != kBotStateFight && pBot->nHurtTime && nNow - pBot->nHurtTime < 20 && !pEnemy)
         nLookAng = pBot->nWatchAng;
@@ -1898,11 +2144,12 @@ void botGetInput(int nPlayer, GINPUT *pInput)
             }
             else
                 nMoveSpeed = 0;
-            // dodge sideways
+            // dodge sideways; standing still at the right distance looks like a turret, so at
+            // that distance it always moves one way or the other
             if (nNow >= pBot->nStrafeUntil)
             {
                 const int nStrafe = pBot->persona.nStrafe;
-                pBot->nStrafeDir = BotChance(pBot, nStrafe) ? (BotChance(pBot, 50) ? 1 : -1) : 0;
+                pBot->nStrafeDir = (BotChance(pBot, nStrafe) || !nMoveSpeed) ? (BotChance(pBot, 50) ? 1 : -1) : 0;
                 pBot->nStrafeUntil = nNow + 10 + BotRand(pBot, 40 - nStrafe / 4);
             }
             if (pBot->nStrafeDir)
@@ -1953,6 +2200,7 @@ void botGetInput(int nPlayer, GINPUT *pInput)
                 if (!bOnGround)
                     nErr += nErr / 3;
                 pBot->nAimErrGoal = GaussRand(pBot, nErr);
+                pBot->nAimErrZ = GaussRand(pBot, nErr / 3);
                 pBot->nAimErrNext = nNow + 6 + BotRand(pBot, 14);
             }
             pBot->nAimErr += (pBot->nAimErrGoal - pBot->nAimErr) / 4;
@@ -1967,6 +2215,11 @@ void botGetInput(int nPlayer, GINPUT *pInput)
             bFire = bSeeNow && nOff < nCone && nEnemyDist <= pWeapon->nMaxDist + 2000 && nEnemyDist >= pWeapon->nMinDist * 3 / 4;
             if (nWeapon == kWeaponPitchfork && nEnemyDist > 1000)
                 bFire = false;
+            // not a machine: now and then it stops shooting for a moment (re-aiming, nerves)
+            if (nNow < pBot->nFirePauseUntil)
+                bFire = false;
+            else if (bFire && nWeapon != kWeaponTNT && BotRand(pBot, 1000) < (100 - pBot->skill.nTrigger) * 2)
+                pBot->nFirePauseUntil = nNow + 8 + BotRand(pBot, 16);
             if (bFire)
             {
                 switch (nWeapon)
@@ -2042,8 +2295,8 @@ void botGetInput(int nPlayer, GINPUT *pInput)
     if (nMoveSpeed && bPathMove)
     {
         bool bStuck = false;
-        // only ever press "use" on doors: never on switches (a level exit would end the match)
-        const bool bDoorNear = nPortal >= 0 && (IsDoorSector(wall[nPortal].nextsector) || IsDoorSector(sectorofwall(nPortal)));
+        // press "use" on whatever is in front (doors, turning walls, switches), but never on a level exit
+        const bool bDoorNear = UseCheck(pPlayer) >= 0;
         const int nTargetDist = BotDist(pSprite->x, pSprite->y, tx, ty);
         if (BotDist(tx, ty, pBot->nProgressX, pBot->nProgressY) > 256 || !pBot->nProgressTime)
         {
@@ -2056,7 +2309,7 @@ void botGetInput(int nPlayer, GINPUT *pInput)
             pBot->nProgressDist = nTargetDist;
             pBot->nProgressTime = nNow;
         }
-        else if (nNow - pBot->nProgressTime > 40)
+        else if (nNow - pBot->nProgressTime > 30)
         {
             bStuck = true;
             pBot->nProgressTime = nNow;
@@ -2083,8 +2336,12 @@ void botGetInput(int nPlayer, GINPUT *pInput)
                     bWantUse = bDoorNear;
                     break;
                 case 2:
+                    pBot->nUnstickUntil = nNow + 12; // step back
+                    pBot->nUnstickStrafe = 1024;
+                    bWantUse = bDoorNear;
+                    break;
                 case 3:
-                    pBot->nUnstickUntil = nNow + 15;
+                    pBot->nUnstickUntil = nNow + 15; // and to the side
                     pBot->nUnstickStrafe = BotChance(pBot, 50) ? 512 : -512;
                     bWantUse = bDoorNear;
                     break;
@@ -2099,7 +2356,9 @@ void botGetInput(int nPlayer, GINPUT *pInput)
                 default:
                     pBot->nStuckCount = 0;
                     if (pBot->nGoalSprite >= 0)
-                        IgnoreItem(pBot, pBot->nGoalSprite);
+                        IgnoreItem(pBot, pBot->nGoalSprite, true);
+                    if (pBot->nState == kBotStateCamp && pBot->nCampSpot >= 0 && nCampFails[pBot->nCampSpot] < 255)
+                        nCampFails[pBot->nCampSpot]++;
                     pBot->nState = -1;
                     SetState(pBot, kBotStateRoam);
                     pBot->nNextThink = nNow;
@@ -2145,8 +2404,9 @@ void botGetInput(int nPlayer, GINPUT *pInput)
     int nWantLook = 0;
     if (nLookZ != INT32_MIN && nEnemyDist > 0)
     {
-        const int dz = pPlayer->zView - nLookZ; // positive: it is higher up
-        nWantLook = int(atan2f(float(dz) / 16.f, float(nEnemyDist)) * (1024.f / fPI));
+        // the look angle whose aim slope (horiz) points at the target: horiz = 100*tan(look), slope dz = -horiz*dist/8
+        const float fHoriz = float(pPlayer->zWeapon - nLookZ) * 8.f / float(nEnemyDist);
+        nWantLook = int(atanf(fHoriz / 100.f) * (1024.f / fPI)) + pBot->nAimErrZ;
         nWantLook = ClipRange(nWantLook, -340, 280);
     }
     const int nLook = fix16_to_int(pPlayer->q16look);
@@ -2241,8 +2501,32 @@ static int osdcmd_bot_match(osdcmdptr_t parm)
     return OSDCMD_OK;
 }
 
+static int osdcmd_bot_sector(osdcmdptr_t parm) // map debugging: how bots see a sector's openings
+{
+    if (parm->numparms < 1)
+        return OSDCMD_SHOWHELP;
+    const int s = Batol(parm->parms[0]);
+    if (s < 0 || s >= numsectors)
+        return OSDCMD_OK;
+    XSECTOR *pX = sector[s].extra > 0 ? &xsector[sector[s].extra] : NULL;
+    LOG_F(INFO, "sector %d: type %d floor %d ceiling %d door %d lift %d x %d rx %d tx %d state %d busy %d push %d wallpush %d locked %d key %d",
+        s, sector[s].type, sector[s].floorz, sector[s].ceilingz, bDoorSect[s], IsLift(s), sector[s].extra, pX ? pX->rxID : -1, pX ? pX->txID : -1,
+        pX ? pX->state : -1, pX ? pX->busy : -1, pX ? pX->Push : -1, pX ? pX->Wallpush : -1, pX ? pX->locked : -1, pX ? pX->Key : -1);
+    for (int w = sector[s].wallptr; w < sector[s].wallptr + sector[s].wallnum; w++)
+    {
+        XWALL *pXW = wall[w].extra > 0 ? &xwall[wall[w].extra] : NULL;
+        LOG_F(INFO, "  wall %d -> sector %d edge %d cstat %d fails %d xwall %d push %d tx %d rx %d", w, wall[w].nextsector,
+            wall[w].nextsector >= 0 ? EdgeType(w) : -1, wall[w].cstat, nWallFails[w], wall[w].extra, pXW ? pXW->triggerPush : -1, pXW ? pXW->txID : -1, pXW ? pXW->rxID : -1);
+    }
+    for (int i = headspritesect[s]; i >= 0; i = nextspritesect[i])
+        LOG_F(INFO, "  sprite %d type %d stat %d cstat %d xsprite %d push %d tx %d", i, sprite[i].type, sprite[i].statnum, sprite[i].cstat, sprite[i].extra,
+            sprite[i].extra > 0 ? xsprite[sprite[i].extra].Push : -1, sprite[i].extra > 0 ? xsprite[sprite[i].extra].txID : -1);
+    return OSDCMD_OK;
+}
+
 void botRegisterCvars(void)
 {
+    OSD_RegisterFunction("bot_sector", "bot_sector <sector>: writes how bots see that sector's openings to the log", osdcmd_bot_sector);
     OSD_RegisterFunction("bot_match", "bot_match [frag limit] [time limit]: starts a bot match with the BOTS menu's settings", osdcmd_bot_match);
     static osdcvardata_t cvars[] = {
         { "bot_count", "number of bots in a bot match", (void *)&gBotCount, CVAR_INT, 1, kMaxPlayers - 1 },
@@ -2256,6 +2540,7 @@ void botRegisterCvars(void)
         { "bot_flank", "how often bots go round to flank, percent of the personality's", (void *)&gBotFlank, CVAR_INT, 0, 200 },
         { "bot_camping", "how much bots camp, percent of the personality's", (void *)&gBotCamping, CVAR_INT, 0, 200 },
         { "bot_taunts", "bots talk and taunt", (void *)&gBotTaunts, CVAR_BOOL, 0, 1 },
+        { "bot_handicap", "how much damage bots take (0: much less, 2: normal, 4: much more)", (void *)&gBotHandicap, CVAR_INT, 0, 4 },
         { "bot_cultists", "half the bots look like cultists", (void *)&gBotCultists, CVAR_BOOL, 0, 1 },
         { "bot_debug", "show what every bot is doing (1: on screen, 2: also in the log every 2 seconds)", (void *)&gBotDebug, CVAR_INT, 0, 2 },
         { "bot_watch", "watch the game through a bot's eyes (0: off, 1-7: that bot)", (void *)&gBotWatch, CVAR_INT|CVAR_NOSAVE, 0, kBotMaxBots },

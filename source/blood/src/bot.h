@@ -57,6 +57,7 @@ extern int gBotCamping;
 extern int gBotTaunts;
 extern int gBotDebug;
 extern int gBotCultists;
+extern int gBotHandicap;  // 0-4: how much damage bots take (2 normal), shown next to their names
 
 extern bool gBotMatch;
 extern const char *gBotSkillNames[kBotSkillMax];

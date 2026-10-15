@@ -25,7 +25,7 @@ extern CGameMenu menuCoopSave;
 extern CGameMenu menuMods;
 extern CGameMenu menuLanGames;
 extern CGameMenu menuBots;
-extern CGameMenuItemChain itemEpisodeBots;
+extern CGameMenuItemChain itemNetworkBots;
 
 // menu.cpp: bot matches use the multiplayer game setup
 void SetupBotMatchMenu(CGameMenuItemChain *pItem);

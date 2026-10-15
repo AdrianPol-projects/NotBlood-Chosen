@@ -1285,11 +1285,11 @@ char zNetAddressBuffer[48] = "localhost";
 char zNetPortBuffer[6] = "23513";
 
 CGameMenuItemTitle itemNetworkTitle("MULTIPLAYER", 1, 160, 20, 2038);
-CGameMenuItemChain itemNetworkHost("HOST A GAME", 1, 0, 55, 320, 1, &menuNetworkHost, -1, SetupNetworkHostMenu, 0);
-CGameMenuItemChain itemNetworkJoin("JOIN A GAME", 1, 0, 73, 320, 1, &menuNetworkJoin, -1, SetupNetworkJoinMenu, 0);
-CGameMenuItemChain itemNetworkFind("FIND LAN GAMES", 1, 0, 91, 320, 1, &menuLanGames, -1, SetupLanGamesMenu, 0);
-CGameMenuItemChain itemNetworkOnline("ONLINE", 1, 0, 109, 320, 1, &menuOnline, -1, SetupOnlineMenu, 0);
-CGameMenuItemChain itemNetworkPlayer("PLAYER SETUP", 1, 0, 127, 320, 1, &menuOptionsPlayer, -1, NULL, 0);
+CGameMenuItemChain itemNetworkHost("HOST A GAME", 1, 0, 46, 320, 1, &menuNetworkHost, -1, SetupNetworkHostMenu, 0);
+CGameMenuItemChain itemNetworkJoin("JOIN A GAME", 1, 0, 64, 320, 1, &menuNetworkJoin, -1, SetupNetworkJoinMenu, 0);
+CGameMenuItemChain itemNetworkFind("FIND LAN GAMES", 1, 0, 82, 320, 1, &menuLanGames, -1, SetupLanGamesMenu, 0);
+CGameMenuItemChain itemNetworkOnline("ONLINE", 1, 0, 100, 320, 1, &menuOnline, -1, SetupOnlineMenu, 0);
+CGameMenuItemChain itemNetworkPlayer("PLAYER SETUP", 1, 0, 136, 320, 1, &menuOptionsPlayer, -1, NULL, 0);
 
 CGameMenuItemTitle itemNetworkHostTitle("HOST A GAME", 1, 160, 20, 2038);
 CGameMenuItemSlider itemNetworkHostPlayerNum("PLAYER NUMBER:", 3, 66, 70, 180, 1, 2, kMaxPlayers, 1, NULL, -1, -1, kMenuSliderValue);
@@ -1557,15 +1557,6 @@ void SetupEpisodeMenu(void)
     else
         itemUserMap.m_nY = nOffset+(height+8)*j;
     menuEpisode.Add(&itemUserMap, false);
-    itemEpisodeBots.m_nY = itemUserMap.m_nY+height+4;
-    if (itemEpisodeBots.m_nY+height > 192) // keep both on the screen
-    {
-        const int nUp = itemEpisodeBots.m_nY+height-192;
-        itemUserMap.m_nY -= nUp;
-        itemEpisodeBots.m_nY -= nUp;
-    }
-    itemEpisodeBots.tooltip_pzTextUpper = "Bloodbath against computer players";
-    menuEpisode.Add(&itemEpisodeBots, false);
     menuEpisode.Add(&itemBloodQAV, false);
 
     menuUserMap.Add(&itemUserMapTitle, true);
@@ -4576,6 +4567,7 @@ void SetupNetworkMenu(void)
     menuNetwork.Add(&itemNetworkJoin, false);
     menuNetwork.Add(&itemNetworkFind, false);
     menuNetwork.Add(&itemNetworkOnline, false);
+    menuNetwork.Add(&itemNetworkBots, false);
     menuNetwork.Add(&itemNetworkPlayer, false);
     menuNetwork.Add(&itemBloodQAV, false);
 
