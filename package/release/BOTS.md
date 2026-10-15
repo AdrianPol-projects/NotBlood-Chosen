@@ -19,6 +19,10 @@ MULTIPLAYER > **PLAY WITH BOTS**
 - **MATCH SETTINGS**: the multiplayer setup - bloodbath or teams, map, frag and time limits, weapons, items, mutators
 - **START MATCH**. ESC pauses the match; NEW GAME there sets up the next bot match (bots and match settings); END GAME goes back to normal single player.
 
+The difficulties and personalities include the tuning that played best in testing (slower reactions, more aggression, jumping and ambushes, less camping); the FINE TUNING sliders start again at 100% once.
+
+Before each decision a bot sizes up the situation like a player: its health, armor and weapon against the enemies it knows are close (their weapons, powerups, how hurt they must be from the hits it saw land, whether they have seen it), the score and how close the frag limit is, and whether it just got a kill or just got hurt. Then it weighs fighting, getting away, getting up high, going round, ambushing, chasing, collecting and camping against each other. When two others fight each other and neither has noticed it, it may wait and then finish off whoever is left.
+
 The bots only know what a player could: they see what's in front of them and not behind walls, hear shots, jumps and running, and remember where they last saw you. They take a moment to react, their aim wobbles and settles while they track you, and they pause their shooting now and then. On easy and normal they don't use autoaim. They open doors and sliding walls (from the side the button is on), never press a level exit, and when they're lost they look around for a way out. They ride lifts: they call them, ride them up and down and walk over to a lift's switch when that's what works it, so they climb out of pits too.
 
 On every map they work out the good high places: how much you can see from there, how far you look down on it, and weapons close by. Depending on their personality and the HIGH GROUND setting they go up there, hold it, don't step off ledges, shoot down at you instead of jumping after you, and go for splash weapons (napalm, TNT, flares) when you have the high ground.

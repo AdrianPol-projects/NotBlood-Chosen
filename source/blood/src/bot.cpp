@@ -65,6 +65,7 @@ int gBotDebug = 0;
 int gBotCultists = 1;
 int gBotHandicap = 2;
 int gBotHighGround = 100;
+static int gBotTuning = 0; // 2: the presets include the tuning players liked (old fine tuning is reset once)
 static int gBotWatch = 0;
 
 bool gBotMatch = false;
@@ -116,10 +117,10 @@ struct BOTSKILL
 };
 
 static const BOTSKILL gBotSkillInfo[kBotSkillMax] = {
-    { 240, 26, 30, 240, 4500, 10, 15, 50, 0 },
-    { 160, 17, 48, 290, 6500, 30, 35, 70, 0 },
-    { 100, 12, 75, 350, 9500, 55, 60, 85, 2 },
-    { 60, 8, 110, 410, 13000, 80, 85, 100, 1 },
+    { 204, 31, 30, 240, 4500, 10, 25, 55, 0 },
+    { 136, 20, 50, 295, 6800, 35, 45, 78, 0 },
+    { 85, 14, 78, 355, 9800, 60, 70, 90, 2 },
+    { 51, 10, 115, 415, 13500, 85, 95, 100, 1 },
 };
 
 struct BOTPERSONA
@@ -135,13 +136,13 @@ struct BOTPERSONA
 };
 
 static const BOTPERSONA gBotPersonaInfo[kBotPersonaMax] = {
-    { 55, 20, 45, 40, 35, 30, 60, 50 }, // mixed (not used directly)
-    { 55, 20, 45, 40, 35, 30, 60, 50 }, // balanced
-    { 95, 0, 10, 25, 50, 10, 50, 25 },  // rusher
-    { 30, 90, 75, 15, 10, 40, 30, 85 }, // camper
-    { 55, 25, 85, 90, 35, 35, 65, 60 }, // trickster
-    { 20, 50, 50, 30, 45, 65, 70, 55 }, // coward
-    { 70, 5, 20, 30, 95, 25, 90, 35 },  // jumper
+    { 72, 14, 81, 40, 52, 30, 60, 40 },  // mixed (not used directly)
+    { 72, 14, 81, 40, 52, 30, 60, 40 },  // balanced
+    { 100, 0, 18, 25, 75, 10, 50, 20 },  // rusher
+    { 39, 63, 100, 15, 15, 40, 30, 68 }, // camper
+    { 72, 18, 100, 90, 52, 35, 65, 48 }, // trickster
+    { 26, 35, 90, 30, 68, 65, 70, 44 },  // coward
+    { 91, 4, 36, 30, 100, 25, 90, 28 },  // jumper
 };
 
 #define kBotMaxPath 96
@@ -183,6 +184,11 @@ struct BOT
 
     int nLastHealth, nHurtTime;
     BOTMEMORY mem[kMaxPlayers];
+    int nHurt[kMaxPlayers];        // damage it saw its shots do to each enemy since that one last spawned
+    int nEnemyHealth[kMaxPlayers]; // to see the change
+    int nLastShot;                 // when it last fired
+    int nLastKill, nLastPain;      // momentum: just got a kill / just got hurt badly
+    int nThirdPartyUntil;          // letting two others fight it out first
 
     int nStuckX, nStuckY, nStuckCheck, nStuckCount, nUnstickUntil, nUnstickStrafe;
     int blockedWall[kBotMaxBlocked], blockedUntil[kBotMaxBlocked];
@@ -565,9 +571,9 @@ static void BlockWall(BOT *pBot, int nWall)
     {
         const int s1 = sectorofwall(nWall), s2 = wall[nWall].nextsector;
         LOG_F(INFO, "Bot %s stuck at opening %d (%d times): sector %d floor %d ceiling %d -> sector %d floor %d ceiling %d, cstat %d/%d, width %d",
-            gProfile[pBot->nPlayer].name, nWall, nWallFails[nWall], s1, sector[s1].floorz, sector[s1].ceilingz, s2, s2 >= 0 ? sector[s2].floorz : 0, s2 >= 0 ? sector[s2].ceilingz : 0,
-            wall[nWall].cstat, wall[nWall].nextwall >= 0 ? wall[wall[nWall].nextwall].cstat : -1,
-            approxDist(wall[nWall].x - wall[wall[nWall].point2].x, wall[nWall].y - wall[wall[nWall].point2].y));
+            gProfile[pBot->nPlayer].name, nWall, nWallFails[nWall], s1, (int)sector[s1].floorz, (int)sector[s1].ceilingz, s2, s2 >= 0 ? (int)sector[s2].floorz : 0, s2 >= 0 ? (int)sector[s2].ceilingz : 0,
+            (int)wall[nWall].cstat, (int)wall[nWall].nextwall >= 0 ? (int)wall[wall[nWall].nextwall].cstat : -1,
+            approxDist((int)wall[nWall].x - (int)wall[wall[nWall].point2].x, (int)wall[nWall].y - (int)wall[wall[nWall].point2].y));
     }
 }
 
@@ -1059,6 +1065,12 @@ const char *botStateName(int nPlayer)
 
 void botSetupMatch(void)
 {
+    if (gBotTuning < 2)
+    {
+        // the presets now are what used to be fun with the sliders: start the sliders afresh
+        gBotAccuracy = gBotReaction = gBotAggression = gBotJumping = gBotAmbush = gBotFlank = gBotCamping = gBotHighGround = 100;
+        gBotTuning = 2;
+    }
     const int nBots = ClipRange(gBotCount, 1, kMaxPlayers - 1);
     gBotMatch = true;
     myconnectindex = connecthead = 0;
@@ -1126,13 +1138,13 @@ void botLevelStart(void)
         const int nTx = atoi(pzTx);
         for (int w = 0; w < numwalls; w++)
             if (wall[w].extra > 0 && xwall[wall[w].extra].txID == nTx)
-                LOG_F(INFO, "tx %d: wall %d of sector %d push %d", nTx, w, sectorofwall(w), xwall[wall[w].extra].triggerPush);
+                LOG_F(INFO, "tx %d: wall %d of sector %d push %d", nTx, w, sectorofwall(w), xwall[(int)wall[w].extra].triggerPush);
         for (int s = 0; s < numsectors; s++)
             if (sector[s].extra > 0 && xsector[sector[s].extra].txID == nTx)
-                LOG_F(INFO, "tx %d: sector %d type %d enter %d push %d", nTx, s, sector[s].type, xsector[sector[s].extra].Enter, xsector[sector[s].extra].Push);
+                LOG_F(INFO, "tx %d: sector %d type %d enter %d push %d", nTx, s, (int)sector[s].type, xsector[(int)sector[s].extra].Enter, xsector[(int)sector[s].extra].Push);
         for (int i = 0; i < kMaxSprites; i++)
             if (sprite[i].statnum < kMaxStatus && sprite[i].extra > 0 && xsprite[sprite[i].extra].txID == nTx)
-                LOG_F(INFO, "tx %d: sprite %d type %d sector %d push %d", nTx, i, sprite[i].type, sprite[i].sectnum, xsprite[sprite[i].extra].Push);
+                LOG_F(INFO, "tx %d: sprite %d type %d sector %d push %d", nTx, i, (int)sprite[i].type, (int)sprite[i].sectnum, xsprite[(int)sprite[i].extra].Push);
     }
     if (const char *pzPath = getenv("NOTBLOOD_BOT_PATH")) // testing: "from,to" sectors: the way bots plan
     {
@@ -1144,7 +1156,7 @@ void botLevelStart(void)
             const int n = PathSearch(NULL, a, sectCenter[a].x, sectCenter[a].y, b, sectCenter[b].x, sectCenter[b].y, path, kBotMaxPath, &nCost);
             LOG_F(INFO, "path %d -> %d: %d openings, cost %d", a, b, n, nCost);
             for (int i = 0; i < n; i++)
-                LOG_F(INFO, "  opening %d: %d -> %d plan %d", path[i], sectorofwall(path[i]), wall[path[i]].nextsector, EdgeTypePlan(path[i]));
+                LOG_F(INFO, "  opening %d: %d -> %d plan %d", path[i], sectorofwall(path[i]), (int)wall[path[i]].nextsector, EdgeTypePlan(path[i]));
         }
     }
     if (const char *pzDump = getenv("NOTBLOOD_BOT_SECTORS")) // testing: dump these sectors (comma separated)
@@ -1196,6 +1208,10 @@ void botLevelStart(void)
             pBot->ignoreUntil[j] = 0;
         pBot->nAtGoalSince = 0;
         Bmemset(pBot->mem, 0, sizeof(pBot->mem));
+        Bmemset(pBot->nHurt, 0, sizeof(pBot->nHurt));
+        for (int j = 0; j < kMaxPlayers; j++)
+            pBot->nEnemyHealth[j] = 100;
+        pBot->nLastKill = pBot->nLastPain = pBot->nLastShot = pBot->nThirdPartyUntil = 0;
     }
 }
 
@@ -1900,66 +1916,190 @@ static void BotSay(BOT *pBot, const char *pzLine, int nDelay)
     pBot->nTalkAt = nNow + nDelay;
 }
 
+// How a player in its place would size things up.
+struct BOTVIEW
+{
+    int nMyHealth;  // health and some of the armor
+    int nMyPower;   // its best weapon, powerups
+    int nThreat;    // the enemies close by it knows of: their guns, how hurt they look, whether they've seen it
+    int nRatio;     // its strength against the threat, 100 even
+    int nEnemies;
+    bool bEnemyQuad;
+    int nScoreDiff; // its frags minus the best of the others
+    bool bNearEnd;  // somebody is close to the frag limit
+    int nMomentum;  // +1 just got a kill, -1 just got hurt badly
+};
+
+static int EnemyHealthGuess(BOT *pBot, int p) // from the hits it saw land
+{
+    return ClipRange(100 - pBot->nHurt[p], 15, 100);
+}
+
+static bool FacingMe(spritetype *pOther, spritetype *pMe, int nRange)
+{
+    return klabs(AngDiff(pOther->ang, getangle(pMe->x - pOther->x, pMe->y - pOther->y))) < nRange;
+}
+
+static void BotSizeUp(BOT *pBot, PLAYER *pPlayer, BOTVIEW *pView)
+{
+    spritetype *pSprite = pPlayer->pSprite;
+    const int nArmor = (pPlayer->armor[0] + pPlayer->armor[1] + pPlayer->armor[2]) >> 4;
+    pView->nMyHealth = (pPlayer->pXSprite->health >> 4) + nArmor / 3;
+    int nScore;
+    BestWeapon(pPlayer, 2500, &nScore);
+    pView->nMyPower = nScore / 10 + 10;
+    if (powerupCheck(pPlayer, kPwUpTwoGuns))
+        pView->nMyPower *= 2;
+    if (powerupCheck(pPlayer, kPwUpDeathMask))
+        pView->nMyPower *= 4;
+    pView->nThreat = 0;
+    pView->nEnemies = 0;
+    pView->bEnemyQuad = false;
+    int nBest = -999;
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        PLAYER *pOther = &gPlayer[p];
+        if (pOther == pPlayer)
+            continue;
+        if (pOther->fragCount > nBest && (gGameOptions.nGameType != kGameTypeTeams || IsEnemyPlayer(pPlayer, pOther)))
+            nBest = pOther->fragCount;
+        if (!IsEnemyPlayer(pPlayer, pOther) || pOther->pXSprite->health <= 0)
+            continue;
+        BOTMEMORY *pMem = &pBot->mem[p];
+        if (!pMem->bValid || nNow - pMem->nTime > 30*6 || BotDist(pSprite->x, pSprite->y, pMem->x, pMem->y) > 5000)
+            continue;
+        const int nPower = pMem->bSeen ? PlayerPower(pOther) : 50;
+        if (pMem->bSeen && powerupCheck(pOther, kPwUpTwoGuns))
+            pView->bEnemyQuad = true;
+        int nStrength = nPower * EnemyHealthGuess(pBot, p) / 100;
+        if (pMem->bSeen && FacingMe(pOther->pSprite, pSprite, 200))
+            nStrength += nStrength / 3; // it has seen it
+        pView->nThreat += ClipLow(nStrength, 5);
+        pView->nEnemies++;
+    }
+    const int nMine = pView->nMyPower * ClipHigh(pView->nMyHealth, 200) / 100;
+    pView->nRatio = pView->nThreat ? nMine * 100 / pView->nThreat : 300;
+    pView->nScoreDiff = nBest == -999 ? 0 : pPlayer->fragCount - nBest;
+    pView->bNearEnd = gPlayerRoundScoreLimit > 0 && max(nBest, pPlayer->fragCount) >= gPlayerRoundScoreLimit - 2;
+    pView->nMomentum = (pBot->nLastKill && nNow - pBot->nLastKill < 30*10 ? 1 : 0) - (pBot->nLastPain && nNow - pBot->nLastPain < 30*5 ? 1 : 0);
+}
+
+// Its target is busy with somebody else, and neither looks its way: let them fight, then
+// finish whoever is left (or both).
+static bool OthersFighting(BOT *pBot, PLAYER *pPlayer, spritetype *pTarget)
+{
+    PLAYER *pTargetPlayer = SpritePlayer(pTarget->index);
+    if (!pTargetPlayer || FacingMe(pTarget, pPlayer->pSprite, 250))
+        return false;
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        PLAYER *pOther = &gPlayer[p];
+        if (pOther == pPlayer || pOther == pTargetPlayer || pOther->pXSprite->health <= 0 || !IsEnemyPlayer(pPlayer, pOther))
+            continue;
+        spritetype *pOtherSprite = pOther->pSprite;
+        if (BotDist(pOtherSprite->x, pOtherSprite->y, pTarget->x, pTarget->y) > 3500 || FacingMe(pOtherSprite, pPlayer->pSprite, 250))
+            continue;
+        const bool bOtherOnTarget = FacingMe(pOtherSprite, pTarget, 120) || (botIsBot(p) && gBot[p].nTarget == pTarget->index);
+        const bool bTargetOnOther = FacingMe(pTarget, pOtherSprite, 150) || pTargetPlayer->input.buttonFlags.shoot;
+        if (bOtherOnTarget && bTargetOnOther)
+            return true;
+    }
+    UNREFERENCED_PARAMETER(pBot);
+    return false;
+}
+
+struct BOTOPTION { int nScore, nId; };
+
+static void SortOptions(BOTOPTION *pOptions, int nCount)
+{
+    for (int i = 1; i < nCount; i++)
+        for (int j = i; j > 0 && pOptions[j].nScore > pOptions[j-1].nScore; j--)
+            swap(&pOptions[j], &pOptions[j-1]);
+}
+
+enum { kOptFight, kOptFlee, kOptHigh, kOptFlank, kOptWait, kOptCollect, kOptHunt, kOptAmbush, kOptCamp, kOptRoam };
+
 static void BotThink(BOT *pBot, PLAYER *pPlayer)
 {
     spritetype *pSprite = pPlayer->pSprite;
-    const int nHealth = pPlayer->pXSprite->health >> 4;
     const BOTPERSONA *pPersona = &pBot->persona;
     const int nTactics = pBot->skill.nTactics;
+    BOTVIEW view;
+    BotSizeUp(pBot, pPlayer, &view);
 
-    // somebody it can see: fight or get away
+    // somebody it can see: weigh up fighting, getting away, getting up high, going round, waiting
     if (pBot->nTarget >= 0)
     {
         spritetype *pEnemy = &sprite[pBot->nTarget];
         PLAYER *pEnemyPlayer = SpritePlayer(pBot->nTarget);
         const int nDist = BotDist(pSprite->x, pSprite->y, pEnemy->x, pEnemy->y);
-        if (pEnemyPlayer && pBot->nState != kBotStateFlee)
+        if (pBot->nState == kBotStateFlee && nNow - pBot->nStateTime < 30*5 && pBot->nGoalSect >= 0)
+            return; // keep running for a while
+        if (pBot->nState == kBotStateHighGround && pBot->nGoalSect >= 0 && nNow - pBot->nStateTime < 30*7)
+            return; // on its way up there
+        if (nNow < pBot->nThirdPartyUntil)
+            return; // still letting them fight
+        const bool bUnaware = !FacingMe(pEnemy, pSprite, 300);
+        BOTOPTION options[5];
+        int nOptions = 0;
+        const int nFight = 50 + pPersona->nAggression / 2 + ClipRange((view.nRatio - 100) / 3, -40, 40) + view.nMomentum * 12
+            + (bUnaware ? 10 : 0) + (view.nScoreDiff < 0 ? 8 : 0) + (pBot->nState == kBotStateFight ? 10 : 0) + BotRand(pBot, 15);
+        options[nOptions++] = { nFight, kOptFight };
+        if (pEnemyPlayer && !powerupCheck(pPlayer, kPwUpDeathMask))
         {
-            int nMyScore;
-            BestWeapon(pPlayer, nDist, &nMyScore);
-            const int nMine = nMyScore / 10 + 10;
-            const int nTheirs = PlayerPower(pEnemyPlayer);
-            const bool bOutgunned = nTheirs * 10 > nMine * 13;
-            const bool bHurt = nHealth < pPersona->nFlee || (nHealth < pPersona->nFlee + 25 && bOutgunned);
-            if (bHurt && nHealth < 60 && BotChance(pBot, 40 + nTactics / 2) && !powerupCheck(pPlayer, kPwUpDeathMask))
+            const int nFlee = ClipLow(55 - view.nMyHealth, 0) * (100 + pPersona->nFlee) / 100 + ClipRange((80 - view.nRatio) / 2, 0, 50)
+                + (view.bEnemyQuad ? 45 : 0) + (view.bNearEnd && view.nScoreDiff > 0 ? 15 : 0) + (view.nEnemies >= 2 ? 15 : 0)
+                - (nDist < 700 ? 20 : 0) + nTactics / 10 + BotRand(pBot, 15);
+            options[nOptions++] = { nFlee, kOptFlee };
+        }
+        if (nNow >= pBot->nHoldUntil && nNow - pBot->nLastHighTry > 45 && nDist > 1200)
+        {
+            const int nHigh = pPersona->nHighGround / 2 + (pSprite->z - pEnemy->z > (48<<8) ? 25 : 0) + ClipRange((100 - view.nRatio) / 4, 0, 20) + BotRand(pBot, 15);
+            options[nOptions++] = { nHigh, kOptHigh };
+        }
+        if (pEnemyPlayer && nDist > 4500 && bUnaware && pBot->nState != kBotStateFight)
+            options[nOptions++] = { pPersona->nFlank * nTactics / 150 + 20 + BotRand(pBot, 15), kOptFlank };
+        if (pEnemyPlayer && nTactics > 30 && view.nMyHealth > 30 && OthersFighting(pBot, pPlayer, pEnemy))
+            options[nOptions++] = { 30 + nTactics / 3 + pPersona->nAmbush / 5 - pPersona->nAggression / 5 + BotRand(pBot, 15), kOptWait };
+        SortOptions(options, nOptions);
+        for (int i = 0; i < nOptions; i++)
+        {
+            switch (options[i].nId)
             {
-                if (PlanFlee(pBot, pPlayer, pEnemy))
+            case kOptFlee:
+                if (options[i].nScore < 45 || !PlanFlee(pBot, pPlayer, pEnemy))
+                    continue;
                 {
                     const int nGoalSprite = pBot->nGoalSprite;
                     pBot->nState = kBotStateFlee; // keep the path SetState would clear
                     pBot->nStateTime = nNow;
                     pBot->nGoalSprite = nGoalSprite;
-                    return;
                 }
-            }
-            // far away and not looking this way: sneak round instead of running at it
-            const bool bUnaware = klabs(AngDiff(pEnemy->ang, getangle(pSprite->x - pEnemy->x, pSprite->y - pEnemy->y))) > 300;
-            if (nDist > 4500 && bUnaware && pBot->nState != kBotStateFight && BotChance(pBot, pPersona->nFlank * nTactics / 150))
-            {
-                const int p = pEnemyPlayer->nPlayer;
-                if (PlanFlank(pBot, pPlayer, &pBot->mem[p]))
-                {
-                    pBot->nState = kBotStateFlank;
-                    pBot->nStateTime = nNow;
-                    return;
-                }
-            }
-        }
-        if (pBot->nState == kBotStateFlee && nNow - pBot->nStateTime < 30*6 && pBot->nGoalSect >= 0)
-            return; // keep running for a while
-        if (pBot->nState == kBotStateHighGround && pBot->nGoalSect >= 0 && nNow - pBot->nStateTime < 30*7)
-            return; // on its way up there
-        // a high place close by that looks down on the enemy: get up there
-        if (pBot->nState != kBotStateHighGround && nNow >= pBot->nHoldUntil && nNow - pBot->nLastHighTry > 45 && nDist > 1200)
-        {
-            pBot->nLastHighTry = nNow;
-            if (BotChance(pBot, pPersona->nHighGround * 2 / 3) && PlanHighGround(pBot, pPlayer, pEnemy))
                 return;
-        }
-        if (pBot->nState != kBotStateFight)
-        {
-            SetState(pBot, kBotStateFight);
-            pBot->nStrafeUntil = 0;
+            case kOptHigh:
+                pBot->nLastHighTry = nNow;
+                if (!PlanHighGround(pBot, pPlayer, pEnemy))
+                    continue;
+                return;
+            case kOptFlank:
+                if (!PlanFlank(pBot, pPlayer, &pBot->mem[pEnemyPlayer->nPlayer]))
+                    continue;
+                pBot->nState = kBotStateFlank;
+                pBot->nStateTime = nNow;
+                return;
+            case kOptWait:
+                pBot->nThirdPartyUntil = nNow + 45 + BotRand(pBot, 60);
+                SetState(pBot, kBotStateFight);
+                return;
+            case kOptFight:
+            default:
+                if (pBot->nState != kBotStateFight)
+                {
+                    SetState(pBot, kBotStateFight);
+                    pBot->nStrafeUntil = 0;
+                }
+                return;
+            }
         }
         return;
     }
@@ -2027,49 +2167,71 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
     }
     pBot->nSearchUntil = 0;
 
-    // badly needs something (health when hurt, a real weapon): that first
+    // nobody in sight: weigh up what to do next
+    const int nHealth = pPlayer->pXSprite->health >> 4;
     int nValue;
     const int nItem = FindBestItem(pBot, pPlayer, &nValue, INT32_MIN, 0);
-    if (nItem >= 0 && nValue >= 80 - pPersona->nAggression / 4)
-    {
-        SetState(pBot, kBotStateCollect);
-        if (SetGoal(pBot, sprite[nItem].x, sprite[nItem].y, sprite[nItem].z, sprite[nItem].sectnum))
-        {
-            pBot->nGoalSprite = nItem;
-            return;
-        }
-        IgnoreItem(pBot, nItem, true);
-    }
-
-    // heard or remembers somebody: ambush, flank or chase
     const int p = RecentMemory(pBot, 30*5);
-    if (p >= 0)
+    BOTMEMORY *pMem = p >= 0 ? &pBot->mem[p] : NULL;
+    const int nMemDist = pMem ? BotDist(pSprite->x, pSprite->y, pMem->x, pMem->y) : 0;
+    const bool bComing = pMem && (pMem->vx || pMem->vy) && dmulscale16(pMem->vx, pSprite->x - pMem->x, pMem->vy, pSprite->y - pMem->y) > 0;
+    // a fight going on somewhere (two others it heard close together): easy pickings
+    bool bFightHeard = false;
+    for (int a = connecthead; a >= 0 && !bFightHeard && pMem; a = connectpoint2[a])
+        if (a != p && pBot->mem[a].bValid && nNow - pBot->mem[a].nTime < 30*3 && BotDist(pBot->mem[a].x, pBot->mem[a].y, pMem->x, pMem->y) < 3000)
+            bFightHeard = true;
+    BOTOPTION options[6];
+    int nOptions = 0;
+    if (nItem >= 0)
     {
-        BOTMEMORY *pMem = &pBot->mem[p];
-        const int nDist = BotDist(pSprite->x, pSprite->y, pMem->x, pMem->y);
-        const bool bComing = (pMem->vx || pMem->vy) && dmulscale16(pMem->vx, pSprite->x - pMem->x, pMem->vy, pSprite->y - pMem->y) > 0;
-        if (bComing && nDist < 9000 && nHealth >= pPersona->nFlee && BotChance(pBot, pPersona->nAmbush * nTactics / 100 + 10))
+        const bool bUrgent = nValue >= 80 - pPersona->nAggression / 4;
+        options[nOptions++] = { nValue * 2 / 3 + (bUrgent ? 35 : 0) + (nHealth < 50 ? 20 : 0) + BotRand(pBot, 10), kOptCollect };
+    }
+    if (pMem)
+    {
+        const int nHunt = 25 + pPersona->nAggression * 3 / 4 + ClipRange((view.nRatio - 100) / 4, -30, 30) + view.nMomentum * 10
+            + (bFightHeard ? 15 : 0) + (view.nScoreDiff < 0 ? 8 : 0) - (nHealth < pPersona->nFlee + 10 ? 40 : 0) + BotRand(pBot, 15);
+        options[nOptions++] = { nHunt, kOptHunt };
+        if (bComing && nMemDist < 9000)
+            options[nOptions++] = { 20 + pPersona->nAmbush * (nTactics + 40) / 100 + (nHealth < 60 ? 10 : 0) + BotRand(pBot, 20), kOptAmbush };
+        if (nMemDist > 2500)
+            options[nOptions++] = { 15 + pPersona->nFlank * (nTactics + 30) / 100 + BotRand(pBot, 20), kOptFlank };
+    }
+    if (pBot->nState != kBotStateCamp && (!pBot->nLastCamp || nNow - pBot->nLastCamp > 30*25))
+        options[nOptions++] = { pPersona->nCamping * 2 / 3 + (view.bNearEnd && view.nScoreDiff > 0 ? 20 : 0) + (nHealth < 50 ? 10 : 0) + BotRand(pBot, 15), kOptCamp };
+    options[nOptions++] = { 30 + BotRand(pBot, 10), kOptRoam };
+    SortOptions(options, nOptions);
+    for (int i = 0; i < nOptions; i++)
+    {
+        switch (options[i].nId)
         {
-            if (PlanAmbush(pBot, pPlayer, pMem))
+        case kOptCollect:
+            SetState(pBot, kBotStateCollect);
+            if (SetGoal(pBot, sprite[nItem].x, sprite[nItem].y, sprite[nItem].z, sprite[nItem].sectnum))
+            {
+                pBot->nGoalSprite = nItem;
+                return;
+            }
+            IgnoreItem(pBot, nItem, true);
+            continue;
+        case kOptAmbush:
+            if (!PlanAmbush(pBot, pPlayer, pMem))
+                continue;
             {
                 const int nWatch = pBot->nWatchAng;
                 pBot->nState = kBotStateAmbush;
                 pBot->nStateTime = nNow;
                 pBot->nWatchAng = nWatch;
                 pBot->nWaitUntil = 0;
-                return;
             }
-        }
-        if (nDist > 2500 && BotChance(pBot, pPersona->nFlank * nTactics / 100))
-        {
-            if (PlanFlank(pBot, pPlayer, pMem))
-            {
-                pBot->nState = kBotStateFlank;
-                pBot->nStateTime = nNow;
-                return;
-            }
-        }
-        if (nHealth >= pPersona->nFlee && BotChance(pBot, 25 + pPersona->nAggression * 3 / 4))
+            return;
+        case kOptFlank:
+            if (!PlanFlank(pBot, pPlayer, pMem))
+                continue;
+            pBot->nState = kBotStateFlank;
+            pBot->nStateTime = nNow;
+            return;
+        case kOptHunt:
         {
             SetState(pBot, kBotStateHunt);
             // where it was going
@@ -2080,26 +2242,18 @@ static void BotThink(BOT *pBot, PLAYER *pPlayer)
                 x = pMem->x, y = pMem->y, nSector = pMem->nSector;
             if (SetGoal(pBot, x, y, pMem->z, nSector) || SetGoal(pBot, pMem->x, pMem->y, pMem->z, pMem->nSector))
                 return;
+            continue;
         }
-    }
-
-    // items it could use
-    if (nItem >= 0 && nValue >= 25 - pPersona->nCamping / 10)
-    {
-        SetState(pBot, kBotStateCollect);
-        if (SetGoal(pBot, sprite[nItem].x, sprite[nItem].y, sprite[nItem].z, sprite[nItem].sectnum))
-        {
-            pBot->nGoalSprite = nItem;
-            return;
+        case kOptCamp:
+            SetState(pBot, kBotStateCamp);
+            if (PickCampSpot(pBot, pSprite))
+                return;
+            continue;
+        case kOptRoam:
+        default:
+            break;
         }
-    }
-
-    // camp somewhere or walk around
-    if (BotChance(pBot, pPersona->nCamping * 2 / 3) && pBot->nState != kBotStateCamp && (!pBot->nLastCamp || nNow - pBot->nLastCamp > 30*25))
-    {
-        SetState(pBot, kBotStateCamp);
-        if (PickCampSpot(pBot, pSprite))
-            return;
+        break;
     }
     SetState(pBot, kBotStateRoam);
     if (PickRoamGoal(pBot, pPlayer))
@@ -2404,6 +2558,7 @@ void botGetInput(int nPlayer, GINPUT *pInput)
         pBot->nLastHealth = pPlayer->pXSprite->health;
         pBot->nStuckCount = 0;
         Bmemset(pBot->mem, 0, sizeof(pBot->mem));
+        pBot->nThirdPartyUntil = 0;
     }
     if (pPlayer->fragCount > pBot->nLastFrags)
     {
@@ -2414,6 +2569,7 @@ void botGetInput(int nPlayer, GINPUT *pInput)
                 sfxPlay3DSound(pSprite, 4400 + BotRand(pBot, 10), -1, 0);
         }
         pBot->nLastFrags = pPlayer->fragCount;
+        pBot->nLastKill = nNow;
     }
 
     // look and listen (half the bots one frame, the others the next)
@@ -2444,6 +2600,21 @@ void botGetInput(int nPlayer, GINPUT *pInput)
 
     // hurt by something it doesn't see: turn round towards whoever it'd guess
     const int nHealth = pPlayer->pXSprite->health;
+    if (pBot->nLastHealth - nHealth >= (25<<4) || (nHealth < (35<<4) && nHealth < pBot->nLastHealth))
+        pBot->nLastPain = nNow; // that hurt
+    // the hits it sees its own shots make (a player sees the blood fly)
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        PLAYER *pOther = &gPlayer[p];
+        if (!IsEnemyPlayer(pPlayer, pOther))
+            continue;
+        const int nOtherHealth = pOther->pXSprite->health >> 4;
+        if (nOtherHealth > pBot->nEnemyHealth[p] + 20 || nOtherHealth <= 0)
+            pBot->nHurt[p] = 0; // back from the dead (or healed up a lot)
+        else if (nOtherHealth < pBot->nEnemyHealth[p] && pBot->nTarget == pOther->nSprite && nNow - pBot->nLastShot < 12)
+            pBot->nHurt[p] += pBot->nEnemyHealth[p] - nOtherHealth;
+        pBot->nEnemyHealth[p] = nOtherHealth;
+    }
     if (nHealth < pBot->nLastHealth && pBot->nTarget < 0)
     {
         pBot->nHurtTime = nNow;
@@ -2788,6 +2959,21 @@ void botGetInput(int nPlayer, GINPUT *pInput)
         }
     }
 
+    // letting two others fight it out: watch, don't give itself away, unless it gets noticed
+    if (pEnemy && nNow < pBot->nThirdPartyUntil)
+    {
+        if (FacingMe(pEnemy, pSprite, 250))
+            pBot->nThirdPartyUntil = 0;
+        else
+        {
+            bFire = false;
+            if (pBot->nState == kBotStateFight)
+                nMoveSpeed = 0;
+        }
+    }
+    if (bFire)
+        pBot->nLastShot = nNow;
+
     // TNT: hold to throw further, then let go
     if (nWeapon == kWeaponTNT)
     {
@@ -2968,8 +3154,8 @@ void botGetInput(int nPlayer, GINPUT *pInput)
         char buffer[160];
         BotDescribe(nPlayer, buffer, sizeof(buffer));
         const int nNext = pBot->nPathPos < pBot->nPathLen ? pBot->path[pBot->nPathPos] : -1;
-        LOG_F(INFO, "Bot %s; at %d,%d,%d sector %d, opening %d (%d) to %d, goal sector %d, move %d look %d", buffer, pSprite->x, pSprite->y, pSprite->z, pSprite->sectnum,
-            nNext, nNext >= 0 ? EdgeType(nNext) : -1, nNext >= 0 ? wall[nNext].nextsector : -1, pBot->nGoalSect, nMoveSpeed, pSprite->ang);
+        LOG_F(INFO, "Bot %s; at %d,%d,%d sector %d, opening %d (%d) to %d, goal sector %d, move %d look %d", buffer, (int)pSprite->x, (int)pSprite->y, (int)pSprite->z, (int)pSprite->sectnum,
+            nNext, nNext >= 0 ? EdgeType(nNext) : -1, nNext >= 0 ? (int)wall[nNext].nextsector : -1, pBot->nGoalSect, nMoveSpeed, (int)pSprite->ang);
     }
     if (gBotWatch == nPlayer) // see through its eyes
     {
@@ -3047,17 +3233,17 @@ static int osdcmd_bot_sector(osdcmdptr_t parm) // map debugging: how bots see a 
     if (pX)
         LOG_F(INFO, "sector %d: on floor %d off floor %d", s, pX->onFloorZ, pX->offFloorZ);
     LOG_F(INFO, "sector %d: type %d floor %d ceiling %d door %d lift %d x %d rx %d tx %d state %d busy %d push %d wallpush %d locked %d key %d",
-        s, sector[s].type, sector[s].floorz, sector[s].ceilingz, bDoorSect[s], IsLift(s), sector[s].extra, pX ? pX->rxID : -1, pX ? pX->txID : -1,
+        s, (int)sector[s].type, (int)sector[s].floorz, (int)sector[s].ceilingz, bDoorSect[s], IsLift(s), (int)sector[s].extra, pX ? pX->rxID : -1, pX ? pX->txID : -1,
         pX ? pX->state : -1, pX ? pX->busy : -1, pX ? pX->Push : -1, pX ? pX->Wallpush : -1, pX ? pX->locked : -1, pX ? pX->Key : -1);
     for (int w = sector[s].wallptr; w < sector[s].wallptr + sector[s].wallnum; w++)
     {
         XWALL *pXW = wall[w].extra > 0 ? &xwall[wall[w].extra] : NULL;
-        LOG_F(INFO, "  wall %d -> sector %d edge %d plan %d cstat %d fails %d xwall %d push %d tx %d rx %d", w, wall[w].nextsector,
-            wall[w].nextsector >= 0 ? EdgeType(w) : -1, wall[w].nextsector >= 0 ? EdgeTypePlan(w) : -1, wall[w].cstat, nWallFails[w], wall[w].extra, pXW ? pXW->triggerPush : -1, pXW ? pXW->txID : -1, pXW ? pXW->rxID : -1);
+        LOG_F(INFO, "  wall %d -> sector %d edge %d plan %d cstat %d fails %d xwall %d push %d tx %d rx %d", w, (int)wall[w].nextsector,
+            (int)wall[w].nextsector >= 0 ? EdgeType(w) : -1, (int)wall[w].nextsector >= 0 ? EdgeTypePlan(w) : -1, (int)wall[w].cstat, nWallFails[w], (int)wall[w].extra, pXW ? pXW->triggerPush : -1, pXW ? pXW->txID : -1, pXW ? pXW->rxID : -1);
     }
     for (int i = headspritesect[s]; i >= 0; i = nextspritesect[i])
-        LOG_F(INFO, "  sprite %d type %d stat %d cstat %d xsprite %d push %d tx %d", i, sprite[i].type, sprite[i].statnum, sprite[i].cstat, sprite[i].extra,
-            sprite[i].extra > 0 ? xsprite[sprite[i].extra].Push : -1, sprite[i].extra > 0 ? xsprite[sprite[i].extra].txID : -1);
+        LOG_F(INFO, "  sprite %d type %d stat %d cstat %d xsprite %d push %d tx %d", i, (int)sprite[i].type, (int)sprite[i].statnum, (int)sprite[i].cstat, (int)sprite[i].extra,
+            (int)sprite[i].extra > 0 ? xsprite[(int)sprite[i].extra].Push : -1, (int)sprite[i].extra > 0 ? xsprite[(int)sprite[i].extra].txID : -1);
     return OSDCMD_OK;
 }
 
@@ -3077,6 +3263,7 @@ void botRegisterCvars(void)
         { "bot_flank", "how often bots go round to flank, percent of the personality's", (void *)&gBotFlank, CVAR_INT, 0, 200 },
         { "bot_camping", "how much bots camp, percent of the personality's", (void *)&gBotCamping, CVAR_INT, 0, 200 },
         { "bot_taunts", "bots talk and taunt", (void *)&gBotTaunts, CVAR_BOOL, 0, 1 },
+        { "bot_tuning", "version of the bot presets the fine tuning was made for", (void *)&gBotTuning, CVAR_INT, 0, 100 },
         { "bot_highground", "how much bots go for high places that see a lot, percent of the personality's", (void *)&gBotHighGround, CVAR_INT, 0, 200 },
         { "bot_handicap", "how much damage bots take (0: much less, 2: normal, 4: much more)", (void *)&gBotHandicap, CVAR_INT, 0, 4 },
         { "bot_cultists", "half the bots look like cultists", (void *)&gBotCultists, CVAR_BOOL, 0, 1 },
