@@ -1,4 +1,4 @@
-**Test build of NotBlood Chosen with bots** for Windows, Linux and Android. It doesn't replace the normal [latest](https://github.com/AdrianPol-projects/NotBlood-Chosen/releases/tag/latest) downloads. Windows and Linux: unzip it into its own folder and copy your Blood files there. Android: the APK installs over NotBlood Chosen and keeps using the `NotBlood` folder; to go back, uninstall it first and install the normal APK (your files in `NotBlood` stay).
+**Test build of NotBlood Chosen with bots** for Windows, Linux, macOS, iPad and Android. It doesn't replace the normal [latest](https://github.com/AdrianPol-projects/NotBlood-Chosen/releases/tag/latest) downloads. Windows, Linux and macOS: unzip it into its own folder and copy your Blood files there (macOS: run the `xattr` step from the README first). iPad: sideload the IPA like the normal one. Android: the APK installs over NotBlood Chosen and keeps using the `NotBlood` folder; to go back, uninstall it first and install the normal APK (your files in `NotBlood` stay).
 
 ### Playing against bots
 
