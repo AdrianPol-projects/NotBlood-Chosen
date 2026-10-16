@@ -11,6 +11,12 @@ name: Bots test build
       - '**.md'
       - 'server/**'
   workflow_dispatch:
+    inputs:
+      only:
+        description: 'Platforms to build (the release then has only those)'
+        type: choice
+        options: [all, android, linux, windows]
+        default: all
 
 permissions:
   contents: write
@@ -22,7 +28,7 @@ concurrency:
 jobs:
   build-linux:
     name: Linux x86_64
-    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen' && contains(fromJSON('["all","linux",""]'), inputs.only || '')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +47,7 @@ jobs:
 
   build-windows:
     name: Windows x64
-    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen' && contains(fromJSON('["all","windows",""]'), inputs.only || '')
     runs-on: windows-latest
     defaults:
       run:
@@ -65,7 +71,7 @@ jobs:
 
   build-android:
     name: Android
-    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen'
+    if: github.repository == 'AdrianPol-projects/NotBlood-Chosen' && contains(fromJSON('["all","android",""]'), inputs.only || '')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -105,6 +111,7 @@ jobs:
   publish:
     name: Publish
     needs: [build-linux, build-windows, build-android]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -114,6 +121,7 @@ jobs:
       - name: Package
         run: |
           for target in win64 linux-x64; do
+            [ -d "artifacts/notblood-$target" ] || continue
             dir="pkg/$target/NotBlood"
             mkdir -p "$dir/autoload" "$dir/addons" "$dir/mods" "$dir/movie"
             cp artifacts/notblood-$target/* "$dir/"
@@ -128,7 +136,9 @@ jobs:
             chmod +x "$dir/notblood" 2>/dev/null || true
             (cd "pkg/$target" && zip -9 -r "../../NotBlood-Chosen-bots-$target.zip" NotBlood)
           done
-          cp artifacts/notblood-android/NotBlood.apk NotBlood-Chosen-bots-android.apk
+          if [ -f artifacts/notblood-android/NotBlood.apk ]; then
+            cp artifacts/notblood-android/NotBlood.apk NotBlood-Chosen-bots-android.apk
+          fi
           ls -l NotBlood-Chosen-bots-*
       - name: Publish to the "bots-test" release
         env:
@@ -139,9 +149,15 @@ jobs:
             echo "Branch head is $HEAD_SHA, this run built $GITHUB_SHA - not publishing."
             exit 0
           fi
-          TITLE="NotBlood Chosen with bots - test build ${{ github.run_number }} (Windows, Linux, Android)"
+          files=$(ls NotBlood-Chosen-bots-*)
+          names=""
+          for f in $files; do
+            case "$f" in *win64*) n=Windows ;; *linux*) n=Linux ;; *android*) n=Android ;; esac
+            names="${names:+$names, }$n"
+          done
+          TITLE="NotBlood Chosen with bots - test build ${{ github.run_number }} ($names)"
           # a fresh release each time, so its tag points at this commit
           if gh release view bots-test >/dev/null 2>&1; then
             gh release delete bots-test --cleanup-tag -y
           fi
-          gh release create bots-test NotBlood-Chosen-bots-win64.zip NotBlood-Chosen-bots-linux-x64.zip NotBlood-Chosen-bots-android.apk --target "$GITHUB_SHA" --prerelease --latest=false --title "$TITLE" --notes-file package/release/BOTS.md
+          gh release create bots-test $files --target "$GITHUB_SHA" --prerelease --latest=false --title "$TITLE" --notes-file package/release/BOTS.md
