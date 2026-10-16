@@ -31,6 +31,7 @@ enum {
     kChosenModeJuggernaut,
     kChosenModeLastManStanding,
     kChosenModeSurvival,
+    kChosenModeCaptureFlag,  // teams with the flags (plain teams is team bloodbath)
     kChosenModeMax
 };
 
@@ -48,6 +49,7 @@ struct CHOSENRULES
     uint8_t nWeapons;
     uint8_t bVampire;
     uint8_t bOneHit;
+    uint8_t nTeam[8];  // teams picked in the menu (0: as before, 1 blue, 2 red), by player number
 };
 
 extern CHOSENRULES gChosenRules;

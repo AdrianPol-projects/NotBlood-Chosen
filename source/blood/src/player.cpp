@@ -1083,6 +1083,8 @@ static void playerResetTeamId(int nPlayer, int bNewLevel)
             pPlayer->teamId = nPlayer&1;
         else
             pPlayer->teamId = gProfile[nPlayer].nTeamPreference-1; // set to player team preference
+        if (gChosenRules.nTeam[nPlayer]) // NotBlood Chosen: picked in SET TEAMS (bots always have one)
+            pPlayer->teamId = gChosenRules.nTeam[nPlayer]-1;
 
         if (!bNewLevel && (pPlayer->teamId != nOldTeamId)) // if player changed teams during mid-match, reset co-op camera and print message
         {

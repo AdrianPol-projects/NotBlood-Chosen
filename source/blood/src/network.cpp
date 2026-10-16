@@ -83,7 +83,7 @@ int gNetPortLocal = -1;
 
 // 0x4000: NotBlood Chosen (co-op saves: packets 243-246, bCoopContinue); bits 10-13: its network
 // protocol number, bumped whenever packets change
-const short kNetVersion = 0x248 | 0x4000 | (2 << 10); // 2: match types and mutators
+const short kNetVersion = 0x248 | 0x4000 | (3 << 10); // 2: match types and mutators, 3: bots in network games, teams
 
 PKT_STARTGAME gPacketStartGame;
 
@@ -177,6 +177,7 @@ void netClientDisconnect(void)
 void netResetToSinglePlayer(void)
 {
     onlineGameEnded();
+    botNetReset();
     myconnectindex = connecthead = 0;
     gInitialNetPlayers = gNetPlayers = numplayers = 1;
     connectpoint2[0] = -1;
@@ -295,13 +296,13 @@ void netCheckSync(void)
     {
         for (int p = connecthead; p >= 0; p = connectpoint2[p])
         {
-            if (gCheckTail >= gCheckHead[p])
+            if (gCheckTail >= gCheckHead[p] && !botIsBot(p))
                 return;
         }
 
         for (int p = connecthead; p >= 0; p = connectpoint2[p])
         {
-            if (p != myconnectindex)
+            if (p != myconnectindex && !botIsBot(p))
             {
                 int status = memcmp(gCheckFifo[gCheckTail&255][p], gCheckFifo[gCheckTail&255][connecthead], 16);
                 if (status)
@@ -314,6 +315,7 @@ void netCheckSync(void)
                             pBuffer += sprintf(pBuffer, " %d", i);
                     }
                     viewSetErrorMessage(buffer);
+                    LOG_F(WARNING, "%s (frame %d)", buffer, gCheckTail);
                     bOutOfSync = 1;
                 }
             }
@@ -536,6 +538,12 @@ void netGetPackets(void)
             netPlayerQuit(nPlayer);
             netWaitForEveryone(0);
             break;
+        case 241: // a bot (played by the host) says something
+            botReceiveTalk(pPacket);
+            break;
+        case 242: // the bots of the game the host is starting
+            botReceiveRoster(pPacket);
+            break;
         case 243: // the host's mid-level co-op save is complete: load it
             coopReceiveLoadNow(pPacket);
             break;
@@ -581,6 +589,7 @@ void netGetPackets(void)
             memcpy(&gPacketStartGame, pPacket, sizeof(PKT_STARTGAME));
             if (gPacketStartGame.version != kNetVersion)
                 ThrowError("\nThese versions of Blood cannot play together.\n");
+            botApplyRoster(); // the bots the host sent just before (packet 242) join the player list
             gStartNewGame = 1;
             coopStartPacketReceived(gPacketStartGame.bCoopContinue != 0);
             SetGameVanillaMode(0); // turn off vanilla mode for multiplayer so menus don't get bugged
@@ -675,6 +684,20 @@ void netBroadcastNewGame(void)
     PutPacketByte(pPacket, 252);
     PutPacketDWord(pPacket, myconnectindex);
     PutPacketBuffer(pPacket, &gPacketStartGame, sizeof(PKT_STARTGAME));
+    netSendPacketAll(packet, pPacket-packet);
+}
+
+void netBroadcastBotTalk(int nPlayer, const char *pzText, int nSound)
+{
+    if (numplayers < 2)
+        return;
+    char *pPacket = packet;
+    PutPacketByte(pPacket, 241);
+    PutPacketByte(pPacket, nPlayer);
+    PutPacketWord(pPacket, nSound);
+    const int nLength = ClipHigh((int)strlen(pzText), 63);
+    PutPacketBuffer(pPacket, pzText, nLength);
+    PutPacketByte(pPacket, 0);
     netSendPacketAll(packet, pPacket-packet);
 }
 
@@ -779,7 +802,7 @@ void netWaitForEveryone(char a1)
         gameHandleEvents();
         faketimerhandler();
         for (p = connecthead; p >= 0; p = connectpoint2[p])
-            if (gPlayerReady[p] < gPlayerReady[myconnectindex])
+            if (gPlayerReady[p] < gPlayerReady[myconnectindex] && !botIsBot(p))
                 break;
         if (gRestartGame || gNetPlayers <= 1)
             break;
@@ -913,6 +936,7 @@ void netGetInput(void)
         }
         return;
     }
+    botNetInput(); // the host plays the bots: their input goes out with everybody else's
     for (int p = connecthead; p >= 0; p = connectpoint2[p])
     {
         if (p != myconnectindex)

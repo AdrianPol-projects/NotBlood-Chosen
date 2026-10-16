@@ -70,7 +70,23 @@ int gBotHighGround = 100;
 static int gBotTuning = 0;
 int gBotGrudges = 1;
 int gBotAdaptive = 0;
+char gBotEachName[kBotMaxBots][16];
+int gBotEachTeam[kBotMaxBots];
+int gBotEachHandicap[kBotMaxBots] = { -1, -1, -1, -1, -1, -1, -1 };
+#define BOTTUNE100 { 100, 100, 100, 100, 100, 100, 100, 100 }
+int gBotEachTune[kBotMaxBots][kBotTuneMax] = { BOTTUNE100, BOTTUNE100, BOTTUNE100, BOTTUNE100, BOTTUNE100, BOTTUNE100, BOTTUNE100 };
+#undef BOTTUNE100
+int gHumanTeam[8];
+int gBotNetCount = 0;
+bool gBotNet = false;
+
+// the bots of a network game, as the host sent them (packet 242)
+static int nRosterBots;
+static char nRosterPlayer[kBotMaxBots];
+static char nRosterBot[kBotMaxBots];   // which bot of SET EACH BOT (host only)
+static PROFILE rosterProfile[kBotMaxBots];
 static int nBotOrder = kBotOrderFree;      // for the bots on the human's side
+static bool bOrderByHost;                  // a network game's host gave the orders: "follow me" is the host
 static int nHoldX, nHoldY, nHoldZ, nHoldSect;
 static int nAdapt = 100;                   // adaptive difficulty: percent of aim error and reaction time // 2: the presets include the tuning players liked (old fine tuning is reset once)
 static int gBotWatch = 0;
@@ -203,6 +219,7 @@ struct BOT
 {
     bool bActive;
     int nPlayer;
+    int nEach;      // which bot of SET EACH BOT (0-6)
     int nSkill, nPersona;
     BOTSKILL skill;
     BOTPERSONA persona;
@@ -1079,21 +1096,79 @@ static void BotResolveSettings(BOT *pBot, int nBot)
     pBot->nPersona = nPersona;
     pBot->skill = gBotSkillInfo[nSkill];
     pBot->persona = gBotPersonaInfo[nPersona];
+    // the all-bots fine tuning, times this bot's own (both in percent)
+    const int *pTune = gBotEachTune[ClipRange(nBot, 0, kBotMaxBots-1)];
+    auto Tune = [pTune](int nAll, int nWhich) { return ClipRange(nAll, 0, 300) * ClipRange(pTune[nWhich], 0, 300) / 100; };
     BOTSKILL *pSkill = &pBot->skill;
-    pSkill->nAimError = pSkill->nAimError * 100 / ClipRange(gBotAccuracy, 10, 300);
-    pSkill->nReaction = pSkill->nReaction * ClipRange(gBotReaction, 10, 300) / 100;
+    pSkill->nAimError = pSkill->nAimError * 100 / ClipRange(Tune(gBotAccuracy, kBotTuneAim), 10, 900);
+    pSkill->nReaction = pSkill->nReaction * ClipRange(Tune(gBotReaction, kBotTuneReaction), 10, 900) / 100;
     BOTPERSONA *pPersona = &pBot->persona;
-    pPersona->nAggression = ClipRange(pPersona->nAggression * gBotAggression / 100, 0, 100);
-    pPersona->nJump = ClipRange(pPersona->nJump * gBotJumping / 100, 0, 100);
-    pPersona->nAmbush = ClipRange(pPersona->nAmbush * gBotAmbush / 100, 0, 100);
-    pPersona->nFlank = ClipRange(pPersona->nFlank * gBotFlank / 100, 0, 100);
-    pPersona->nCamping = ClipRange(pPersona->nCamping * gBotCamping / 100, 0, 100);
-    pPersona->nHighGround = ClipRange(pPersona->nHighGround * gBotHighGround / 100, 0, 100);
+    pPersona->nAggression = ClipRange(pPersona->nAggression * Tune(gBotAggression, kBotTuneAggression) / 100, 0, 100);
+    pPersona->nJump = ClipRange(pPersona->nJump * Tune(gBotJumping, kBotTuneJumping) / 100, 0, 100);
+    pPersona->nAmbush = ClipRange(pPersona->nAmbush * Tune(gBotAmbush, kBotTuneAmbush) / 100, 0, 100);
+    pPersona->nFlank = ClipRange(pPersona->nFlank * Tune(gBotFlank, kBotTuneFlank) / 100, 0, 100);
+    pPersona->nCamping = ClipRange(pPersona->nCamping * Tune(gBotCamping, kBotTuneCamping) / 100, 0, 100);
+    pPersona->nHighGround = ClipRange(pPersona->nHighGround * Tune(gBotHighGround, kBotTuneHighGround) / 100, 0, 100);
+}
+
+// a bot's player profile: its name, look, how much damage it takes
+static void BotMakeProfile(BOT *pBot, int nBot, int nRandomName, PROFILE *pProfile)
+{
+    Bmemset(pProfile, 0, sizeof(PROFILE));
+    if (gBotEachName[nBot][0])
+        Bstrncpyz(pProfile->name, gBotEachName[nBot], sizeof(pProfile->name));
+    else
+        Bstrncpyz(pProfile->name, pzBotNames[nRandomName % ARRAY_SSIZE(pzBotNames)], sizeof(pProfile->name));
+    pProfile->nAutoAim = pBot->skill.nAutoAim;
+    pProfile->nWeaponSwitch = 1;
+    pProfile->bWeaponFastSwitch = 0;
+    pProfile->skill = ClipRange(gBotEachHandicap[nBot] >= 0 ? gBotEachHandicap[nBot] : gBotHandicap, 0, 4);
+    pProfile->nTeamPreference = 0;
+    pProfile->nColorPreference = 0;
+    pProfile->nModel = gBotCultists ? (nBot & 1) : 0;
+    pProfile->nWeaponHBobbing = 1;
+}
+
+// the next random name that no other bot of the match has (nor took as its own name)
+static int BotPickName(int *pnNext, uint32_t *puUsed)
+{
+    for (int nTries = 0; nTries < ARRAY_SSIZE(pzBotNames); nTries++)
+    {
+        const int n = (*pnNext)++ % ARRAY_SSIZE(pzBotNames);
+        bool bTaken = (*puUsed >> n) & 1;
+        for (int i = 0; i < kBotMaxBots && !bTaken; i++)
+            bTaken = !Bstrcasecmp(gBotEachName[i], pzBotNames[n]);
+        if (!bTaken)
+        {
+            *puUsed |= 1u << n;
+            return n;
+        }
+    }
+    return 0;
 }
 
 bool botIsBot(int nPlayer)
 {
-    return gBotMatch && nPlayer >= 0 && nPlayer < kMaxPlayers && gBot[nPlayer].bActive;
+    return (gBotMatch || gBotNet) && nPlayer >= 0 && nPlayer < kMaxPlayers && gBot[nPlayer].bActive;
+}
+
+bool botAny(void)
+{
+    return gBotMatch || gBotNet;
+}
+
+// the host of a network game thinks for the bots; everybody else only sees them
+static bool BotThinksHere(void)
+{
+    return gBotMatch || (gBotNet && myconnectindex == connecthead);
+}
+
+static int FirstBot(void)
+{
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+        if (botIsBot(p))
+            return p;
+    return -1;
 }
 
 const char *botStateName(int nPlayer)
@@ -1120,6 +1195,9 @@ void botSetupMatch(void)
             nBots++;
     }
     gBotMatch = true;
+    gBotNet = false;
+    nRosterBots = 0;
+    bOrderByHost = false;
     myconnectindex = connecthead = 0;
     numplayers = 1; // still a local game as far as the network code is concerned
     gNetPlayers = gInitialNetPlayers = nBots + 1;
@@ -1135,7 +1213,8 @@ void botSetupMatch(void)
         gPacketStartGame.uNetGameFlags |= kNetGameFlagSpectatingAllow;
     }
     uint32_t nSeed = ((uint32_t)totalclock + (uint32_t)time(NULL)) * 2654435761u + 12345u;
-    int nNameStart = (nSeed >> 8) % ARRAY_SSIZE(pzBotNames);
+    int nNextName = (nSeed >> 8) % ARRAY_SSIZE(pzBotNames);
+    uint32_t uUsedNames = 0;
     ShuffleMixed(nSeed);
     for (int i = 0; i < kMaxPlayers; i++)
     {
@@ -1146,13 +1225,12 @@ void botSetupMatch(void)
         const int nBot = i - 1;
         pBot->bActive = true;
         pBot->nPlayer = i;
+        pBot->nEach = nBot;
         pBot->nRand = nSeed ^ (0x51ed270bu * (i + 1));
         if (!pBot->nRand)
             pBot->nRand = 1;
         BotResolveSettings(pBot, nBot);
         PROFILE *pProfile = &gProfileNet[i];
-        Bmemset(pProfile, 0, sizeof(PROFILE));
-        Bstrncpyz(pProfile->name, pzBotNames[(nNameStart + nBot) % ARRAY_SSIZE(pzBotNames)], sizeof(pProfile->name));
         if (pStage)
         {
             // the career's opponents: always the same names, how they play and how good they are
@@ -1160,16 +1238,12 @@ void botSetupMatch(void)
             pBot->nPersona = pStage->nPersonas[nBot];
             pBot->skill = gBotSkillInfo[pBot->nSkill];
             pBot->persona = gBotPersonaInfo[pBot->nPersona];
+            BotMakeProfile(pBot, nBot, 0, pProfile);
             Bstrncpyz(pProfile->name, pStage->pzNames[nBot], sizeof(pProfile->name));
+            pProfile->skill = ClipRange(gBotHandicap, 0, 4);
         }
-        pProfile->nAutoAim = pBot->skill.nAutoAim;
-        pProfile->nWeaponSwitch = 1;
-        pProfile->bWeaponFastSwitch = 0;
-        pProfile->skill = ClipRange(gBotHandicap, 0, 4);
-        pProfile->nTeamPreference = 0;
-        pProfile->nColorPreference = 0;
-        pProfile->nModel = gBotCultists ? (nBot & 1) : 0;
-        pProfile->nWeaponHBobbing = 1;
+        else
+            BotMakeProfile(pBot, nBot, BotPickName(&nNextName, &uUsedNames), pProfile);
         gProfile[i] = *pProfile;
         LOG_F(INFO, "Bot %d: %s, %s, %s", nBot + 1, pProfile->name, gBotSkillNames[pBot->nSkill], gBotPersonaNames[pBot->nPersona]);
     }
@@ -1195,11 +1269,255 @@ void botEndMatch(void)
     netResetToSinglePlayer();
 }
 
+//
+// bots in network games
+//
+
+int botPeople(int *pnPlayers)
+{
+    int n = 0;
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        if (botIsBot(p))
+            continue;
+        if (pnPlayers)
+            pnPlayers[n] = p;
+        n++;
+    }
+    return n;
+}
+
+int botNetMaxBots(void)
+{
+    return ClipRange(kMaxPlayers - botPeople(NULL), 0, kBotMaxBots);
+}
+
+static uint32_t nNetSeed;
+
+bool botNetSetup(void)
+{
+    nRosterBots = 0;
+    if (myconnectindex != connecthead)
+        return false;
+    int nWant = ClipRange(gBotNetCount, 0, botNetMaxBots());
+    if (nWant > 0 && gPacketMode != PACKETMODE_1)
+    {
+        viewSetMessage("Bots need the normal network mode (not -broadcast)", 8, MESSAGE_PRIORITY_NORMAL);
+        nWant = 0;
+    }
+    if (gBotTuning < 2)
+    {
+        gBotAccuracy = gBotReaction = gBotAggression = gBotJumping = gBotAmbush = gBotFlank = gBotCamping = gBotHighGround = 100;
+        gBotTuning = 2;
+    }
+    // free player numbers for them, after the people
+    bool bTaken[kMaxPlayers] = {};
+    int nPeople[kMaxPlayers];
+    const int nPeopleCount = botPeople(nPeople);
+    for (int i = 0; i < nPeopleCount; i++)
+        bTaken[nPeople[i]] = true;
+    nNetSeed = ((uint32_t)totalclock + (uint32_t)time(NULL)) * 2654435761u + 12345u;
+    ShuffleMixed(nNetSeed);
+    int nNextName = (nNetSeed >> 8) % ARRAY_SSIZE(pzBotNames);
+    uint32_t uUsedNames = 0;
+    for (int nBot = 0, p = 0; nBot < nWant; nBot++)
+    {
+        while (p < kMaxPlayers && bTaken[p])
+            p++;
+        if (p >= kMaxPlayers)
+            break;
+        BOT bot;
+        Bmemset(&bot, 0, sizeof(bot));
+        BotResolveSettings(&bot, nBot);
+        nRosterPlayer[nRosterBots] = p;
+        nRosterBot[nRosterBots] = nBot;
+        BotMakeProfile(&bot, nBot, BotPickName(&nNextName, &uUsedNames), &rosterProfile[nRosterBots]);
+        nRosterBots++;
+        p++;
+    }
+    gPacketStartGame.nBots = nRosterBots;
+    return true;
+}
+
+void botNetSendRoster(void)
+{
+    if (numplayers < 2)
+        return;
+    char *pPacket = packet;
+    PutPacketByte(pPacket, 242);
+    PutPacketByte(pPacket, nRosterBots);
+    for (int i = 0; i < nRosterBots; i++)
+    {
+        PutPacketByte(pPacket, nRosterPlayer[i]);
+        PutPacketBuffer(pPacket, &rosterProfile[i], sizeof(PROFILE));
+    }
+    netSendPacketAll(packet, pPacket - packet);
+}
+
+void botNetNoBots(void)
+{
+    if (gNetMode == NETWORK_NONE || myconnectindex != connecthead)
+        return;
+    nRosterBots = 0;
+    gPacketStartGame.nBots = 0;
+    Bmemset(gPacketStartGame.nChosenTeam, 0, sizeof(gPacketStartGame.nChosenTeam));
+    botApplyRoster();
+    botNetSendRoster();
+}
+
+void botReceiveRoster(char *pPacket)
+{
+    nRosterBots = ClipRange(GetPacketByte(pPacket), 0, kBotMaxBots);
+    for (int i = 0; i < nRosterBots; i++)
+    {
+        nRosterPlayer[i] = ClipRange(GetPacketByte(pPacket), 0, kMaxPlayers-1);
+        nRosterBot[i] = i;
+        GetPacketBuffer(pPacket, &rosterProfile[i], sizeof(PROFILE));
+        rosterProfile[i].name[MAXPLAYERNAME-1] = '\0';
+    }
+}
+
+void botApplyRoster(void)
+{
+    // the people stay in the order they joined, the bots come after them
+    int nOrder[kMaxPlayers];
+    int n = botPeople(nOrder);
+    bool bTaken[kMaxPlayers] = {};
+    for (int i = 0; i < n; i++)
+        bTaken[nOrder[i]] = true;
+    for (int i = 0; i < kMaxPlayers; i++)
+        gBot[i].bActive = false;
+    const bool bHost = myconnectindex == connecthead;
+    int nBots = 0;
+    for (int i = 0; i < nRosterBots && n < kMaxPlayers; i++)
+    {
+        const int p = nRosterPlayer[i];
+        if (bTaken[p])
+            continue; // can't happen: the host gave it a free number
+        bTaken[p] = true;
+        nOrder[n++] = p;
+        BOT *pBot = &gBot[p];
+        Bmemset(pBot, 0, sizeof(BOT));
+        pBot->bActive = true;
+        pBot->nPlayer = p;
+        pBot->nEach = nRosterBot[i];
+        if (bHost)
+        {
+            pBot->nRand = nNetSeed ^ (0x51ed270bu * (p + 1));
+            if (!pBot->nRand)
+                pBot->nRand = 1;
+            BotResolveSettings(pBot, pBot->nEach);
+        }
+        gProfile[p] = gProfileNet[p] = rosterProfile[i];
+        nBots++;
+        LOG_F(INFO, "Bot %d: %s (player %d)%s", i + 1, rosterProfile[i].name, p + 1, bHost ? "" : ", played by the host");
+    }
+    connecthead = nOrder[0];
+    for (int i = 0; i < n; i++)
+        connectpoint2[nOrder[i]] = i + 1 < n ? nOrder[i + 1] : -1;
+    gNetPlayers = n;
+    gBotNet = nBots > 0;
+    if (gBotNet)
+    {
+        bOrderByHost = false;
+        nBotOrder = gPacketStartGame.gameType == kGameTypeCoop ? kBotOrderFollow : kBotOrderFree;
+        nHoldSect = -1;
+        nAdapt = 100;
+    }
+    UpdateNetworkMenus();
+}
+
+void botNetReset(void)
+{
+    if (!gBotNet && !nRosterBots)
+        return;
+    gBotNet = false;
+    nRosterBots = 0;
+    for (int i = 0; i < kMaxPlayers; i++)
+        gBot[i].bActive = false;
+}
+
+void botNetInput(void)
+{
+    if (!gBotNet || myconnectindex != connecthead)
+        return;
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        if (!botIsBot(p))
+            continue;
+        botGetInput(p, &gFifoInput[gNetFifoHead[p]&255][p]);
+        gNetFifoHead[p]++;
+    }
+}
+
+void botReceiveTalk(char *pPacket)
+{
+    const int nPlayer = ClipRange(GetPacketByte(pPacket), 0, kMaxPlayers-1);
+    const int nSound = GetPacketWord(pPacket);
+    char zText[64];
+    Bstrncpyz(zText, pPacket, sizeof(zText));
+    if (zText[0])
+    {
+        char buffer[128];
+        Bsnprintf(buffer, sizeof(buffer), "%s: %s", gProfile[nPlayer].name, zText);
+        viewSetMessage(buffer, 0, MESSAGE_PRIORITY_NORMAL);
+    }
+    if (nSound > 0 && gPlayer[nPlayer].pSprite && gPlayer[nPlayer].pXSprite && gPlayer[nPlayer].pXSprite->health > 0)
+        sfxPlay3DSound(gPlayer[nPlayer].pSprite, nSound, -1, 0);
+}
+
+void botResolveTeams(char *pnTeams)
+{
+    Bmemset(pnTeams, 0, kMaxPlayers);
+    if (gPacketStartGame.gameType != kGameTypeTeams)
+        return;
+    int nCount[2] = { 0, 0 };
+    // the people: their pick in SET TEAMS, otherwise as before (auto teams or their own preference)
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        if (botIsBot(p))
+            continue;
+        const int nPick = ClipRange(gHumanTeam[p], kBotTeamAuto, kBotTeamRed);
+        if (nPick != kBotTeamAuto)
+        {
+            pnTeams[p] = nPick;
+            nCount[nPick - 1]++;
+        }
+        else
+            nCount[((gPacketStartGame.bAutoTeams || !gProfile[p].nTeamPreference) ? p : gProfile[p].nTeamPreference - 1) & 1]++;
+    }
+    // the bots: their pick, otherwise the smaller team
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        if (!botIsBot(p))
+            continue;
+        int nPick = ClipRange(gBotEachTeam[gBot[p].nEach], kBotTeamAuto, kBotTeamRed);
+        if (nPick == kBotTeamAuto)
+            nPick = nCount[0] <= nCount[1] ? kBotTeamBlue : kBotTeamRed;
+        pnTeams[p] = nPick;
+        nCount[nPick - 1]++;
+    }
+}
+
+void botDescribeEach(int nBot, char *pzBuffer, int nSize)
+{
+    nBot = ClipRange(nBot, 0, kBotMaxBots-1);
+    const int nSkill = gBotEachSkill[nBot] >= 0 ? gBotEachSkill[nBot] : gBotSkill;
+    const int nPersona = gBotEachPersona[nBot] >= 0 ? gBotEachPersona[nBot] : gBotPersona;
+    char zName[24];
+    if (gBotEachName[nBot][0])
+        Bstrncpyz(zName, gBotEachName[nBot], sizeof(zName));
+    else
+        Bsnprintf(zName, sizeof(zName), "BOT %d", nBot + 1);
+    Bsnprintf(pzBuffer, nSize, "%s - %s %s", zName, gBotSkillNames[ClipRange(nSkill, 0, kBotSkillMax-1)], gBotPersonaNames[ClipRange(nPersona, 0, kBotPersonaMax-1)]);
+    Bstrupr(pzBuffer);
+}
+
 static int osdcmd_bot_sector(osdcmdptr_t parm);
 
 void botLevelStart(void)
 {
-    if (!gBotMatch)
+    if (!BotThinksHere())
         return;
     BotFindSpots();
     if (const char *pzTx = getenv("NOTBLOOD_BOT_TX")) // testing: who sends to this channel
@@ -2083,9 +2401,27 @@ static bool OthersFighting(BOT *pBot, PLAYER *pPlayer, spritetype *pTarget)
     return false;
 }
 
-// the human it plays with (co-op, teams), -1 none
+// the human it plays with (co-op, teams), NULL none: offline the player, in a network game the
+// closest person on its side (or the host, after the host's orders)
 static PLAYER *TeamHuman(PLAYER *pPlayer)
 {
+    if (gBotNet && !bOrderByHost)
+    {
+        PLAYER *pBest = NULL;
+        int nBest = 0x7fffffff;
+        for (int p = connecthead; p >= 0; p = connectpoint2[p])
+        {
+            PLAYER *pOther = &gPlayer[p];
+            if (botIsBot(p) || pOther == pPlayer || !pOther->pXSprite || !pOther->pSprite || IsEnemyPlayer(pPlayer, pOther))
+                continue;
+            if (!Bstrncmp(gProfile[p].name, "spectator", MAXPLAYERNAME))
+                continue;
+            const int nDist = BotDist(pPlayer->pSprite->x, pPlayer->pSprite->y, pOther->pSprite->x, pOther->pSprite->y) + (pOther->pXSprite->health > 0 ? 0 : 20000);
+            if (nDist < nBest)
+                nBest = nDist, pBest = pOther;
+        }
+        return pBest;
+    }
     PLAYER *pHuman = &gPlayer[myconnectindex];
     if (pHuman == pPlayer || IsEnemyPlayer(pPlayer, pHuman) || !pHuman->pXSprite)
         return NULL;
@@ -2094,6 +2430,9 @@ static PLAYER *TeamHuman(PLAYER *pPlayer)
 
 void botOrder(int nOrder)
 {
+    if (!BotThinksHere())
+        return;
+    bOrderByHost = true;
     nBotOrder = ClipRange(nOrder, kBotOrderFree, kBotOrderHold);
     PLAYER *pHuman = &gPlayer[myconnectindex];
     if (nBotOrder == kBotOrderHold && pHuman->pSprite)
@@ -2792,6 +3131,8 @@ static void BotTalk(BOT *pBot, PLAYER *pPlayer)
     char buffer[128];
     Bsnprintf(buffer, sizeof(buffer), "%s: %s", gProfile[pPlayer->nPlayer].name, pBot->pzTalk);
     viewSetMessage(buffer, 0, MESSAGE_PRIORITY_NORMAL);
+    if (gBotNet)
+        netBroadcastBotTalk(pPlayer->nPlayer, pBot->pzTalk, -1);
     pBot->pzTalk = NULL;
 }
 
@@ -3004,13 +3345,17 @@ static void BotAdapt(void)
         return;
     }
     nLastCheck = gLevelTime;
-    int nBots = 0, nBotFrags = 0;
+    int nBots = 0, nBotFrags = 0, nPeople = 0, nPeopleFrags = 0;
     for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
         if (botIsBot(p))
             nBots++, nBotFrags += gPlayer[p].fragCount;
-    if (!nBots)
+        else if (Bstrncmp(gProfile[p].name, "spectator", MAXPLAYERNAME))
+            nPeople++, nPeopleFrags += gPlayer[p].fragCount;
+    }
+    if (!nBots || !nPeople)
         return;
-    const int nDiff = gPlayer[myconnectindex].fragCount * nBots - nBotFrags; // ahead of the average bot, times bots
+    const int nDiff = (nPeopleFrags * nBots - nBotFrags * nPeople) / nPeople; // the people ahead of the average bot, times bots
     if (nDiff >= nBots * 2)
         nAdapt = ClipLow(nAdapt - 5, 60);
     else if (nDiff <= -nBots * 2)
@@ -3025,13 +3370,15 @@ void botGetInput(int nPlayer, GINPUT *pInput)
     BOT *pBot = &gBot[nPlayer];
     PLAYER *pPlayer = &gPlayer[nPlayer];
     spritetype *pSprite = pPlayer->pSprite;
-    if (nPlayer == connectpoint2[connecthead])
+    const bool bFirst = nPlayer == FirstBot();
+    if (bFirst && gBotMatch)
         BotMatchFrame();
-    if (!pSprite || !pPlayer->pXSprite || gPaused || gGameMenuMgr.m_bActive || gEndGameMgr.at0 || gPlayerRoundEnding)
+    // offline the menu pauses the match; in a network game the host's menu doesn't stop anybody
+    if (!pSprite || !pPlayer->pXSprite || gPaused || (gGameMenuMgr.m_bActive && gBotMatch) || gEndGameMgr.at0 || gPlayerRoundEnding)
         return;
     nNow = gLevelTime;
     pInput->syncFlags.run = 1;
-    if (nPlayer == connectpoint2[connecthead])
+    if (bFirst)
         BotAdapt();
     BotTalk(pBot, pPlayer);
 
@@ -3075,7 +3422,12 @@ void botGetInput(int nPlayer, GINPUT *pInput)
         {
             BotSay(pBot, pzBotKillLines[BotRand(pBot, ARRAY_SSIZE(pzBotKillLines))], 15 + BotRand(pBot, 40));
             if (gBotTaunts)
-                sfxPlay3DSound(pSprite, 4400 + BotRand(pBot, 10), -1, 0);
+            {
+                const int nSound = 4400 + BotRand(pBot, 10);
+                sfxPlay3DSound(pSprite, nSound, -1, 0);
+                if (gBotNet)
+                    netBroadcastBotTalk(pPlayer->nPlayer, "", nSound);
+            }
         }
         pBot->nLastFrags = pPlayer->fragCount;
         pBot->nLastKill = nNow;
@@ -3700,7 +4052,7 @@ static void BotDescribe(int i, char *pzBuffer, int nSize)
 
 void botDrawDebug(void)
 {
-    if (!gBotMatch || !gBotDebug)
+    if (!BotThinksHere() || !gBotDebug)
         return;
     int y = windowxy1.y + 30;
     for (int i = connecthead; i >= 0; i = connectpoint2[i])
@@ -3722,9 +4074,9 @@ void botDrawDebug(void)
 
 static int osdcmd_bot_match(osdcmdptr_t parm)
 {
-    if (gNetMode != NETWORK_NONE)
+    if (gNetMode != NETWORK_NONE && myconnectindex != connecthead)
     {
-        OSD_Printf("bot_match: not in a network game\n");
+        OSD_Printf("bot_match: only the host starts the game\n");
         return OSDCMD_OK;
     }
     if (parm->numparms >= 1)
@@ -3733,7 +4085,10 @@ static int osdcmd_bot_match(osdcmdptr_t parm)
         BotMatchSetMap(Batol(parm->parms[2]) - 1, Batol(parm->parms[3]) - 1);
     if (parm->numparms >= 6)
         BotMatchSetMode(Batol(parm->parms[4]), Batol(parm->parms[5]));
-    StartBotMatch(NULL);
+    if (gNetMode != NETWORK_NONE) // the host of a network game: start it, with bot_net_count bots
+        StartNetGame(NULL);
+    else
+        StartBotMatch(NULL);
     return OSDCMD_OK;
 }
 
@@ -3764,7 +4119,7 @@ static int osdcmd_bot_sector(osdcmdptr_t parm) // map debugging: how bots see a 
 
 static int osdcmd_bot_order(osdcmdptr_t parm)
 {
-    if (parm->numparms < 1 || !gBotMatch)
+    if (parm->numparms < 1 || !BotThinksHere())
         return OSDCMD_SHOWHELP;
     if (!Bstrcasecmp(parm->parms[0], "follow"))
         botOrder(kBotOrderFollow);
@@ -3782,6 +4137,7 @@ void botRegisterCvars(void)
     OSD_RegisterFunction("bot_match", "bot_match [frag limit] [time limit] [episode] [level] [game type 1-3] [mode 0-5]: starts a bot match with the BOTS menu's settings", osdcmd_bot_match);
     static osdcvardata_t cvars[] = {
         { "bot_count", "number of bots in a bot match", (void *)&gBotCount, CVAR_INT, 1, kMaxPlayers - 1 },
+        { "bot_net_count", "number of bots the host adds to a network game (MULTIPLAYER > BOTS)", (void *)&gBotNetCount, CVAR_INT, 0, kMaxPlayers - 1 },
         { "bot_skill", "bot difficulty (0: easy, 1: normal, 2: hard, 3: nightmare)", (void *)&gBotSkill, CVAR_INT, 0, kBotSkillMax - 1 },
         { "bot_personality", "bot personality (0: mixed, 1: balanced, 2: rusher, 3: camper, 4: trickster, 5: coward, 6: jumper)", (void *)&gBotPersona, CVAR_INT, 0, kBotPersonaMax - 1 },
         { "bot_accuracy", "bot aim, percent of the difficulty's", (void *)&gBotAccuracy, CVAR_INT, 10, 300 },
@@ -3812,7 +4168,18 @@ void botRegisterCvars(void)
         OSD_RegisterCvar(&cv, osdcmd_cvar_set);
 #define BOTEACHCVARS(n) \
         { "bot_skill_" #n, "this bot's difficulty (-1: same as bot_skill)", (void *)&gBotEachSkill[n-1], CVAR_INT, -1, kBotSkillMax - 1 }, \
-        { "bot_personality_" #n, "this bot's personality (-1: same as bot_personality)", (void *)&gBotEachPersona[n-1], CVAR_INT, -1, kBotPersonaMax - 1 },
+        { "bot_personality_" #n, "this bot's personality (-1: same as bot_personality)", (void *)&gBotEachPersona[n-1], CVAR_INT, -1, kBotPersonaMax - 1 }, \
+        { "bot_name_" #n, "this bot's name (empty: a random one)", (void *)gBotEachName[n-1], CVAR_STRING, 0, sizeof(gBotEachName[n-1]) }, \
+        { "bot_team_" #n, "this bot's team in teams games (0: auto, 1: blue, 2: red)", (void *)&gBotEachTeam[n-1], CVAR_INT, 0, 2 }, \
+        { "bot_handicap_" #n, "how much damage this bot takes (-1: same as bot_handicap, 0: much less ... 4: much more)", (void *)&gBotEachHandicap[n-1], CVAR_INT, -1, 4 }, \
+        { "bot_accuracy_" #n, "this bot's aim, percent of bot_accuracy", (void *)&gBotEachTune[n-1][kBotTuneAim], CVAR_INT, 10, 300 }, \
+        { "bot_reaction_" #n, "this bot's reaction time, percent of bot_reaction", (void *)&gBotEachTune[n-1][kBotTuneReaction], CVAR_INT, 10, 300 }, \
+        { "bot_aggression_" #n, "this bot's aggression, percent of bot_aggression", (void *)&gBotEachTune[n-1][kBotTuneAggression], CVAR_INT, 0, 300 }, \
+        { "bot_jumping_" #n, "this bot's jumping, percent of bot_jumping", (void *)&gBotEachTune[n-1][kBotTuneJumping], CVAR_INT, 0, 300 }, \
+        { "bot_ambush_" #n, "this bot's ambushes, percent of bot_ambush", (void *)&gBotEachTune[n-1][kBotTuneAmbush], CVAR_INT, 0, 300 }, \
+        { "bot_flank_" #n, "this bot's flanking, percent of bot_flank", (void *)&gBotEachTune[n-1][kBotTuneFlank], CVAR_INT, 0, 300 }, \
+        { "bot_camping_" #n, "this bot's camping, percent of bot_camping", (void *)&gBotEachTune[n-1][kBotTuneCamping], CVAR_INT, 0, 300 }, \
+        { "bot_highground_" #n, "this bot's going for high ground, percent of bot_highground", (void *)&gBotEachTune[n-1][kBotTuneHighGround], CVAR_INT, 0, 300 },
     static osdcvardata_t eachCvars[] = {
         BOTEACHCVARS(1) BOTEACHCVARS(2) BOTEACHCVARS(3) BOTEACHCVARS(4) BOTEACHCVARS(5) BOTEACHCVARS(6) BOTEACHCVARS(7)
     };

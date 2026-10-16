@@ -38,12 +38,12 @@ See the GNU General Public License for more details.
 
 CHOSENRULES gChosenRules;
 
-static const char *pzModeNames[kChosenModeMax] = { "NORMAL", "GUN GAME", "KING OF THE HILL", "JUGGERNAUT", "LAST MAN STANDING", "SURVIVAL" };
+static const char *pzModeNames[kChosenModeMax] = { "NORMAL", "GUN GAME", "KING OF THE HILL", "JUGGERNAUT", "LAST MAN STANDING", "SURVIVAL", "CAPTURE THE FLAG" };
 
 static const char *pzBloodbathModes[] = { "NORMAL", "GUN GAME", "KING OF THE HILL", "JUGGERNAUT", "LAST MAN STANDING" };
 static const int nBloodbathModes[] = { kChosenModeNormal, kChosenModeGunGame, kChosenModeKingOfTheHill, kChosenModeJuggernaut, kChosenModeLastManStanding };
-static const char *pzTeamsModes[] = { "CAPTURE THE FLAG", "KING OF THE HILL" };
-static const int nTeamsModes[] = { kChosenModeNormal, kChosenModeKingOfTheHill };
+static const char *pzTeamsModes[] = { "TEAM BLOODBATH", "CAPTURE THE FLAG", "KING OF THE HILL", "LAST TEAM STANDING" };
+static const int nTeamsModes[] = { kChosenModeNormal, kChosenModeCaptureFlag, kChosenModeKingOfTheHill, kChosenModeLastManStanding };
 static const char *pzCoopModes[] = { "NORMAL", "SURVIVAL" };
 static const int nCoopModes[] = { kChosenModeNormal, kChosenModeSurvival };
 
@@ -171,6 +171,8 @@ void modesSetFromPacket(void)
     gChosenRules.nWeapons = gPacketStartGame.nChosenWeapons;
     gChosenRules.bVampire = gPacketStartGame.bChosenVampire;
     gChosenRules.bOneHit = gPacketStartGame.bChosenOneHit;
+    for (int i = 0; i < kMaxPlayers; i++)
+        gChosenRules.nTeam[i] = gGameOptions.nGameType == kGameTypeTeams ? ClipRange(gPacketStartGame.nChosenTeam[i], 0, 2) : 0;
     // modes that don't fit the game type count as normal
     const char **ppzNames;
     const int *pnModes;
@@ -601,6 +603,9 @@ static int CountMonsters(void)
 
 void modesStartLevel(void)
 {
+    if (gGameOptions.nGameType == kGameTypeTeams) // who plays where, for the log
+        for (int p = connecthead; p >= 0; p = connectpoint2[p])
+            LOG_F(INFO, "Player %d %s: %s Team", p + 1, gProfile[p].name, (gPlayer[p].teamId & 1) ? "Red" : "Blue");
     Bmemset(stats, 0, sizeof(stats));
     Bmemset(nGunLevel, 0, sizeof(nGunLevel));
     Bmemset(nHillPoints, 0, sizeof(nHillPoints));
@@ -782,6 +787,21 @@ void modesFrame(void)
     {
     case kChosenModeLastManStanding:
     {
+        if (gGameOptions.nGameType == kGameTypeTeams)
+        {
+            // last team standing: the last team with somebody who has lives left wins
+            bool bHasPlayers[2] = { false, false }, bIn[2] = { false, false };
+            for (int p = connecthead; p >= 0; p = connectpoint2[p])
+            {
+                const int nTeam = gPlayer[p].teamId & 1;
+                bHasPlayers[nTeam] = true;
+                if (nLives[p] > 0)
+                    bIn[nTeam] = true;
+            }
+            if (bHasPlayers[0] && bHasPlayers[1] && bIn[0] != bIn[1])
+                DeclareWinner(-1, bIn[0] ? "Blue Team is the last team standing!" : "Red Team is the last team standing!");
+            break;
+        }
         // the last one with lives left wins
         int nIn = 0, nLast = -1;
         for (int p = connecthead; p >= 0; p = connectpoint2[p])

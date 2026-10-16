@@ -104,6 +104,10 @@ struct PKT_STARTGAME {
     char bCoopContinue; // co-op save continue: apply the loadouts sent just before (see coopsave.cpp)
     // NotBlood Chosen match types and mutators (chosenmodes.h)
     char nChosenMode, nChosenLives, nChosenGravity, nChosenWeapons, bChosenVampire, bChosenOneHit;
+    // NotBlood Chosen 1.2: teams picked in the menu (0 as before: auto/the player's preference, 1 blue,
+    // 2 red) and how many of the players are bots (their names and looks come just before, packet 242)
+    char nChosenTeam[8];
+    char nBots;
 };
 
 extern PKT_STARTGAME gPacketStartGame;
@@ -186,3 +190,4 @@ void netUpdate(void);
 void netDeinitialize(void);
 void netBroadcastNewGame(void);
 void netSendPacketAll(char *pBuffer, int nSize);
+void netBroadcastBotTalk(int nPlayer, const char *pzText, int nSound);

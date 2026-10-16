@@ -489,15 +489,23 @@ CGameMenuItemText itemBotOrdersHelp1("FOR THE BOTS ON YOUR SIDE (CO-OP AND TEAMS
 CGameMenuItemText itemBotOrdersHelp2("ALSO: CONSOLE bot_order follow|hold|free", 3, 160, 140, 1);
 
 // ---- BOTS ---------------------------------------------------------------------------------
+// The same menu for a match against bots (MULTIPLAYER > PLAY WITH BOTS) and for the bots of a
+// network game (MULTIPLAYER > BOTS in the game setup); in a network game it only sets them up.
 
 CGameMenu menuBots;
 CGameMenu menuBotsTuning;
 CGameMenu menuBotsEach;
+CGameMenu menuTeams;
+
+static bool bBotsNet; // opened from a network game's setup
 
 static void BotsSlider(CGameMenuItemSlider *pItem);
 static void BotsSetSkill(CGameMenuItemZCycle *pItem);
 static void BotsSetPersona(CGameMenuItemZCycle *pItem);
 static void BotsSetEach(CGameMenuItemZCycle *pItem);
+static void BotsEachSlider(CGameMenuItemSlider *pItem);
+static void BotsEachName(CGameMenuItemZEdit *pItem, CGameMenuEvent *pEvent);
+static void BotsEachReset(CGameMenuItemChain *pItem);
 
 static void BotsSetupEach(CGameMenuItemChain *pItem);
 static void BotsToggle(CGameMenuItemZBool *pItem);
@@ -507,8 +515,10 @@ static void UpdateBotsInfo(CGameMenuItem *pItem);
 static const char *pzBotsEachSkill[kBotSkillMax+1] = { "SAME AS ALL", "EASY", "NORMAL", "HARD", "NIGHTMARE" };
 static const char *pzBotsEachPersona[kBotPersonaMax+1] = { "SAME AS ALL", "MIXED", "BALANCED", "RUSHER", "CAMPER", "TRICKSTER", "COWARD", "JUMPER" };
 static const char *pzBotsHandicap[5] = { "MUCH LESS", "LESS", "NORMAL", "MORE", "MUCH MORE" };
+static const char *pzBotsEachHandicap[6] = { "SAME AS ALL", "MUCH LESS", "LESS", "NORMAL", "MORE", "MUCH MORE" };
+static const char *pzBotsTeams[3] = { "AUTO", "BLUE", "RED" };
 static const char *pzBotsNumbers[kBotMaxBots] = { "1", "2", "3", "4", "5", "6", "7" };
-static char zBotsInfo[80];
+static char zBotsInfo[80], zBotsInfo2[80];
 
 CGameMenuItemChain itemNetworkBots("PLAY WITH BOTS", 1, 0, 118, 320, 1, &menuBots, -1, SetupBotsMenu, 0);
 
@@ -523,12 +533,14 @@ CGameMenuItemSlider itemBotsCount("BOTS:", 3, 66, 38, 180, &gBotCount, 1, kBotMa
 CGameMenuItemZCycle itemBotsSkill("DIFFICULTY:", 3, 66, 48, 180, 0, BotsSetSkill, gBotSkillNames, kBotSkillMax, 0);
 CGameMenuItemZCycle itemBotsPersona("PERSONALITY:", 3, 66, 58, 180, 0, BotsSetPersona, gBotPersonaNames, kBotPersonaMax, 0);
 CGameMenuItemChain itemBotsEach("SET EACH BOT", 3, 0, 72, 320, 1, &menuBotsEach, -1, BotsSetupEach, 0);
-CGameMenuItemChain itemBotsTuning("FINE TUNING", 3, 0, 82, 320, 1, &menuBotsTuning, -1, NULL, 0);
-CGameMenuItemChain itemBotsMatch("MATCH SETTINGS", 3, 0, 92, 320, 1, &menuNetStart, 1, NULL, 0);
-CGameMenuItemChain itemBotsCareer("CAREER", 3, 0, 106, 320, 1, &menuCareer, -1, SetupCareerMenu, 0);
-CGameMenuItemChain itemBotsWatch("WATCH BOTS", 3, 0, 116, 320, 1, NULL, -1, BotsWatch, 0);
-CGameMenuItemText itemBotsInfo(zBotsInfo, 3, 160, 132, 1);
-CGameMenuItemChain itemBotsStart("START MATCH", 1, 0, 152, 320, 1, NULL, -1, BotsStart, 0);
+CGameMenuItemChain itemBotsTuning("FINE TUNING (ALL BOTS)", 3, 0, 82, 320, 1, &menuBotsTuning, -1, NULL, 0);
+CGameMenuItemChain itemBotsTeams("SET TEAMS", 3, 0, 92, 320, 1, &menuTeams, -1, SetupTeamsMenu, 0);
+CGameMenuItemChain itemBotsMatch("MATCH SETTINGS", 3, 0, 102, 320, 1, &menuNetStart, 1, NULL, 0);
+CGameMenuItemChain itemBotsCareer("CAREER", 3, 0, 116, 320, 1, &menuCareer, -1, SetupCareerMenu, 0);
+CGameMenuItemChain itemBotsWatch("WATCH BOTS", 3, 0, 126, 320, 1, NULL, -1, BotsWatch, 0);
+CGameMenuItemText itemBotsInfo(zBotsInfo, 3, 160, 140, 1);
+CGameMenuItemText itemBotsInfo2(zBotsInfo2, 3, 160, 150, 1);
+CGameMenuItemChain itemBotsStart("START MATCH", 1, 0, 160, 320, 1, NULL, -1, BotsStart, 0);
 
 static char zCareer1[80], zCareer2[96], zCareer3[80], zCareer4[80];
 static bool bCareerResetArmed;
@@ -559,15 +571,28 @@ CGameMenuItemZBool itemBotsAdaptive("ADAPTIVE DIFFICULTY:", 3, 66, 125, 180, fal
 CGameMenuItemZBool itemBotsTaunts("TAUNTS:", 3, 66, 134, 180, true, BotsToggle, NULL, NULL);
 CGameMenuItemZBool itemBotsCultists("LOOK:", 3, 66, 143, 180, true, BotsToggle, "CULTISTS/CALEB", "CALEB");
 CGameMenuItemZBool itemBotsDebug("SHOW WHAT BOTS DO:", 3, 66, 152, 180, false, BotsToggle, NULL, NULL);
-CGameMenuItemText itemBotsTuningHelp1("100% IS THE DIFFICULTY'S OR PERSONALITY'S OWN VALUE", 3, 160, 166, 1);
+CGameMenuItemText itemBotsTuningHelp1("FOR ALL BOTS: 100% IS THE DIFFICULTY'S OR PERSONALITY'S OWN", 3, 160, 166, 1);
 CGameMenuItemText itemBotsTuningHelp2("AIM ABOVE 100% IS BETTER, REACTION ABOVE 100% IS SLOWER", 3, 160, 176, 1);
 
+// one bot: picked with BOT:, everything below is that bot's
 CGameMenuItemTitle itemBotsEachTitle("EACH BOT", 1, 160, 20, 2038);
-CGameMenuItemZCycle itemBotsEachWhich("BOT:", 3, 66, 50, 180, 0, BotsSetEach, pzBotsNumbers, kBotMaxBots, 0);
-CGameMenuItemZCycle itemBotsEachSkill("DIFFICULTY:", 3, 66, 64, 180, 0, BotsSetEach, pzBotsEachSkill, kBotSkillMax+1, 0);
-CGameMenuItemZCycle itemBotsEachPersona("PERSONALITY:", 3, 66, 76, 180, 0, BotsSetEach, pzBotsEachPersona, kBotPersonaMax+1, 0);
-CGameMenuItemText itemBotsEachHelp1("BOTS ON \"SAME AS ALL\" USE THE BOTS MENU'S CHOICE", 3, 160, 100, 1);
-CGameMenuItemText itemBotsEachHelp2("MIXED GIVES EVERY BOT A DIFFERENT PERSONALITY", 3, 160, 110, 1);
+CGameMenuItemZCycle itemBotsEachWhich("BOT:", 3, 66, 32, 180, 0, BotsSetEach, pzBotsNumbers, kBotMaxBots, 0);
+CGameMenuItemZEdit itemBotsEachName("NAME:", 3, 66, 41, 180, gBotEachName[0], sizeof(gBotEachName[0]), 0, BotsEachName, 0);
+CGameMenuItemZCycle itemBotsEachSkill("DIFFICULTY:", 3, 66, 50, 180, 0, BotsSetEach, pzBotsEachSkill, kBotSkillMax+1, 0);
+CGameMenuItemZCycle itemBotsEachPersona("PERSONALITY:", 3, 66, 59, 180, 0, BotsSetEach, pzBotsEachPersona, kBotPersonaMax+1, 0);
+CGameMenuItemZCycle itemBotsEachTeam("TEAM:", 3, 66, 68, 180, 0, BotsSetEach, pzBotsTeams, 3, 0);
+CGameMenuItemZCycle itemBotsEachHandicap("TAKES DAMAGE:", 3, 66, 77, 180, 0, BotsSetEach, pzBotsEachHandicap, 6, 0);
+CGameMenuItemSlider itemBotsEachAim("AIM %:", 3, 66, 87, 180, &gBotEachTune[0][kBotTuneAim], 10, 300, 10, BotsEachSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsEachReaction("REACTION TIME %:", 3, 66, 96, 180, &gBotEachTune[0][kBotTuneReaction], 10, 300, 10, BotsEachSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsEachAggression("AGGRESSION %:", 3, 66, 105, 180, &gBotEachTune[0][kBotTuneAggression], 0, 300, 10, BotsEachSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsEachJumping("JUMPING %:", 3, 66, 114, 180, &gBotEachTune[0][kBotTuneJumping], 0, 300, 10, BotsEachSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsEachAmbush("AMBUSHES %:", 3, 66, 123, 180, &gBotEachTune[0][kBotTuneAmbush], 0, 300, 10, BotsEachSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsEachFlank("FLANKING %:", 3, 66, 132, 180, &gBotEachTune[0][kBotTuneFlank], 0, 300, 10, BotsEachSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsEachCamping("CAMPING %:", 3, 66, 141, 180, &gBotEachTune[0][kBotTuneCamping], 0, 300, 10, BotsEachSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemBotsEachHighGround("HIGH GROUND %:", 3, 66, 150, 180, &gBotEachTune[0][kBotTuneHighGround], 0, 300, 10, BotsEachSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemChain itemBotsEachReset("RESET THIS BOT", 3, 0, 161, 320, 1, NULL, -1, BotsEachReset, 0);
+static CGameMenuItemSlider *pBotsEachTune[kBotTuneMax] = { &itemBotsEachAim, &itemBotsEachReaction, &itemBotsEachAggression, &itemBotsEachJumping,
+    &itemBotsEachAmbush, &itemBotsEachFlank, &itemBotsEachCamping, &itemBotsEachHighGround };
 
 static void BotsSlider(CGameMenuItemSlider *pItem)
 {
@@ -602,19 +627,61 @@ static void BotsToggle(CGameMenuItemZBool *pItem)
 
 static int nBotsEachLast = -1;
 
+static void BotsShowEach(int nBot)
+{
+    itemBotsEachName.at20 = gBotEachName[nBot];
+    itemBotsEachName.at30 = 0;
+    itemBotsEachSkill.SetTextIndex(gBotEachSkill[nBot] + 1);
+    itemBotsEachPersona.SetTextIndex(gBotEachPersona[nBot] + 1);
+    itemBotsEachTeam.SetTextIndex(ClipRange(gBotEachTeam[nBot], 0, 2));
+    itemBotsEachHandicap.SetTextIndex(ClipRange(gBotEachHandicap[nBot] + 1, 0, 5));
+    for (int i = 0; i < kBotTuneMax; i++)
+    {
+        pBotsEachTune[i]->pValue = &gBotEachTune[nBot][i];
+        pBotsEachTune[i]->nValue = gBotEachTune[nBot][i];
+    }
+    nBotsEachLast = nBot;
+}
+
 static void BotsSetEach(CGameMenuItemZCycle *pItem)
 {
     const int nBot = ClipRange(itemBotsEachWhich.m_nFocus, 0, kBotMaxBots-1);
     if (pItem == &itemBotsEachWhich || nBotsEachLast != nBot)
     {
-        // another bot picked: show its choices
-        itemBotsEachSkill.SetTextIndex(gBotEachSkill[nBot] + 1);
-        itemBotsEachPersona.SetTextIndex(gBotEachPersona[nBot] + 1);
-        nBotsEachLast = nBot;
+        BotsShowEach(nBot); // another bot picked: show its choices
         return;
     }
     gBotEachSkill[nBot] = itemBotsEachSkill.m_nFocus - 1;
     gBotEachPersona[nBot] = itemBotsEachPersona.m_nFocus - 1;
+    gBotEachTeam[nBot] = ClipRange(itemBotsEachTeam.m_nFocus, 0, 2);
+    gBotEachHandicap[nBot] = ClipRange(itemBotsEachHandicap.m_nFocus, 0, 5) - 1;
+}
+
+static void BotsEachSlider(CGameMenuItemSlider *pItem)
+{
+    if (pItem->pValue)
+        *pItem->pValue = pItem->nValue;
+}
+
+static void BotsEachName(CGameMenuItemZEdit *pItem, CGameMenuEvent *pEvent)
+{
+    UNREFERENCED_PARAMETER(pEvent);
+    // the name is edited in place; keep it printable
+    for (char *p = pItem->at20; *p; p++)
+        if ((unsigned char)*p < ' ')
+            *p = ' ';
+}
+
+static void BotsEachReset(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    const int nBot = ClipRange(itemBotsEachWhich.m_nFocus, 0, kBotMaxBots-1);
+    gBotEachName[nBot][0] = '\0';
+    gBotEachSkill[nBot] = gBotEachPersona[nBot] = gBotEachHandicap[nBot] = -1;
+    gBotEachTeam[nBot] = kBotTeamAuto;
+    for (int i = 0; i < kBotTuneMax; i++)
+        gBotEachTune[nBot][i] = 100;
+    BotsShowEach(nBot);
 }
 
 static void BotsSetupEach(CGameMenuItemChain *pItem)
@@ -624,9 +691,30 @@ static void BotsSetupEach(CGameMenuItemChain *pItem)
     BotsSetEach(&itemBotsEachWhich);
 }
 
-void SetupBotsMenu(CGameMenuItemChain *pItem)
+// the BOTS menu's own items: the bot count and what is shown depend on where it was opened from
+static void BotsMenuMode(bool bNet)
 {
-    SetupBotMatchMenu(pItem);
+    bBotsNet = bNet;
+    if (bNet)
+    {
+        itemBotsCount.pValue = &gBotNetCount;
+        itemBotsCount.nRangeLow = 0;
+        itemBotsCount.nRangeHigh = botNetMaxBots();
+        gBotNetCount = ClipRange(gBotNetCount, 0, itemBotsCount.nRangeHigh);
+        itemBotsCount.tooltip_pzTextUpper = "How many bots join the game (0: none)";
+    }
+    else
+    {
+        itemBotsCount.pValue = &gBotCount;
+        itemBotsCount.nRangeLow = 1;
+        itemBotsCount.nRangeHigh = kBotMaxBots;
+        itemBotsCount.tooltip_pzTextUpper = "How many bots to play against";
+    }
+    itemBotsCount.nValue = *itemBotsCount.pValue;
+    CGameMenuItem *pOffline[] = { &itemBotsMatch, &itemBotsCareer, &itemBotsWatch, &itemBotsStart };
+    for (CGameMenuItem *pItem : pOffline)
+        pItem->bEnable = !bNet, pItem->bNoDraw = bNet;
+    itemBotsTitle.m_pzText = bNet ? "BOTS IN THIS GAME" : "BOTS";
     itemBotsSkill.SetTextIndex(ClipRange(gBotSkill, 0, kBotSkillMax-1));
     itemBotsPersona.SetTextIndex(ClipRange(gBotPersona, 0, kBotPersonaMax-1));
     itemBotsHandicap.SetTextIndex(ClipRange(gBotHandicap, 0, 4));
@@ -635,6 +723,172 @@ void SetupBotsMenu(CGameMenuItemChain *pItem)
     itemBotsAdaptive.at20 = !!gBotAdaptive;
     itemBotsCultists.at20 = !!gBotCultists;
     itemBotsDebug.at20 = !!gBotDebug;
+}
+
+void SetupBotsMenu(CGameMenuItemChain *pItem)
+{
+    SetupBotMatchMenu(pItem);
+    BotsMenuMode(false);
+}
+
+void SetupBotsNetMenu(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    BotsMenuMode(true);
+}
+
+void BotsNetSummary(char *pzBuffer, int nSize)
+{
+    const int nBots = ClipRange(gBotNetCount, 0, botNetMaxBots());
+    if (!nBots)
+    {
+        Bsnprintf(pzBuffer, nSize, "NONE");
+        return;
+    }
+    bool bSame = true;
+    for (int i = 0; i < nBots; i++)
+        bSame &= gBotEachSkill[i] < 0 && gBotEachPersona[i] < 0;
+    if (bSame)
+        Bsnprintf(pzBuffer, nSize, "%d - %s %s", nBots, gBotSkillNames[ClipRange(gBotSkill, 0, kBotSkillMax-1)], gBotPersonaNames[ClipRange(gBotPersona, 0, kBotPersonaMax-1)]);
+    else
+        Bsnprintf(pzBuffer, nSize, "%d - SET EACH", nBots);
+}
+
+// ---- SET TEAMS ----------------------------------------------------------------------------
+// everybody of a teams game: the people (in a network game the ones who joined) and the bots
+
+#define kTeamsRows 8
+static char zTeamsLabel[kTeamsRows][48];
+static char zTeamsAuto[kTeamsRows][16];
+static const char *pzTeamsRow[kTeamsRows][3];
+static int nTeamsRowPlayer[kTeamsRows]; // a person's player number, -1 for a bot
+static int nTeamsRowBot[kTeamsRows];    // a bot of SET EACH BOT, -1 for a person
+static int nTeamsRows;
+static char zTeamsSummary1[64], zTeamsSummary2[64];
+
+static void TeamsSet(CGameMenuItemZCycle *pItem);
+static void TeamsAllAuto(CGameMenuItemChain *pItem);
+static void UpdateTeams(CGameMenuItem *pItem);
+
+CGameMenuItemTitle itemTeamsTitle("TEAMS", 1, 160, 20, 2038);
+CGameMenuItemZCycle itemTeamsRow0(zTeamsLabel[0], 3, 30, 36, 260, 0, TeamsSet, NULL, 0, 0);
+CGameMenuItemZCycle itemTeamsRow1(zTeamsLabel[1], 3, 30, 46, 260, 0, TeamsSet, NULL, 0, 0);
+CGameMenuItemZCycle itemTeamsRow2(zTeamsLabel[2], 3, 30, 56, 260, 0, TeamsSet, NULL, 0, 0);
+CGameMenuItemZCycle itemTeamsRow3(zTeamsLabel[3], 3, 30, 66, 260, 0, TeamsSet, NULL, 0, 0);
+CGameMenuItemZCycle itemTeamsRow4(zTeamsLabel[4], 3, 30, 76, 260, 0, TeamsSet, NULL, 0, 0);
+CGameMenuItemZCycle itemTeamsRow5(zTeamsLabel[5], 3, 30, 86, 260, 0, TeamsSet, NULL, 0, 0);
+CGameMenuItemZCycle itemTeamsRow6(zTeamsLabel[6], 3, 30, 96, 260, 0, TeamsSet, NULL, 0, 0);
+CGameMenuItemZCycle itemTeamsRow7(zTeamsLabel[7], 3, 30, 106, 260, 0, TeamsSet, NULL, 0, 0);
+static CGameMenuItemZCycle *pTeamsRows[kTeamsRows] = { &itemTeamsRow0, &itemTeamsRow1, &itemTeamsRow2, &itemTeamsRow3, &itemTeamsRow4, &itemTeamsRow5, &itemTeamsRow6, &itemTeamsRow7 };
+CGameMenuItemText itemTeamsSummary1(zTeamsSummary1, 3, 160, 122, 1);
+CGameMenuItemText itemTeamsSummary2(zTeamsSummary2, 3, 160, 131, 1);
+CGameMenuItemChain itemTeamsAllAuto("ALL ON AUTO", 3, 0, 145, 320, 1, NULL, -1, TeamsAllAuto, 0);
+CGameMenuItemText itemTeamsHelp1("AUTO: PLAYERS AS THEY CHOSE, BOTS FILL THE SMALLER TEAM", 3, 160, 160, 1);
+CGameMenuItemText itemTeamsHelp2("EVEN IT OUT WITH EACH BOT'S DIFFICULTY (SET EACH BOT)", 3, 160, 169, 1);
+
+static int TeamsBotCount(void)
+{
+    if (gNetMode == NETWORK_NONE)
+        return ClipRange(gBotCount, 1, kBotMaxBots);
+    return ClipRange(gBotNetCount, 0, botNetMaxBots());
+}
+
+static int TeamsPick(int nRow)
+{
+    if (nTeamsRowBot[nRow] >= 0)
+        return ClipRange(gBotEachTeam[nTeamsRowBot[nRow]], 0, 2);
+    return ClipRange(gHumanTeam[nTeamsRowPlayer[nRow]], 0, 2);
+}
+
+static void UpdateTeams(CGameMenuItem *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    // where everybody on AUTO ends up: the same rules as the start of the game (botResolveTeams)
+    int nTeam[kTeamsRows], nPeople[2] = { 0, 0 }, nBots[2] = { 0, 0 };
+    for (int i = 0; i < nTeamsRows; i++)
+    {
+        if (nTeamsRowBot[i] >= 0)
+            continue;
+        const int p = nTeamsRowPlayer[i];
+        const int nPick = TeamsPick(i);
+        nTeam[i] = nPick ? nPick - 1 : ((NetMenuAutoTeams() || !gProfile[p].nTeamPreference) ? p : gProfile[p].nTeamPreference - 1) & 1;
+        nPeople[nTeam[i]]++;
+    }
+    for (int i = 0; i < nTeamsRows; i++)
+    {
+        if (nTeamsRowBot[i] < 0)
+            continue;
+        const int nPick = TeamsPick(i);
+        nTeam[i] = nPick ? nPick - 1 : ((nPeople[0] + nBots[0] <= nPeople[1] + nBots[1]) ? 0 : 1);
+        nBots[nTeam[i]]++;
+    }
+    for (int i = 0; i < nTeamsRows; i++)
+        Bsnprintf(zTeamsAuto[i], sizeof(zTeamsAuto[i]), "AUTO: %s", nTeam[i] ? "RED" : "BLUE");
+    Bsnprintf(zTeamsSummary1, sizeof(zTeamsSummary1), "BLUE TEAM: %d PLAYER%s, %d BOT%s", nPeople[0], nPeople[0] == 1 ? "" : "S", nBots[0], nBots[0] == 1 ? "" : "S");
+    Bsnprintf(zTeamsSummary2, sizeof(zTeamsSummary2), "RED TEAM: %d PLAYER%s, %d BOT%s", nPeople[1], nPeople[1] == 1 ? "" : "S", nBots[1], nBots[1] == 1 ? "" : "S");
+}
+
+void SetupTeamsMenu(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    int nPeople[kMaxPlayers];
+    const int nPeopleCount = botPeople(nPeople);
+    nTeamsRows = 0;
+    for (int i = 0; i < nPeopleCount && nTeamsRows < kTeamsRows; i++, nTeamsRows++)
+    {
+        const int p = nPeople[i];
+        nTeamsRowPlayer[nTeamsRows] = p;
+        nTeamsRowBot[nTeamsRows] = -1;
+        Bsnprintf(zTeamsLabel[nTeamsRows], sizeof(zTeamsLabel[nTeamsRows]), "%s%s", gProfile[p].name, p == myconnectindex ? " (YOU)" : "");
+        Bstrupr(zTeamsLabel[nTeamsRows]);
+    }
+    const int nBots = TeamsBotCount();
+    for (int i = 0; i < nBots && nTeamsRows < kTeamsRows; i++, nTeamsRows++)
+    {
+        nTeamsRowPlayer[nTeamsRows] = -1;
+        nTeamsRowBot[nTeamsRows] = i;
+        botDescribeEach(i, zTeamsLabel[nTeamsRows], sizeof(zTeamsLabel[nTeamsRows]));
+    }
+    for (int i = 0; i < kTeamsRows; i++)
+    {
+        pzTeamsRow[i][0] = zTeamsAuto[i];
+        pzTeamsRow[i][1] = "BLUE";
+        pzTeamsRow[i][2] = "RED";
+        CGameMenuItemZCycle *pRow = pTeamsRows[i];
+        pRow->SetTextArray(pzTeamsRow[i], 3, i < nTeamsRows ? TeamsPick(i) : 0);
+        pRow->bEnable = i < nTeamsRows;
+        pRow->bNoDraw = !pRow->bEnable;
+    }
+    UpdateTeams(NULL);
+}
+
+static void TeamsSet(CGameMenuItemZCycle *pItem)
+{
+    for (int i = 0; i < nTeamsRows; i++)
+    {
+        if (pTeamsRows[i] != pItem)
+            continue;
+        const int nPick = ClipRange(pItem->m_nFocus, 0, 2);
+        if (nTeamsRowBot[i] >= 0)
+            gBotEachTeam[nTeamsRowBot[i]] = nPick;
+        else
+            gHumanTeam[nTeamsRowPlayer[i]] = nPick;
+    }
+    UpdateTeams(NULL);
+}
+
+static void TeamsAllAuto(CGameMenuItemChain *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    for (int i = 0; i < nTeamsRows; i++)
+    {
+        if (nTeamsRowBot[i] >= 0)
+            gBotEachTeam[nTeamsRowBot[i]] = kBotTeamAuto;
+        else
+            gHumanTeam[nTeamsRowPlayer[i]] = kBotTeamAuto;
+        pTeamsRows[i]->SetTextIndex(0);
+    }
+    UpdateTeams(NULL);
 }
 
 static void BotsStart(CGameMenuItemChain *pItem)
@@ -687,7 +941,16 @@ static void CareerReset(CGameMenuItemChain *pItem)
 static void UpdateBotsInfo(CGameMenuItem *pItem)
 {
     UNREFERENCED_PARAMETER(pItem);
+    itemBotsTeams.bEnable = NetMenuGameType() == kGameTypeTeams;
+    if (bBotsNet)
+    {
+        const int nPeople = botPeople(NULL);
+        Bsnprintf(zBotsInfo, sizeof(zBotsInfo), "%d PLAYER%s + %d BOT%s (8 AT MOST)", nPeople, nPeople == 1 ? "" : "S", gBotNetCount, gBotNetCount == 1 ? "" : "S");
+        Bsnprintf(zBotsInfo2, sizeof(zBotsInfo2), "YOUR PC PLAYS THE BOTS FOR EVERYBODY");
+        return;
+    }
     BotMatchInfo(zBotsInfo, sizeof(zBotsInfo));
+    zBotsInfo2[0] = '\0';
 }
 
 static void UpdateEpisodeBots(CGameMenuItem *pItem)
@@ -719,10 +982,12 @@ void SetupChosenMenus(void)
     menuBots.Add(&itemBotsPersona, false);
     menuBots.Add(&itemBotsEach, false);
     menuBots.Add(&itemBotsTuning, false);
+    menuBots.Add(&itemBotsTeams, false);
     menuBots.Add(&itemBotsMatch, false);
     menuBots.Add(&itemBotsCareer, false);
     menuBots.Add(&itemBotsWatch, false);
     menuBots.Add(&itemBotsInfo, false);
+    menuBots.Add(&itemBotsInfo2, false);
     menuBots.Add(&itemBotsStart, false);
     menuBots.Add(&itemBloodQAV, false);
     itemBotsInfo.pPreDrawCallback = UpdateBotsInfo;
@@ -731,8 +996,9 @@ void SetupChosenMenus(void)
     itemBotsCount.tooltip_pzTextUpper = "How many bots to play against";
     itemBotsSkill.tooltip_pzTextUpper = "How well they aim, how fast they react and how smart they are";
     itemBotsPersona.tooltip_pzTextUpper = "Rusher, camper, trickster, coward, jumper or a mix";
-    itemBotsEach.tooltip_pzTextUpper = "A different difficulty or personality for single bots";
-    itemBotsTuning.tooltip_pzTextUpper = "Adjust aim, reaction time and tactics";
+    itemBotsEach.tooltip_pzTextUpper = "Name, difficulty, personality, team and tuning of single bots";
+    itemBotsTuning.tooltip_pzTextUpper = "Adjust aim, reaction time and tactics of all bots";
+    itemBotsTeams.tooltip_pzTextUpper = "Who plays on which team (teams games)";
     itemBotsMatch.tooltip_pzTextUpper = "Game type, map, frag and time limits, weapons, items, mutators";
     itemBotsStart.tooltip_pzTextUpper = "Play! (ESC pauses the match)";
     itemBotsCareer.tooltip_pzTextUpper = "A ladder of 10 matches against named bots";
@@ -778,11 +1044,35 @@ void SetupChosenMenus(void)
 
     menuBotsEach.Add(&itemBotsEachTitle, false);
     menuBotsEach.Add(&itemBotsEachWhich, true);
+    menuBotsEach.Add(&itemBotsEachName, false);
     menuBotsEach.Add(&itemBotsEachSkill, false);
     menuBotsEach.Add(&itemBotsEachPersona, false);
-    menuBotsEach.Add(&itemBotsEachHelp1, false);
-    menuBotsEach.Add(&itemBotsEachHelp2, false);
+    menuBotsEach.Add(&itemBotsEachTeam, false);
+    menuBotsEach.Add(&itemBotsEachHandicap, false);
+    for (int i = 0; i < kBotTuneMax; i++)
+        menuBotsEach.Add(pBotsEachTune[i], false);
+    menuBotsEach.Add(&itemBotsEachReset, false);
     menuBotsEach.Add(&itemBloodQAV, false);
+    for (int i = 0; i < kBotTuneMax; i++)
+        pBotsEachTune[i]->tooltip_pzTextUpper = "Percent of FINE TUNING for all bots (100: the same)";
+    itemBotsEachName.tooltip_pzTextUpper = "Empty: a random name";
+    itemBotsEachSkill.tooltip_pzTextUpper = "Same as all: the BOTS menu's difficulty";
+    itemBotsEachPersona.tooltip_pzTextUpper = "Same as all: the BOTS menu's personality";
+    itemBotsEachReset.tooltip_pzTextUpper = "Back to random name, same as all, 100%";
+    itemBotsEachWhich.tooltip_pzTextUpper = "Pick a bot; the rest is that bot's";
+    itemBotsEachTeam.tooltip_pzTextUpper = "Its team in teams games (auto: the smaller team)";
+    itemBotsEachHandicap.tooltip_pzTextUpper = "More damage makes it easier to kill";
+
+    menuTeams.Add(&itemTeamsTitle, false);
+    for (int i = 0; i < kTeamsRows; i++)
+        menuTeams.Add(pTeamsRows[i], i == 0);
+    menuTeams.Add(&itemTeamsSummary1, false);
+    menuTeams.Add(&itemTeamsSummary2, false);
+    menuTeams.Add(&itemTeamsAllAuto, false);
+    menuTeams.Add(&itemTeamsHelp1, false);
+    menuTeams.Add(&itemTeamsHelp2, false);
+    menuTeams.Add(&itemBloodQAV, false);
+    itemTeamsSummary1.pPreDrawCallback = UpdateTeams;
 
     menuLanGames.Add(&itemLanTitle, false);
     for (int i = 0; i < kMaxLanGames; i++)

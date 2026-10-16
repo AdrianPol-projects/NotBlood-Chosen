@@ -62,7 +62,30 @@ extern int gBotHighGround;
 extern int gBotGrudges;
 extern int gBotAdaptive;
 
-extern bool gBotMatch;
+// per bot (SET EACH BOT): name ("" a random one), team, damage it takes, its own fine tuning in
+// percent of the all-bots fine tuning (100: just that)
+enum {
+    kBotTuneAim = 0,
+    kBotTuneReaction,
+    kBotTuneAggression,
+    kBotTuneJumping,
+    kBotTuneAmbush,
+    kBotTuneFlank,
+    kBotTuneCamping,
+    kBotTuneHighGround,
+    kBotTuneMax
+};
+enum { kBotTeamAuto = 0, kBotTeamBlue, kBotTeamRed };
+extern char gBotEachName[kBotMaxBots][16];
+extern int gBotEachTeam[kBotMaxBots];
+extern int gBotEachHandicap[kBotMaxBots];   // -1: same as gBotHandicap
+extern int gBotEachTune[kBotMaxBots][kBotTuneMax];
+extern int gHumanTeam[8];                   // SET TEAMS for the people, by player number (not saved)
+
+extern int gBotNetCount;  // bots the host of a network game adds (MULTIPLAYER > BOTS)
+
+extern bool gBotMatch;    // an offline match against bots
+extern bool gBotNet;      // bots in the running network game (the host's PC plays them)
 extern const char *gBotSkillNames[kBotSkillMax];
 extern const char *gBotPersonaNames[kBotPersonaMax];
 
@@ -83,7 +106,23 @@ void careerPlay(void);
 void careerReset(void);
 
 bool botIsBot(int nPlayer);
+bool botAny(void);          // bots in this game (offline or network)
 void botSetupMatch(void);   // called by StartNetGame() when offline: adds the bots as players
+// network games: the host picks the bots' player slots and sends who they are (packet 242) just
+// before the start packet; every machine then puts them into the player list (botApplyRoster).
+// The host makes their input next to its own and sends it with everybody else's.
+int botNetMaxBots(void);    // how many bots still fit next to the people
+bool botNetSetup(void);     // host, StartNetGame(): false when bots can't be used (the message says why)
+void botNetSendRoster(void);
+void botNetNoBots(void);     // host: a game without bots (LOAD CO-OP)
+void botReceiveRoster(char *pPacket);
+void botApplyRoster(void);  // start packet received (or sent): the bots join the player list
+void botNetReset(void);     // the network game is over
+void botNetInput(void);     // host: the bots' input, after its own
+void botReceiveTalk(char *pPacket);
+void botResolveTeams(char *pnTeams); // the teams for the start packet, by player number
+int botPeople(int *pnPlayers);       // the people in the game (not bots), their player numbers
+void botDescribeEach(int nBot, char *pzBuffer, int nSize); // "NAME - HARD RUSHER" for the menus
 void botEndMatch(void);     // back to a normal single player game
 void botLevelStart(void);   // after StartLevel() spawned everybody
 void botGetInput(int nPlayer, GINPUT *pInput);

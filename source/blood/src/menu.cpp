@@ -578,16 +578,30 @@ void SetNetMonsterMenu(CGameMenuItemZCycle *pItem);
 
 CGameMenuItemTitle itemNetStartTitle("MULTIPLAYER", 1, 160, 20, 2038);
 CGameMenuItemChain itemNetStart1("GAME:", 3, 66, 35, 180, 0, &menuNetworkGameMode, -1, NULL, 0);
-CGameMenuItemZCycle itemNetStart2("EPISODE:", 3, 66, 45, 180, 0, SetupNetLevels, NULL, 0, 0);
-CGameMenuItemZCycle itemNetStart3("LEVEL:", 3, 66, 55, 180, 0, NetClearUserMap, NULL, 0, 0);
-CGameMenuItemZCycle itemNetStart4("DIFFICULTY:", 3, 66, 65, 180, 0, SetNetMonsterMenu, zDiffStrings, ARRAY_SSIZE(zDiffStrings), 0);
-CGameMenuItemChain itemNetStart5("MONSTER SETTING:", 3, 66, 75, 180, 0, &menuNetworkGameMonsters, -1, NULL, 0);
-CGameMenuItemZCycle itemNetStart6("WEAPONS:", 3, 66, 85, 180, 0, 0, zWeaponStrings, 4, 0);
-CGameMenuItemZCycle itemNetStart7("ITEMS:", 3, 66, 95, 180, 0, 0, zItemStrings, 3, 0);
-CGameMenuItemZBool itemNetStartBoolChaseView("CHASE VIEW:", 3, 66, 105, 180, false, NULL, NULL, NULL);
-CGameMenuItemZBool itemNetStartBoolHolstering("HOLSTERING:", 3, 66, 115, 180, false, NULL, NULL, NULL);
+CGameMenuItemChain itemNetStartBots("BOTS:", 3, 66, 44, 180, 0, &menuBots, -1, SetupBotsNetMenu, 0);
+static char zNetStartBotsText[48];
+static void UpdateNetStartBots(CGameMenuItem *pItem)
+{
+    UNREFERENCED_PARAMETER(pItem);
+    if (gNetMode == NETWORK_NONE) // setting up a bot match: the bots menu has them
+    {
+        itemNetStartBots.bEnable = 0;
+        Bsnprintf(zNetStartBotsText, sizeof(zNetStartBotsText), "%d (BOTS MENU)", gBotCount);
+        return;
+    }
+    itemNetStartBots.bEnable = myconnectindex == connecthead; // the host's PC plays them
+    BotsNetSummary(zNetStartBotsText, sizeof(zNetStartBotsText));
+}
+CGameMenuItemZCycle itemNetStart2("EPISODE:", 3, 66, 53, 180, 0, SetupNetLevels, NULL, 0, 0);
+CGameMenuItemZCycle itemNetStart3("LEVEL:", 3, 66, 62, 180, 0, NetClearUserMap, NULL, 0, 0);
+CGameMenuItemZCycle itemNetStart4("DIFFICULTY:", 3, 66, 71, 180, 0, SetNetMonsterMenu, zDiffStrings, ARRAY_SSIZE(zDiffStrings), 0);
+CGameMenuItemChain itemNetStart5("MONSTER SETTING:", 3, 66, 80, 180, 0, &menuNetworkGameMonsters, -1, NULL, 0);
+CGameMenuItemZCycle itemNetStart6("WEAPONS:", 3, 66, 89, 180, 0, 0, zWeaponStrings, 4, 0);
+CGameMenuItemZCycle itemNetStart7("ITEMS:", 3, 66, 98, 180, 0, 0, zItemStrings, 3, 0);
+CGameMenuItemZBool itemNetStartBoolChaseView("CHASE VIEW:", 3, 66, 107, 180, false, NULL, NULL, NULL);
+CGameMenuItemZBool itemNetStartBoolHolstering("HOLSTERING:", 3, 66, 116, 180, false, NULL, NULL, NULL);
 CGameMenuItemZBool itemNetStartBoolSecondWind("SECOND WIND:", 3, 66, 125, 180, true, 0, NULL, NULL);
-CGameMenuItemZBool itemNetStartBoolSpectatorMode("SPECTATING:", 3, 66, 135, 180, false, 0, NULL, NULL);
+CGameMenuItemZBool itemNetStartBoolSpectatorMode("SPECTATING:", 3, 66, 134, 180, false, 0, NULL, NULL);
 CGameMenuItemChain itemNetStart8("SET ITEMS", 3, 0, 143, 256, 1, &menuBannedItems, -1, NULL, 0);
 CGameMenuItemChain itemNetStart8Load("LOAD ITEMS", 3, 0, 143, 384, 1, &menuMultiUserItems, 0, NULL, 0);
 CGameMenuItemChain itemNetStart9("SET MUTATORS", 3, 0, 153, 320, 1, &menuNetworkGameMutators, -1, NULL, 0);
@@ -598,32 +612,33 @@ CGameMenuItemChain itemNetStart11(zNetStartGame, 1, 0, 175, 320, 1, 0, -1, Start
 
 CGameMenuItemTitle itemNetGameTitle("GAME SETTINGS", 1, 160, 20, 2038);
 CGameMenuItemZCycle itemNetGameMode("GAME:", 3, 66, 35, 180, 0, SetNetGameMode, zNetGameTypes, ARRAY_SSIZE(zNetGameTypes), 0);
-CGameMenuItemSlider itemNetGameSliderScoreLimit("SCORE LIMIT:", 3, 66, 44, 180, 0, 0, 255, 1, NULL, -1, -1, kMenuSliderValue);
-CGameMenuItemSlider itemNetGameSliderLivesLimit("LIVES:", 3, 66, 44, 180, 0, 0, 255, 1, NULL, -1, -1, kMenuSliderValue);
-CGameMenuItemSlider itemNetGameSliderTimeLimit("TIME LIMIT:", 3, 66, 54, 180, 0, 0, 60, 1, NULL, -1, -1, kMenuSliderValue);
-CGameMenuItemZBool itemNetGameBoolExit("LEVEL EXIT:", 3, 66, 65, 180, true, NULL, NULL, NULL);
-CGameMenuItemZBool itemNetGameBoolTeleFrag("TELEFRAGS:", 3, 66, 73, 180, true, NULL, NULL, NULL);
-CGameMenuItemZBool itemNetGameBoolSkillOverride("PLAYER HANDICAP:", 3, 66, 81, 180, true, NULL, "ALLOWED", "OFF");
-CGameMenuItemZBool itemNetGameBoolModelOverride("PLAYER MODEL:", 3, 66, 89, 180, true, NULL, "CULTISTS/CALEB", "CALEB ONLY");
-CGameMenuItemZBool itemNetGameBoolPlayerColors("PLAYER COLORS:", 3, 66, 97, 180, true, 0, "EXTENDED", "VANILLA");
-CGameMenuItemZBool itemNetGameBoolFriendlyFire("FRIENDLY FIRE:", 3, 66, 105, 180, true, 0, NULL, NULL);
-CGameMenuItemZCycle itemNetGameCycleKey("KEYS SETTING:", 3, 66, 113, 180, 0, 0, zKeyStrings, ARRAY_SSIZE(zKeyStrings), 0);
-CGameMenuItemZCycle itemNetGameCycleItemWeapon("ITEM/WEAPON SETTING:", 3, 66, 121, 180, 0, SetNetGameMode, zKeepItemWeaponStrings, ARRAY_SSIZE(zKeepItemWeaponStrings), 0);
-CGameMenuItemZBool itemNetGameBoolTeamColors("TEAM COLORS:", 3, 66, 97, 180, true, 0, NULL, NULL);
-CGameMenuItemZBool itemNetGameBoolAutoTeams("AUTO TEAMS:", 3, 66, 113, 180, true, 0, NULL, NULL);
-CGameMenuItemZBool itemNetGameBoolTeamFlags("TEAM FLAGS:", 3, 66, 121, 180, true, 0, NULL, NULL);
-CGameMenuItemZCycle itemNetGameCycleSpawnLocation("SPAWN AREA:", 3, 66, 129, 180, 0, 0, zRespawnStrings, ARRAY_SSIZE(zRespawnStrings), 0);
-CGameMenuItemZCycle itemNetGameCycleShowWeaponsOverride("ENEMY WEAPONS:", 3, 66, 137, 180, 0, SetNetShowWeapon, zShowWeapon, ARRAY_SSIZE(zShowWeapon), 0);
-CGameMenuItemZCycle itemNetGameCycleShowWeaponsOverrideTeams("ENEMY WEAPONS:", 3, 66, 137, 180, 0, SetNetShowWeapon, zShowWeaponTeams, ARRAY_SSIZE(zShowWeaponTeams), 0);
-CGameMenuItemZCycle itemNetGameCycleSpawnProtection("SPAWN PROTECTION:", 3, 66, 145, 180, 0, 0, zSpawnProtectStrings, ARRAY_SSIZE(zSpawnProtectStrings), 0);
-CGameMenuItemZCycle itemNetGameCycleSpawnWeapon("SPAWN WITH WEAPON:", 3, 66, 153, 180, 0, SetNetGameMode, zSpawnWeaponStrings, ARRAY_SSIZE(zSpawnWeaponStrings), 0);
-CGameMenuItemZCycle itemNetGameCycleMirrorModeOverride("MIRROR MODE:", 3, 66, 161, 180, 0, NULL, pzMirrorModeStrings, ARRAY_SSIZE(pzMirrorModeStrings), 0);
+CGameMenuItemSlider itemNetGameSliderScoreLimit("SCORE LIMIT:", 3, 66, 52, 180, 0, 0, 255, 1, NULL, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemNetGameSliderLivesLimit("LIVES:", 3, 66, 52, 180, 0, 0, 255, 1, NULL, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemNetGameSliderTimeLimit("TIME LIMIT:", 3, 66, 61, 180, 0, 0, 60, 1, NULL, -1, -1, kMenuSliderValue);
+CGameMenuItemZBool itemNetGameBoolExit("LEVEL EXIT:", 3, 66, 70, 180, true, NULL, NULL, NULL);
+CGameMenuItemZBool itemNetGameBoolTeleFrag("TELEFRAGS:", 3, 66, 78, 180, true, NULL, NULL, NULL);
+CGameMenuItemZBool itemNetGameBoolSkillOverride("PLAYER HANDICAP:", 3, 66, 86, 180, true, NULL, "ALLOWED", "OFF");
+CGameMenuItemZBool itemNetGameBoolModelOverride("PLAYER MODEL:", 3, 66, 94, 180, true, NULL, "CULTISTS/CALEB", "CALEB ONLY");
+CGameMenuItemZBool itemNetGameBoolPlayerColors("PLAYER COLORS:", 3, 66, 102, 180, true, 0, "EXTENDED", "VANILLA");
+CGameMenuItemZBool itemNetGameBoolFriendlyFire("FRIENDLY FIRE:", 3, 66, 110, 180, true, 0, NULL, NULL);
+CGameMenuItemZCycle itemNetGameCycleKey("KEYS SETTING:", 3, 66, 118, 180, 0, 0, zKeyStrings, ARRAY_SSIZE(zKeyStrings), 0);
+CGameMenuItemZCycle itemNetGameCycleItemWeapon("ITEM/WEAPON SETTING:", 3, 66, 126, 180, 0, SetNetGameMode, zKeepItemWeaponStrings, ARRAY_SSIZE(zKeepItemWeaponStrings), 0);
+CGameMenuItemZBool itemNetGameBoolTeamColors("TEAM COLORS:", 3, 66, 102, 180, true, 0, NULL, NULL);
+CGameMenuItemZBool itemNetGameBoolAutoTeams("AUTO TEAMS:", 3, 66, 118, 180, true, 0, NULL, NULL);
+CGameMenuItemZBool itemNetGameBoolTeamFlags("TEAM FLAGS:", 3, 66, 126, 180, true, 0, NULL, NULL);
+CGameMenuItemChain itemNetGameSetTeams("SET TEAMS", 3, 66, 126, 180, 0, &menuTeams, -1, SetupTeamsMenu, 0);
+CGameMenuItemZCycle itemNetGameCycleSpawnLocation("SPAWN AREA:", 3, 66, 134, 180, 0, 0, zRespawnStrings, ARRAY_SSIZE(zRespawnStrings), 0);
+CGameMenuItemZCycle itemNetGameCycleShowWeaponsOverride("ENEMY WEAPONS:", 3, 66, 142, 180, 0, SetNetShowWeapon, zShowWeapon, ARRAY_SSIZE(zShowWeapon), 0);
+CGameMenuItemZCycle itemNetGameCycleShowWeaponsOverrideTeams("ENEMY WEAPONS:", 3, 66, 142, 180, 0, SetNetShowWeapon, zShowWeaponTeams, ARRAY_SSIZE(zShowWeaponTeams), 0);
+CGameMenuItemZCycle itemNetGameCycleSpawnProtection("SPAWN PROTECTION:", 3, 66, 150, 180, 0, 0, zSpawnProtectStrings, ARRAY_SSIZE(zSpawnProtectStrings), 0);
+CGameMenuItemZCycle itemNetGameCycleSpawnWeapon("SPAWN WITH WEAPON:", 3, 66, 158, 180, 0, SetNetGameMode, zSpawnWeaponStrings, ARRAY_SSIZE(zSpawnWeaponStrings), 0);
+CGameMenuItemZCycle itemNetGameCycleMirrorModeOverride("MIRROR MODE:", 3, 66, 166, 180, 0, NULL, pzMirrorModeStrings, ARRAY_SSIZE(pzMirrorModeStrings), 0);
 
 // NotBlood Chosen match types (chosenmodes.h): the choice depends on the game type
 void SetNetChosenMode(CGameMenuItemZCycle *pItem);
-CGameMenuItemZCycle itemNetGameChosenMode("MODE:", 3, 66, 169, 180, 0, SetNetChosenMode, NULL, 0, 0);
-CGameMenuItemSlider itemNetGameChosenLives("LIVES EACH:", 3, 66, 44, 180, 3, 1, 20, 1, NULL, -1, -1, kMenuSliderValue);
-CGameMenuItemSlider itemNetGameChosenPool("SHARED LIVES (0 ENDLESS):", 3, 66, 54, 180, 0, 0, 50, 1, NULL, -1, -1, kMenuSliderValue);
+CGameMenuItemZCycle itemNetGameChosenMode("MODE:", 3, 66, 43, 180, 0, SetNetChosenMode, NULL, 0, 0);
+CGameMenuItemSlider itemNetGameChosenLives("LIVES EACH:", 3, 66, 52, 180, 3, 1, 20, 1, NULL, -1, -1, kMenuSliderValue);
+CGameMenuItemSlider itemNetGameChosenPool("SHARED LIVES (0 ENDLESS):", 3, 66, 61, 180, 0, 0, 50, 1, NULL, -1, -1, kMenuSliderValue);
 static char zNetStartGameText[48];
 
 CGameMenuItemTitle itemNetMonsterTitle("MONSTERS", 1, 160, 20, 2038);
@@ -1663,6 +1678,7 @@ void SetupNetStartMenu(void)
     bool oneEpisode = false;
     menuNetStart.Add(&itemNetStartTitle, false);
     menuNetStart.Add(&itemNetStart1, false);
+    menuNetStart.Add(&itemNetStartBots, false);
     for (int i = 0; i < (oneEpisode ? 1 : 6); i++)
     {
         EPISODEINFO *pEpisode = &gEpisodeInfo[i];
@@ -1695,6 +1711,9 @@ void SetupNetStartMenu(void)
 
     menuNetworkGameMode.Add(&itemNetGameTitle, false);
     menuNetworkGameMode.Add(&itemNetGameMode, true);
+    menuNetworkGameMode.Add(&itemNetGameChosenMode, false);
+    menuNetworkGameMode.Add(&itemNetGameChosenLives, false);
+    menuNetworkGameMode.Add(&itemNetGameChosenPool, false);
     menuNetworkGameMode.Add(&itemNetGameSliderScoreLimit, false);
     menuNetworkGameMode.Add(&itemNetGameSliderTimeLimit, false);
     menuNetworkGameMode.Add(&itemNetGameSliderLivesLimit, false);
@@ -1709,16 +1728,17 @@ void SetupNetStartMenu(void)
     menuNetworkGameMode.Add(&itemNetGameCycleItemWeapon, false);
     menuNetworkGameMode.Add(&itemNetGameBoolAutoTeams, false);
     menuNetworkGameMode.Add(&itemNetGameBoolTeamFlags, false);
+    menuNetworkGameMode.Add(&itemNetGameSetTeams, false);
     menuNetworkGameMode.Add(&itemNetGameCycleSpawnLocation, false);
     menuNetworkGameMode.Add(&itemNetGameCycleShowWeaponsOverride, false);
     menuNetworkGameMode.Add(&itemNetGameCycleShowWeaponsOverrideTeams, false);
     menuNetworkGameMode.Add(&itemNetGameCycleSpawnProtection, false);
     menuNetworkGameMode.Add(&itemNetGameCycleSpawnWeapon, false);
     menuNetworkGameMode.Add(&itemNetGameCycleMirrorModeOverride, false);
-    menuNetworkGameMode.Add(&itemNetGameChosenMode, false);
-    menuNetworkGameMode.Add(&itemNetGameChosenLives, false);
-    menuNetworkGameMode.Add(&itemNetGameChosenPool, false);
-    itemNetGameChosenMode.tooltip_pzTextUpper = "Gun game, hill, juggernaut, last man, survival";
+    itemNetGameChosenMode.tooltip_pzTextUpper = "Gun game, hill, juggernaut, last man, flags, survival";
+    itemNetGameSetTeams.tooltip_pzTextUpper = "Who plays on which team: players and bots";
+    itemNetStartBots.m_pzText2 = zNetStartBotsText;
+    itemNetStartBots.pPreDrawCallback = UpdateNetStartBots;
     itemNetGameChosenLives.tooltip_pzTextUpper = "Lives everybody has in last man standing";
     itemNetGameChosenPool.tooltip_pzTextUpper = "Lives the whole team shares in survival";
     menuNetworkGameMode.Add(&itemBloodQAV, false);
@@ -2714,9 +2734,10 @@ void UpdateNetworkMenus(void)
     itemMainSave6.m_pzText = bMatch ? "MATCH STATS" : "CREDITS";
     itemMainSave6.at24 = bMatch ? &menuMatchStats : &menuCredits;
     itemMainSave6.bDisableForNet = !bMatch;
-    itemMainSave5.m_pzText = gBotMatch ? "BOT ORDERS" : "HELP";
-    itemMainSave5.at24 = gBotMatch ? &menuBotOrders : &menuHelp;
-    itemMainSave5.bDisableForNet = !gBotMatch;
+    const bool bOrders = gBotMatch || (gBotNet && myconnectindex == connecthead); // the host plays a network game's bots
+    itemMainSave5.m_pzText = bOrders ? "BOT ORDERS" : "HELP";
+    itemMainSave5.at24 = bOrders ? &menuBotOrders : &menuHelp;
+    itemMainSave5.bDisableForNet = !bOrders;
     if (gBotMatch) // in a bot match NEW GAME sets up the next one
     {
         itemMain1.at24 = itemMainSave1.at24 = &menuBots;
@@ -4048,8 +4069,10 @@ void SetNetGameMode(CGameMenuItemZCycle *pItem)
         itemNetGameBoolAutoTeams.bNoDraw = !itemNetGameBoolAutoTeams.bEnable;
         itemNetGameBoolTeamColors.bEnable = nGameType == kGameTypeTeams;
         itemNetGameBoolTeamColors.bNoDraw = !itemNetGameBoolTeamColors.bEnable;
-        itemNetGameBoolTeamFlags.bEnable = nGameType == kGameTypeTeams;
-        itemNetGameBoolTeamFlags.bNoDraw = !itemNetGameBoolTeamFlags.bEnable;
+        itemNetGameBoolTeamFlags.bEnable = 0; // capture the flag is a match type now
+        itemNetGameBoolTeamFlags.bNoDraw = 1;
+        itemNetGameSetTeams.bEnable = nGameType == kGameTypeTeams;
+        itemNetGameSetTeams.bNoDraw = !itemNetGameSetTeams.bEnable;
         itemNetGameCycleShowWeaponsOverride.bEnable = nGameType != kGameTypeTeams;
         itemNetGameCycleShowWeaponsOverride.bNoDraw = !itemNetGameCycleShowWeaponsOverride.bEnable;
         itemNetGameCycleShowWeaponsOverrideTeams.bEnable = nGameType == kGameTypeTeams;
@@ -5100,6 +5123,16 @@ void BotMatchInfo(char *pzBuffer, int nSize)
     Bstrupr(pzBuffer);
 }
 
+int NetMenuGameType(void)
+{
+    return itemNetGameMode.m_nFocus+1;
+}
+
+bool NetMenuAutoTeams(void)
+{
+    return itemNetGameBoolAutoTeams.at20;
+}
+
 void BotMatchSetLimits(int nFrags, int nMinutes)
 {
     if (nFrags >= 0)
@@ -5275,8 +5308,27 @@ void StartNetGame(CGameMenuItemChain *pItem)
     Bstrncpy(gPacketStartGame.userMapName, zUserMapName, sizeof(zUserMapName));
     gPacketStartGame.userMap = gPacketStartGame.userMapName[0] != '\0';
 
+    // teams: the match type decides about the flags
+    if (gPacketStartGame.gameType == kGameTypeTeams)
+    {
+        if (gPacketStartGame.nChosenMode == kChosenModeCaptureFlag)
+            gPacketStartGame.uNetGameFlags &= ~kNetGameFlagNoTeamFlags;
+        else
+            gPacketStartGame.uNetGameFlags |= kNetGameFlagNoTeamFlags;
+    }
+    gPacketStartGame.nBots = 0;
     if (gNetMode == NETWORK_NONE) // offline, the only way here is a bot match
+    {
         botSetupMatch();
+        gPacketStartGame.nBots = gNetPlayers - 1;
+    }
+    else
+    {
+        botNetSetup();     // the bots' player numbers, names and looks
+        botApplyRoster();  // into the player list here; everybody else does it on the start packet
+    }
+    botResolveTeams(gPacketStartGame.nChosenTeam);
+    botNetSendRoster();    // just before the start packet, so it's there when that arrives
     netBroadcastNewGame();
     gStartNewGame = 1;
     gGameMenuMgr.Deactivate();

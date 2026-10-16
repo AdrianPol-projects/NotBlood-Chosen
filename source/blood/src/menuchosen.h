@@ -39,6 +39,14 @@ void BotMatchSetMap(int nEpisode, int nLevel);
 void BotMatchSetMode(int nGameType, int nMode);
 void BotMatchSetLives(int nLives);
 void BotMatchResetMutators(void);
+int NetMenuGameType(void);      // the GAME SETTINGS choice: kGameTypeCoop, ...
+bool NetMenuAutoTeams(void);
+
+// bots in network games and teams: MULTIPLAYER > BOTS, SET TEAMS
+extern CGameMenu menuTeams;
+void SetupBotsNetMenu(CGameMenuItemChain *pItem);
+void SetupTeamsMenu(CGameMenuItemChain *pItem);
+void BotsNetSummary(char *pzBuffer, int nSize);
 
 void SetupChosenMenus(void);
 void SetupOnlineMenu(CGameMenuItemChain *pItem);

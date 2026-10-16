@@ -984,7 +984,7 @@ void StartLevel(GAMEOPTIONS *pOpt)
     botLevelStart();
     if (bTriggerAutosave && !pOpt->bPermaDeath)
         AutosaveGame(true); // create autosave at start of the new level
-    if ((pOpt->nGameType == kGameTypeCoop) && !gDemo.bPlaying && !gDemo.bRecording && !gBotMatch)
+    if ((pOpt->nGameType == kGameTypeCoop) && !gDemo.bPlaying && !gDemo.bRecording && !botAny())
         coopWriteLevelStartSave(); // every machine keeps a co-op save of the level start
 }
 

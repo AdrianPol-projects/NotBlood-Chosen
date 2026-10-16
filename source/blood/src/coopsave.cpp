@@ -25,6 +25,7 @@ See the GNU General Public License for more details.
 #include "actor.h"
 #include "blood.h"
 #include "config.h"
+#include "bot.h"
 #include "coopsave.h"
 #include "demo.h"
 #include "gamemenu.h"
@@ -367,7 +368,8 @@ uint32_t worldHash(void)
 
 bool canSave(void)
 {
-    return gGameOptions.nGameType == kGameTypeCoop && gGameStarted && !gDemo.bPlaying;
+    // not with bots: the save would need them back in the same player slots
+    return gGameOptions.nGameType == kGameTypeCoop && gGameStarted && !gDemo.bPlaying && !botAny();
 }
 
 // writes slot nSlot: the carry-over save, and the mid-level save with a copy of it for the menu
@@ -765,6 +767,7 @@ bool coopContinueGame(int nSlot)
           gPacketStartGame.episodeId+1, gPacketStartGame.levelId+1, save.szSaved);
 
     SetGameVanillaMode(0); // as StartNetGame()
+    botNetNoBots(); // a continued co-op game has no bots: they aren't in the save
     netBroadcastNewGame();
     gStartNewGame = 1;
     gGameMenuMgr.Deactivate();
@@ -777,6 +780,11 @@ bool coopLoadMidLevel(int nSlot)
     char path[BMAX_PATH];
     if (!readSave(kCoopSaveMid, nSlot, &save) || !coopPath(kCoopSaveMid, nSlot, "sav", path))
         return false;
+    if (botAny()) // the save has the players only; start a game without bots first
+    {
+        viewSetMessage("Start a game without bots to load this save");
+        return false;
+    }
 
     FILE *fp = fopen(path, "rb");
     if (!fp)
