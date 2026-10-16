@@ -127,7 +127,7 @@ server {
 }
 ```
 
-**Option C: Cloudflare Tunnel, no open ports at all.** This is how the author's Raspberry Pi runs it.
+**Option C: Cloudflare Tunnel, no open ports at all.
 1. Install `cloudflared` and create a tunnel: `cloudflared tunnel create blood`.
 2. Add an ingress rule (`hostname: blood.example.com`, `service: http://127.0.0.1:8099`) and route the DNS name: `cloudflared tunnel route dns blood blood.example.com`.
 3. In the Cloudflare dashboard, leave **Always Use HTTPS** off for that hostname, because the game uses plain `ws://`.
