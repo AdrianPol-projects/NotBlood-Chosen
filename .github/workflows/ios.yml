@@ -100,12 +100,12 @@ jobs:
             echo "Branch head is $HEAD_SHA, this run built $GITHUB_SHA - not publishing."
             exit 0
           fi
-          TITLE="NotBlood for iPad (build ${{ github.run_number }})"
-          NOTES="Unsigned IPA built from ${GITHUB_SHA}. Sign/sideload with Signulous, Sideloadly or AltStore. Copy your Blood files to Files > On My iPad > NotBlood. See platform/iOS/README.md."
+          VERSION=$(sed -n 's/#define CHOSEN_VERSION "\(.*\)"/\1/p' source/blood/src/chosen.h)
+          TITLE="Blood for iPad and iPhone - NotBlood Chosen $VERSION (build ${{ github.run_number }})"
           # Replace the asset in place so the release is never left empty.
           if gh release view ios-latest >/dev/null 2>&1; then
             gh release upload ios-latest NotBlood.ipa --clobber
-            gh release edit ios-latest --title "$TITLE" --notes "$NOTES" --prerelease
+            gh release edit ios-latest --title "$TITLE" --notes-file package/release/NOTES-iOS.md --prerelease=false --latest
           else
-            gh release create ios-latest NotBlood.ipa --target "$GITHUB_SHA" --prerelease --title "$TITLE" --notes "$NOTES"
+            gh release create ios-latest NotBlood.ipa --target "$GITHUB_SHA" --latest --title "$TITLE" --notes-file package/release/NOTES-iOS.md
           fi

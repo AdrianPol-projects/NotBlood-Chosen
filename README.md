@@ -8,7 +8,7 @@
 
 Unzip, copy your Blood files (One Unit Whole Blood: CD, GOG or Steam) next to the game and start it. The README in each download explains the rest.
 
-**What's new compared to NotBlood** (version 1.2, [release notes](package/release/NOTES-1.2.md))
+**What's new compared to NotBlood** (version 1.2, [release notes](package/release/NOTES.md))
 * **Bots** that play like people (hide, ambush, flank, take the high ground, ride lifts), 4 difficulties, 6 personalities, fine tuning for all bots and for each one. Offline (PLAY WITH BOTS, CAREER, WATCH BOTS) and in LAN and online games, where the host's PC plays them. Details: [BOTS.md](package/release/BOTS.md).
 * **Match types**: gun game, king of the hill, juggernaut, last man standing; teams: team bloodbath, capture the flag, king of the hill, last team standing; co-op survival. **SET TEAMS** for any mix of players and bots, **mutators** (gravity, vampire, one-hit kills, weapon sets) and **match stats**.
 * **Co-op saves**, 8 slots, saved on every player's machine. Load *where you saved* (positions, keys, enemies) or *restart the level with your gear*. Players get their saves by name, new players start with the pitchfork, missing players leave the level. The game saves itself when a player leaves.

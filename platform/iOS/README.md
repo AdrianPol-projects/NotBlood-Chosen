@@ -1,6 +1,6 @@
 # NotBlood for iPad / iPhone
 
-An iOS/iPadOS build of [NotBlood](https://github.com/clipmove/NotBlood) with touch controls, Magic Keyboard trackpad/mouse support and LAN multiplayer.
+The iOS/iPadOS build of NotBlood Chosen, based on [NotBlood](https://github.com/clipmove/NotBlood). It has touch controls, Magic Keyboard trackpad and mouse support, controllers, bots, and LAN and online multiplayer.
 
 ## Getting the IPA
 
@@ -51,14 +51,22 @@ A Magic Keyboard or Bluetooth keyboard/mouse works like on PC: mouse-look with t
 
 Bluetooth game controllers (Xbox, PlayStation, MFi) work through SDL as well.
 
-## LAN multiplayer
+## Multiplayer, bots and online play
 
-Uses NotBlood's normal **Multiplayer → Host / Join** menu (ENet over UDP, port 23513 by default).
+Everything from NotBlood Chosen 1.2 works on the iPad too, and plays together with the Windows, Linux, macOS and Android builds of the same version:
 
-* All players must run **the same NotBlood version**. This build is pinned to upstream commit `4aa93cb` (the `latest` NotBlood release from 2026-09-16). Use that build on Windows/Linux, and rebuild the iPad version when you update the PCs.
+* **Bots**: MULTIPLAYER → PLAY WITH BOTS (offline, career, watch bots), or BOTS in the MULTIPLAYER setup when you host a LAN or online game.
+* **Match types**: gun game, king of the hill, juggernaut, last man standing, team bloodbath, capture the flag, last team standing, co-op survival, plus mutators.
+* **LAN**: MULTIPLAYER → HOST A GAME (shows your address) or FIND LAN GAMES (ENet over UDP, port 23513).
+* **Online**: MULTIPLAYER → ONLINE, with the address and key of a relay server (no port forwarding; there is no default server).
+* **Co-op saves**: ESC → SAVE CO-OP, loaded again with NEW GAME → LOAD CO-OP.
+
+Notes:
+
+* Every player needs **the same NotBlood Chosen version** (1.2).
 * The first time you host or join, iOS asks for **Local Network** permission. Allow it. If you denied it, go to Settings → Privacy & Security → Local Network → NotBlood.
-* To join, tap the IP address field and use **KEYB** to type the host's IP.
-* Everyone needs the same game data (and Cryptic Passage files if you play those maps).
+* To type an address, tap the field and use **KEYB**.
+* Everyone needs the same game data (and the same add-ons and mods).
 
 ## Video
 
