@@ -52,4 +52,6 @@ During a match ESC shows **MATCH STATS** (frags, deaths, aim, best streak, favou
 
 Set FINE TUNING > SHOW WHAT BOTS DO, or type `bot_debug 2` in the console: every bot's plan is shown on screen, and every 2 seconds it is written to `notblood.log` in the game folder, with places where bots got stuck. Send that file along with what felt wrong.
 
+**Known issue:** if the game folder has Blood's demo files (`*.DEM`, the gameplay that plays behind the main menu), the game closes when a bot match starts (seen on Windows). Remove the `.DEM` files from the game folder (or start the game with `-nodemo`) and it works. Not fixed yet.
+
 Not yet: online bots (next step), capturing flags in teams, smart co-op partners (in co-op they only fight monsters).
