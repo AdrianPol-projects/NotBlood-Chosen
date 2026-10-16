@@ -1,9 +1,10 @@
 NotBlood Chosen
 ===============
 
-NotBlood (a Blood source port) with co-op saves, online lobbies, a live game dashboard, a
-MODS menu and a LAN game finder. Every player in a network game needs the same version -
-PC, Mac, iPad and Android builds of one version play together.
+Version 1.2. NotBlood (a Blood source port) with bots, new match types, co-op saves,
+online lobbies, a live game dashboard, a MODS menu and a LAN game finder. Every player in a
+network game needs the same version - PC, Mac, iPad and Android builds of one version play
+together. The bots are explained in detail in "README - Bots.txt".
 
 
 SETUP
@@ -30,6 +31,43 @@ FOLDERS
   OPTIONS > SOUND > REDBOOK AUDIO.
 
 
+BOTS
+
+  On your own:  MULTIPLAYER > PLAY WITH BOTS
+    BOTS          how many (1-7)
+    DIFFICULTY    easy, normal, hard, nightmare
+    PERSONALITY   balanced, rusher, camper, trickster, coward, jumper, or mixed
+    SET EACH BOT  one bot's own name, difficulty, personality, team, damage and tuning
+    FINE TUNING   aim, reaction, aggression, jumping, ambushes, ... for all bots
+    SET TEAMS     who plays for BLUE and who for RED (teams games)
+    MATCH SETTINGS  map, mode, frag and time limits, weapons, mutators
+    START MATCH   ESC pauses; NEW GAME there sets up the next match
+  Also in that menu: CAREER (10 matches against harder and harder named bots) and
+  WATCH BOTS (only bots play, you watch).
+
+  In LAN and online games: the host sets BOTS in the MULTIPLAYER setup (right under GAME;
+  0 = none, the default). People and bots together are 8 at most. The host's computer plays
+  the bots, everybody sees the same ones. During the game the host has ESC > BOT ORDERS.
+
+  Example - 2 players on a LAN and 2 bots:
+    1. Player 1: MULTIPLAYER > HOST A GAME, set BOTS to 2.
+    2. Player 2: MULTIPLAYER > FIND LAN GAMES and join.
+    3. Player 1: START GAME.
+
+
+GAME MODES
+
+  GAME SETTINGS > GAME (bloodbath, teams or co-op), then MODE right underneath:
+    Bloodbath   normal, gun game, king of the hill, juggernaut, last man standing
+    Teams       team bloodbath, capture the flag, king of the hill, last team standing
+    Co-op       normal, survival (waves of monsters)
+  LIVES EACH is for last man/team standing and survival. SET MUTATORS > MORE MUTATORS:
+  low or moon gravity, vampire, one-hit kills, random weapon or one weapon only.
+  Teams: SET TEAMS puts every player and bot on AUTO, BLUE or RED; uneven teams are fine -
+  give the weaker side the stronger bot (SET EACH BOT).
+  Every mode works with people, bots or both. ESC > MATCH STATS shows the scores.
+
+
 CO-OP SAVES
 
   During a co-op game: Esc > SAVE CO-OP > pick a slot. Every player's machine saves.
@@ -40,12 +78,14 @@ CO-OP SAVES
   Players get their saves by their name; players who weren't in the save start with the
   pitchfork. When somebody leaves, the game is saved (slot "PLAYER LEFT").
   The saves are in the coopsaves folder: carryover/ and midlevel/.
+  Games with bots make no co-op saves.
 
 
 ONLINE
 
-  MULTIPLAYER > ONLINE: the server address and its key (ask whoever runs the server), then
-  HOST A LOBBY or FIND LOBBIES. Nobody needs to forward ports.
+  MULTIPLAYER > ONLINE: the server address and its key (ask whoever runs the server - there
+  is no default server), then HOST A LOBBY or FIND LOBBIES. Nobody needs to forward ports.
+  The server program is in the source code (server/), e.g. for a Raspberry Pi.
   Live stats of the games: open the server's address in a web browser.
 
 
@@ -65,6 +105,13 @@ macOS
      (with a space at the end), drag the NotBlood folder onto the Terminal window and press
      Return. This needs no administrator either.
   4. Double-click NotBlood.app. Settings and saves are kept in the same folder.
+
+
+KNOWN ISSUES
+
+  If the game folder has Blood's demo files (*.DEM), the game closes when a match with bots
+  starts. Remove the .DEM files or start the game with -nodemo.
+  Problems: send notblood.log from the game folder (Android: the NotBlood folder).
 
 
 Source code and new versions: https://github.com/AdrianPol-projects/NotBlood-Chosen
