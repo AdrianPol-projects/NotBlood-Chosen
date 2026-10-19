@@ -47,7 +47,7 @@ EM_ASYNC_JS(void, web_waitAnimationFrame, (), {
     });
 });
 
-static double s_lastYield;
+static double s_lastYield, s_lastFrame;
 
 void web_yield(int bFrame)
 {
@@ -55,11 +55,13 @@ void web_yield(int bFrame)
     if (bFrame)
     {
         web_waitAnimationFrame();
-        s_lastYield = emscripten_get_now();
+        s_lastYield = s_lastFrame = emscripten_get_now();
     }
-    else if (now - s_lastYield > 12)
+    else if (now - s_lastYield > 12 && now - s_lastFrame > 100)
     {
-        // a loop that only waits (timers, menus without a new frame, network): let the browser run
+        // a loop that only waits (timers, network, loading): let the browser run. Not while frames
+        // are being drawn: the game checks input between drawing the view and showing it, and the
+        // browser would show that unfinished picture (black flashes on slow phones)
         emscripten_sleep(0);
         s_lastYield = emscripten_get_now();
     }
