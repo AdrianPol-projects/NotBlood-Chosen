@@ -43,7 +43,7 @@ The relay also serves NotBlood Chosen for web browsers: open `http://<server>/pl
 - **LAN games:** not possible in a browser.
 
 The relay downloads the web build by itself:
-
+- **When:** when it starts, every hour, and when someone opens the page (at most every 10 minutes).
 - **When:** when it starts and every hour.
 - **What:** the `-web.zip` of the newest release of NotBlood-Chosen on GitHub. Nothing to do when a new version comes out.
 - **Where:** it's kept in the data volume, next to the history.
@@ -162,6 +162,7 @@ In `server.env`:
 | `PORT` | `8080` | the port inside the container (or of `relay.py`) |
 | `DATA_DIR` | `/data` | where the game history (and the web version) is kept |
 | `WEB_UPDATE_HOURS` | `1` | how often to look for a new web version; `0`: never download it |
+| `WEB_PAGE_CHECK_MINUTES` | `10` | how often opening the page may also look for one; `0`: only on the timer |
 | `WEB_REPO` | `AdrianPol-projects/NotBlood-Chosen` | the GitHub repository whose newest release has the web version |
 | `WEB_DIR` | `$DATA_DIR/web` | where the web version is kept |
 
