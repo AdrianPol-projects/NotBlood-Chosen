@@ -2319,7 +2319,7 @@ char processTesla(PLAYER *pPlayer)
 void WeaponProcess(PLAYER *pPlayer) {
 
     pPlayer->flashEffect = ClipLow(pPlayer->flashEffect - 1, 0);
-    if (goryKillActive(pPlayer)) // the weapon waits until the Gory Kill is done
+    if (goryKillBusy(pPlayer)) // the weapon waits until the Gory Kill or kick is done
     {
         UpdateAimVector(pPlayer);
         return;

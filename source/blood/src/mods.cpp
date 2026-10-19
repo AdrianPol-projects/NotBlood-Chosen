@@ -449,7 +449,19 @@ void modRestart(const char *pzName)
         LOG_F(ERROR, "Mods: could not start the game again");
     }
 #endif
-    // iPad/Android: apps can't start themselves again
+#ifdef __ANDROID__
+    // a fresh process: Android would otherwise start the next game in this one, with its old state
+    {
+        extern void android_restartapp(void);
+        viewLoadingScreen(gMenuPicnum, "Mods", NULL, text);
+        videoNextPage();
+        android_restartapp();
+        for (uint32_t nStart = timerGetTicks(); timerGetTicks() - nStart < 3000;)
+            handleevents();
+        exit(0);  // the restart didn't come: at least the next start is a fresh one
+    }
+#endif
+    // iPad: apps can't start themselves again
     Bsnprintf(text, sizeof(text), "Open NotBlood again to play %s", pzName);
     for (uint32_t nStart = timerGetTicks(); timerGetTicks() - nStart < 4000;)
     {

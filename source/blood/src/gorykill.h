@@ -38,7 +38,10 @@ bool goryKillAvailable(void);
 // a kill is playing for this player: no moving, firing or damage
 bool goryKillActive(PLAYER *pPlayer);
 
-// USE was pressed: starts a kill on a nearly dead enemy in front, if there is one
+// a kill or a quick kick is playing: the weapon waits (a kick doesn't stop Caleb)
+bool goryKillBusy(PLAYER *pPlayer);
+
+// USE was pressed: starts a kill on a nearly dead enemy in front, or kicks one that isn't
 bool goryKillTryStart(PLAYER *pPlayer);
 
 // once a game frame: the kills' timelines

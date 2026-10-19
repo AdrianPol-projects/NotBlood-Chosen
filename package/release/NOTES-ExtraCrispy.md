@@ -11,11 +11,17 @@ A test of the *Blood Extra Crispy* mod (by VGames, for Nightdive's Refreshed Sup
 4. Start NotBlood Crispy, go to **MODS**, choose **BLOOD EXTRA CRISPY**. The game restarts with the mod.
 
 **What you get:**
-- The mod's look: its title and menu background, and its edited sprites.
-- Its sounds.
-- **Gory Kills:** walk up to a nearly dead enemy, face it and press **USE** (OK/use button). Caleb finishes it in first person, heals a little, and kicks the body away. They work on cultists (all four), axe zombies, fat zombies, flesh gargoyles, gill beasts, innocents, hell hounds and phantasms. The enemy must be badly hurt (below about 12 health), except innocents. Single player only.
+- **Its look:** the title and menu background, and its edited sprites.
+- **Its sounds.**
+- **Its maps:** the mod's versions of the official levels, with its extra decorations, gore and enemies.
+- **Gory Kills:** walk up to a nearly dead enemy, face it and press **USE**. Caleb finishes it in first person, heals a little, and kicks the body away. They work on cultists (all four), axe zombies, fat zombies, flesh gargoyles, gill beasts, innocents, hell hounds and phantasms. The enemy must be badly hurt (below about 12 health), except innocents. Single player only.
+- **Quick kick:** USE on an enemy that isn't hurt enough shows Caleb's foot and kicks it back. Burning enemies and beasts always get kicked. You can kick once a second.
 
-**Not included (yet):** the mod's new weapons, enemies, maps and scripts. Those are made for the remaster's engine.
+**Also in this build (with or without the mod):** OPTIONS > GAME SETUP > **WEAPON SWITCH LIST**. When you switch weapons, your weapons show for a moment in a column on the right side, with the new one highlighted. It's off by default.
+
+**Choosing the mod now restarts the app by itself.**
+
+**Not included (yet):** the mod's new weapons, its new enemies (Crimson Innocents, Necromancers, skeletal zombies and others) and its scripted extras (turrets, lawn mowers). Their pictures can show in the maps as plain decorations.
 
 To play the normal game again: MODS > ORIGINAL GAME.
 

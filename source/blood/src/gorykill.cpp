@@ -57,6 +57,7 @@ enum
     kEvSound = 0,  // a sound (plus a random 0..rnd-1)
     kEvLaugh,      // Caleb heals 10 (up to 200) and laughs now and then; blood on the screen
     kEvBody,       // the body flies away from Caleb with the kill's SEQ and stays as a corpse
+    kEvKick,       // the quick kick lands: three short hits that push hard (the mod's BV_QUICKKICK)
     kEvEnd = -1,
 };
 
@@ -77,6 +78,7 @@ struct GKDEF
     short nQav, nQavCloak;  // the QAV, and the one for an invisible Caleb (shadow cloak)
     int nBodySeq;    // the body's SEQ (0: no body)
     GKEVENT const *pEvents;
+    bool bKick;      // the quick kick: Caleb can move meanwhile, and gets hurt
 };
 
 // sounds: original Blood's, and the mod's gore (in EXTRAC.RFF)
@@ -93,6 +95,7 @@ enum
 #define SNDR(t, s, r) { t, kEvSound, r, s }
 #define LAUGH(t) { t, kEvLaugh, 0, 0 }
 #define BODY(t) { t, kEvBody, 0, 0 }
+#define KICK(t) { t, kEvKick, 0, 0 }
 #define END { 0, kEvEnd, 0, 0 }
 
 // cultists (the four have the same timeline; tesla and TNT add a punt at the start)
@@ -135,6 +138,16 @@ GKEVENT const gEvPhantasm[] = {
 // the mod's distances: 128 (most) and 85 of its units, 16 Build units each
 enum { kNear = 2048, kNearer = 1360 };
 
+// USE near an enemy that isn't hurt enough for a Gory Kill: Caleb kicks it back (QAV_QKICK), at most
+// once a second (the mod's KickDelay)
+GKEVENT const gEvKick[] = { SND(14, kSfxDemMel1), KICK(8), END };
+GKDEF const gKick = { { 0 }, -1, kNearer, 24, 622, 669, 0, gEvKick, true };
+enum { kKickDelay = 60 };
+
+// always kicked (no Gory Kill for them): burning ones and beasts, as in the mod's list
+short const gAlwaysKicked[] = { kDudeBurningInnocent, kDudeBurningCultist, kDudeBurningZombieAxe, kDudeBurningZombieButcher,
+                                kDudeBurningBeast, kDudeBeast, kDudeCultistBeast };
+
 GKDEF const gKills[] = {
     { { kDudeCultistTommy, kDudeCultistTommyProne }, 200, kNear, 140, 626, 689, 15034, gEvCultist },
     { { kDudeCultistShotgun, kDudeCultistShotgunProne }, 200, kNear, 140, 627, 690, 15035, gEvCultist },
@@ -157,6 +170,8 @@ struct GKSTATE
     QAV *pQav;
     int nTimer;
     int nScreenBlood, nScreenBloodTile;
+    int nKickDelay;
+    int nKickTarget;
 };
 
 Resource gBecRes;  // the mod's EXTRAC.RFF
@@ -236,6 +251,34 @@ void throwBody(PLAYER *pPlayer, GKDEF const *pDef)
         fxSpawnBlood(pThing, 0);
 }
 
+// the kick lands on the enemy it was aimed at: the mod's three BV_QUICKKICK hits, each 4 damage (pummel)
+// and a hard push (its thrust 250.33; the pitchfork's 42.67 is Blood's 174762), if it's still in reach
+void kick(PLAYER *pPlayer, int nTarget)
+{
+    if (nTarget < 0 || nTarget >= kMaxSprites)
+        return;
+    spritetype *pSprite = pPlayer->pSprite;
+    spritetype *pDude = &sprite[nTarget];
+    if (pDude->statnum != kStatDude || pDude->extra <= 0 || xsprite[pDude->extra].health <= 0)
+        return;
+    int const dx = pDude->x - pSprite->x, dy = pDude->y - pSprite->y;
+    if (approxDist(dx, dy) > kNearer + (pDude->clipdist << 2))  // it got away meanwhile
+        return;
+    int const nAngle = getangle(dx, dy);
+    int const nMass = getDudeInfo(pDude->type)->mass;
+    sfxPlay3DSound(pDude, kSfxPunt, -1, 0);
+    for (int i = 0; i < 3 && pDude->extra > 0 && xsprite[pDude->extra].health > 0; i++)
+    {
+        actDamageSprite(pSprite->index, pDude, kDamageFall, 4 << 4);
+        if (nMass > 0)
+        {
+            int const nPush = divscale8(1025365, nMass);
+            xvel[nTarget] += mulscale16(Cos(nAngle) >> 16, nPush);
+            yvel[nTarget] += mulscale16(Sin(nAngle) >> 16, nPush);
+        }
+    }
+}
+
 void runEvent(PLAYER *pPlayer, GKSTATE *pState, GKEVENT const *pEv)
 {
     spritetype *pSprite = pPlayer->pSprite;
@@ -257,6 +300,9 @@ void runEvent(PLAYER *pPlayer, GKSTATE *pState, GKEVENT const *pEv)
     case kEvBody:
         throwBody(pPlayer, pState->pDef);
         break;
+    case kEvKick:
+        kick(pPlayer, pState->nKickTarget);
+        break;
     }
 }
 
@@ -265,6 +311,13 @@ int osdcmd_gktest(osdcmdptr_t parm)
 {
     if (parm->numparms < 1 || !gGameStarted || !gMe || !gMe->pSprite)
         return OSDCMD_SHOWHELP;
+    if (!Bstrcasecmp(parm->parms[0], "kick"))  // a healthy cultist: USE kicks it
+    {
+        spritetype *pDude = actSpawnDude(gMe->pSprite, kDudeCultistTommy, 600, 0);
+        if (pDude)
+            OSD_Printf("Kick test: enemy type %d, %d health\n", pDude->type, xsprite[pDude->extra].health >> 4);
+        return OSDCMD_OK;
+    }
     int const n = atoi(parm->parms[0]);
     if (n < 0 || n >= (int)ARRAY_SIZE(gKills))
         return OSDCMD_SHOWHELP;
@@ -352,20 +405,27 @@ bool goryKillAvailable(void)
 
 bool goryKillActive(PLAYER *pPlayer)
 {
+    return pPlayer && gState[pPlayer->nPlayer].pDef != NULL && !gState[pPlayer->nPlayer].pDef->bKick;
+}
+
+bool goryKillBusy(PLAYER *pPlayer)
+{
     return pPlayer && gState[pPlayer->nPlayer].pDef != NULL;
 }
 
 bool goryKillTryStart(PLAYER *pPlayer)
 {
-    if (!bAvailable || !singlePlayer() || !pPlayer || goryKillActive(pPlayer))
+    if (!bAvailable || !singlePlayer() || !pPlayer || goryKillBusy(pPlayer))
         return false;
     spritetype *pSprite = pPlayer->pSprite;
     XSPRITE *pXSprite = pPlayer->pXSprite;
     if (!pSprite || !pXSprite || pXSprite->health <= 0 || pPlayer->posture == kPostureSwim || pXSprite->height > 16)
         return false;
 
-    int nBest = -1, nBestDist = INT32_MAX;
+    // the nearest enemy in front for a Gory Kill; failing that, the nearest one to kick
+    int nBest = -1, nBestDist = INT32_MAX, nKick = -1, nKickDist = INT32_MAX;
     GKDEF const *pBestDef = NULL;
+    GKSTATE *pState = &gState[pPlayer->nPlayer];
     // the sector Caleb's eyes are in (his sprite's can be the one below a step he stands over)
     int16_t nEyeSect = pSprite->sectnum;
     updatesectorz(pSprite->x, pSprite->y, pPlayer->zView, &nEyeSect);
@@ -376,15 +436,20 @@ bool goryKillTryStart(PLAYER *pPlayer)
         spritetype *pDude = &sprite[nSprite];
         if (pDude == pSprite || IsPlayerSprite(pDude) || pDude->extra <= 0 || pDude->extra >= kMaxXSprites)
             continue;
-        GKDEF const *pDef = killFor(pDude->type);
-        if (!pDef)
-            continue;
         XSPRITE *pXDude = &xsprite[pDude->extra];
-        if (pXDude->health <= 0 || (pDef->nHealth >= 0 && pXDude->health > pDef->nHealth))
+        if (pXDude->health <= 0)
             continue;
+        GKDEF const *pDef = killFor(pDude->type);
+        bool const bGory = pDef && (pDef->nHealth < 0 || pXDude->health <= pDef->nHealth);
+        bool bKickable = pDef && !bGory;
+        for (short nType : gAlwaysKicked)
+            bKickable |= nType == pDude->type;
+        if (!bGory && !bKickable)
+            continue;
+        int const nRange = bGory ? pDef->nDist : (int)kNearer;
         int const dx = pDude->x - pSprite->x, dy = pDude->y - pSprite->y;
         int const nDist = approxDist(dx, dy);
-        if (nDist > pDef->nDist || klabs(pDude->z - pSprite->z) > (pDef->nDist << 4))
+        if (nDist > nRange || klabs(pDude->z - pSprite->z) > (nRange << 4))
             continue;
         int const nAngle = (getangle(dx, dy) - pSprite->ang) & 2047;
         if (nAngle > 512 && nAngle < 1536)  // behind Caleb
@@ -400,29 +465,40 @@ bool goryKillTryStart(PLAYER *pPlayer)
                      && gHitInfo.hitsprite == nSprite;
         if (!bReach)
             continue;
-        if (nDist < nBestDist)
+        if (bGory && nDist < nBestDist)
         {
             nBest = nSprite;
             nBestDist = nDist;
             pBestDef = pDef;
         }
+        else if (!bGory && nDist < nKickDist)
+        {
+            nKick = nSprite;
+            nKickDist = nDist;
+        }
     }
-    if (nBest < 0)
+    if (nBest < 0 && (nKick < 0 || pState->nKickDelay > 0))
         return false;
+    GKDEF const *pStart = nBest >= 0 ? pBestDef : &gKick;
 
-    int const nQav = powerupCheck(pPlayer, kPwUpShadowCloak) ? pBestDef->nQavCloak : pBestDef->nQav;
+    int const nQav = powerupCheck(pPlayer, kPwUpShadowCloak) ? pStart->nQavCloak : pStart->nQav;
     DICTNODE *hQav = gBecRes.Lookup(nQav, "QAV");
     if (!hQav)
-        hQav = gBecRes.Lookup(pBestDef->nQav, "QAV");
+        hQav = gBecRes.Lookup(pStart->nQav, "QAV");
     if (!hQav)
         return false;
 
-    GKSTATE *pState = &gState[pPlayer->nPlayer];
     pState->pQav = (QAV *)gBecRes.Lock(hQav);
     pState->pQav->nSprite = -1;
     pState->pQav->Precache();
-    pState->pDef = pBestDef;
-    pState->nTimer = pBestDef->nLength;
+    pState->pDef = pStart;
+    pState->nTimer = pStart->nLength;
+    if (pStart->bKick)
+    {
+        pState->nKickDelay = kKickDelay;
+        pState->nKickTarget = nKick;
+        return true;
+    }
 
     // the enemy is gone: it's in Caleb's hands now (the QAV); it counts as killed, its drops stay
     spritetype *pDude = &sprite[nBest];
@@ -440,6 +516,8 @@ void goryKillFrame(void)
         GKSTATE *pState = &gState[i];
         if (pState->nScreenBlood > 0)
             pState->nScreenBlood--;
+        if (pState->nKickDelay > 0)
+            pState->nKickDelay -= 2;
         if (!pState->pDef)
             continue;
         if (!pPlayer->pXSprite || pPlayer->pXSprite->health <= 0)
@@ -459,7 +537,7 @@ void goryKillFrame(void)
 
 bool goryKillDraw(PLAYER *pPlayer, int nShade, int x, int y, int nPal)
 {
-    if (!goryKillActive(pPlayer))
+    if (!goryKillBusy(pPlayer))
         return false;
     GKSTATE *pState = &gState[pPlayer->nPlayer];
     QAV *pQav = pState->pQav;

@@ -65,6 +65,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #ifdef NOONE_EXTENSIONS
 #include "nnexts.h"
 #include "gorykill.h"
+#include "weaponlist.h"
 #endif
 
 struct VIEW {
@@ -5315,6 +5316,7 @@ RORHACK:
                 WeaponDraw(gView, nShade, cX, cY, nPalette);
             #endif
             goryKillDrawScreenBlood(gView);
+            weaponListDraw(gView);
            
 
         }
