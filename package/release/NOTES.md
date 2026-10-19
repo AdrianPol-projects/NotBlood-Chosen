@@ -78,6 +78,11 @@ Everybody in a network game needs **1.2**. Older versions can't join a 1.2 game,
 - A live dashboard in the browser: lobbies, players' health, armor, weapons and keys, a live level map and an event list.
 - FIND LAN GAMES. The host screen shows your address, and you get clear messages when versions or mods differ.
 
+**Gory Kills (test, off by default)**
+- From the *Blood Extra Crispy* mod by VGames: walk up to a nearly dead enemy, press USE, and Caleb finishes it in first person (cultists, zombies, fat zombies, flesh gargoyles, gill beasts, innocents, hell hounds, phantasms). He heals a little, and the body gets kicked away.
+- Needs the mod's own files, which aren't included: download *Blood Extra Crispy* from ModDB and put its `BEC_1.2` folder into your Blood folder (in the browser: choose the folder or the mod's `.zip`). Only its new animations, art and gore sounds are used; your Blood files stay as they are.
+- Switch it on in OPTIONS > GAME SETUP > GORY KILLS. Single player only for now.
+
 **Everything else**
 - MODS menu for add-on episodes and mods. A mod that breaks the start is switched off again.
 - Cutscenes from the CD's `movie` folder in any upper or lower case.
