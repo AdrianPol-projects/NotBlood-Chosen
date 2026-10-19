@@ -700,7 +700,7 @@ async def health(request):
 
 WEB_DIR = Path(os.environ.get("WEB_DIR", str(DATA_DIR / "web")))
 WEB_REPO = os.environ.get("WEB_REPO", "AdrianPol-projects/NotBlood-Chosen")
-WEB_UPDATE_HOURS = float(os.environ.get("WEB_UPDATE_HOURS", "6"))  # 0: never download
+WEB_UPDATE_HOURS = float(os.environ.get("WEB_UPDATE_HOURS", "1"))  # 0: never download
 WEB_MAX_ZIP = 200 * 1024 * 1024
 WEB_TYPES = {
     ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".wasm": "application/wasm",
