@@ -129,42 +129,13 @@ function mkdirs(path) {
 var SKIP_EXT = /\.(dem|exe|dll|com|bat|gog|ins|iso|cue|bin|msi)$/i;
 var MAX_FILE = 150 * 1048576;
 
-// Blood Extra Crispy (for its Gory Kills): only its new animations and tiles, in their own folder. Its
-// other files are its own versions of Blood's (SOUNDS.RFF, tiles, maps) and must not replace them.
-var BEC_DIR = 'BEC_1.2';
-var BEC_NEEDED = /^(extrac\.rff|tiles(01[89]|02\d|030)\.art)$/i;
-
-async function importExtraCrispy(entries, becRoot) {
-    var mine = entries.filter(function (e) {
-        var rel = e.path.slice(becRoot.length);
-        return e.path.indexOf(becRoot) === 0 && rel.indexOf('/') < 0 && BEC_NEEDED.test(rel);
-    });
-    for (var i = 0; i < mine.length; i++) {
-        var name = mine[i].path.slice(becRoot.length);
-        $('importText').textContent = 'Copying Extra Crispy\'s ' + name + ' (' + (i + 1) + '/' + mine.length + ')';
-        var data = await mine[i].read();
-        try { game.FS.mkdir(GAME_DIR + '/' + BEC_DIR); } catch (e) { /* exists */ }
-        game.FS.writeFile(GAME_DIR + '/' + BEC_DIR + '/' + name, data);
-        await new Promise(function (r) { setTimeout(r, 0); });
-    }
-    await new Promise(function (r) { syncFiles(r); });
-    $('importText').textContent = 'Blood Extra Crispy: ' + mine.length + ' files copied (only what Gory Kills need). ' +
-        'Switch them on in OPTIONS > GAME SETUP > GORY KILLS.';
-    if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
-    refresh();
-}
-
 // entries: [{ path: 'BLOOD/BLOOD.RFF', size, read: () => Promise<Uint8Array> }]
 async function importEntries(entries) {
-    entries.forEach(function (e) { e.path = e.path.replace(/\\/g, '/'); });
-    var bec = entries.find(function (e) { return /(^|\/)extrac\.rff$/i.test(e.path); });
-    if (bec)
-        return importExtraCrispy(entries, bec.path.slice(0, bec.path.length - 10));
-
     // the folder that holds BLOOD.RFF is the game folder; a backup zip goes in as it is
     var root = null;
     entries.forEach(function (e) {
-        var p = e.path;
+        var p = e.path.replace(/\\/g, '/');
+        e.path = p;
         if (/(^|\/)blood\.rff$/i.test(p)) {
             var d = p.slice(0, p.length - 9);
             if (root === null || d.length < root.length) root = d;

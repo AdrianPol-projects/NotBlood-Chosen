@@ -54,7 +54,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "messages.h"
 #ifdef NOONE_EXTENSIONS
 #include "nnexts.h"
-#include "gorykill.h"
 #include "nnextsif.h"
 #endif
 
@@ -1117,7 +1116,6 @@ const int nZoneRandList[kMaxPlayers][kMaxPlayers] = {
 
 void playerStart(int nPlayer, int bNewLevel)
 {
-    goryKillReset();
     PLAYER* pPlayer = &gPlayer[nPlayer];
     GINPUT* pInput = &pPlayer->input;
     ZONE* pStartZone = NULL;
@@ -2035,14 +2033,6 @@ void ProcessInput(PLAYER *pPlayer)
         gViewLookAdjust = 0.f;
     }
 
-    if (goryKillActive(pPlayer)) // a Gory Kill: Caleb is busy
-    {
-        pInput->forward = pInput->strafe = 0;
-        pInput->q16turn = pInput->q16mlook = 0;
-        pInput->buttonFlags.jump = pInput->buttonFlags.crouch = pInput->buttonFlags.shoot = pInput->buttonFlags.shoot2 = 0;
-        pInput->keyFlags.action = 0;
-        pInput->newWeapon = 0;
-    }
     pPlayer->isRunning = gProfile[pPlayer->nPlayer].nWeaponHBobbing == 2 ? pInput->syncFlags.run : 0; // v1.0x weapon swaying 
     if (pInput->buttonFlags.byte || pInput->forward || pInput->strafe || pInput->q16turn)
         pPlayer->restTime = 0;
@@ -2245,8 +2235,6 @@ void ProcessInput(PLAYER *pPlayer)
             pPlayer->posture = kPostureCrouch;
         break;
     }
-    if (pInput->keyFlags.action && goryKillTryStart(pPlayer)) // a nearly dead enemy in front: finish it
-        pInput->keyFlags.action = 0;
     if (pInput->keyFlags.action)
     {
         int a2, a3;
@@ -3024,8 +3012,6 @@ int playerDamageSprite(int nSource, PLAYER *pPlayer, DAMAGE_TYPE nDamageType, in
     dassert(nSource < kMaxSprites);
     dassert(pPlayer != NULL);
     if (pPlayer->damageControl[nDamageType])
-        return 0;
-    if (goryKillActive(pPlayer)) // nothing hurts Caleb during a Gory Kill
         return 0;
     if (gGameOptions.nDamageInvul && !VanillaMode()) // if invul timer option is active
     {

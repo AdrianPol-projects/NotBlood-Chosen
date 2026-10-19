@@ -41,8 +41,6 @@ static int32_t g_vm_size = 0;
 
 static char artfilename[BMAX_PATH];
 static char artfilenameformat[BMAX_PATH];
-static char artextradir[BMAX_PATH];  // ART files missing from the search path may be here (artSetExtraDir)
-static uint8_t artfromextra[MAXARTFILES_BASE];
 static char mapartfilename[BMAX_PATH];  // map-specific ART file name
 static int32_t mapartfnXXofs;  // byte offset to 'XX' (the number part) in the above
 static int32_t artfilnum, artfilplc;
@@ -501,22 +499,9 @@ static const char *artGetIndexedFileName(int32_t tilefilei)
     else
     {
         Bsnprintf(artfilename, sizeof(artfilename), artfilenameformat, tilefilei);
-        if (artfromextra[tilefilei])
-        {
-            char name[BMAX_PATH];
-            Bstrncpyz(name, artfilename, sizeof(name));
-            if (artfromextra[tilefilei] == 1)  // as mods usually ship them (the lookup can't fix the case of a mixed path)
-                Bstrtolower(name);
-            Bsnprintf(artfilename, sizeof(artfilename), "%s/%s", artextradir, name);
-        }
 
         return artfilename;
     }
-}
-
-void artSetExtraDir(const char *dir)
-{
-    Bstrncpyz(artextradir, dir ? dir : "", sizeof(artextradir));
 }
 
 // Returns:
@@ -528,22 +513,9 @@ static int32_t artReadIndexedFile(int32_t tilefilei)
 {
     const char *fn = artGetIndexedFileName(tilefilei);
     const int32_t permap = (tilefilei >= MAXARTFILES_BASE);  // is it a per-map ART file?
-    buildvfs_kfd fil = kopen4load(fn, 0);
+    buildvfs_kfd fil;
 
-    if (fil == buildvfs_kfd_invalid && !permap && artextradir[0])
-    {
-        // not in the game's own files: the extra folder may have it (new tiles only, never a replacement)
-        for (uint8_t variant = 1; variant <= 2 && fil == buildvfs_kfd_invalid; variant++)
-        {
-            artfromextra[tilefilei] = variant;  // 1: tilesNNN.art, 2: the name as asked for
-            fn = artGetIndexedFileName(tilefilei);
-            fil = kopen4load(fn, 0);
-        }
-        if (fil == buildvfs_kfd_invalid)
-            artfromextra[tilefilei] = 0;
-    }
-
-    if (fil != buildvfs_kfd_invalid)
+    if ((fil = kopen4load(fn, 0)) != buildvfs_kfd_invalid)
     {
         artheader_t local;
         int const headerval = artReadHeader(fil, fn, &local);
@@ -634,7 +606,6 @@ int32_t artLoadFiles(const char *filename, int32_t askedsize)
 
     //    artsize = 0;
 
-    Bmemset(artfromextra, 0, sizeof(artfromextra));
     for (int tilefilei=0; tilefilei<MAXARTFILES_BASE; tilefilei++)
         artReadIndexedFile(tilefilei);
 
