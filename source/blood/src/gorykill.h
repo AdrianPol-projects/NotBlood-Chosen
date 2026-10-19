@@ -14,21 +14,25 @@ See the GNU General Public License for more details.
 */
 //-------------------------------------------------------------------------
 
-// Gory Kills, as in the Blood Extra Crispy mod (by VGames): walk up to a nearly dead enemy, press USE,
-// and Caleb finishes it in first person. The animations, art and gore sounds are the mod's own and
-// come from the player's copy of it (its BEC_1.2 folder in the game folder, or one named
-// extracrispy); nothing of the mod is part of NotBlood. See gorykill.cpp.
+// Blood Extra Crispy (the mod by VGames for Refreshed Supply) as a mod for NotBlood: chosen in the MODS
+// menu, its art, sounds and Gory Kills are used (walk up to a nearly dead enemy, press USE, and Caleb
+// finishes it in first person). Everything comes from the player's copy of the mod, its BEC_1.2
+// folder in mods/ or the game folder; nothing of the mod is part of NotBlood. See gorykill.cpp.
 
 #pragma once
 
 struct PLAYER;
 
-extern int32_t gGoryKills;  // the option (off by default)
+// the MODS menu chose the mod: its folder, from the game folder (before the game's files load)
+void goryKillSetModDir(const char *pzDir);
 
-// startup, after the game's RFF files: finds the mod's files and takes what the kills need
+// a file of the chosen mod's folder (any upper/lower case), NULL without the mod or the file
+const char *goryKillModFile(const char *pzName);
+
+// startup, after the game's RFF files: opens the mod's EXTRAC.RFF and takes what the kills need
 void goryKillInit(void);
 
-// the mod's files are there (the option can be switched on)
+// the mod is on and its files are there
 bool goryKillAvailable(void);
 
 // a kill is playing for this player: no moving, firing or damage
@@ -37,7 +41,7 @@ bool goryKillActive(PLAYER *pPlayer);
 // USE was pressed: starts a kill on a nearly dead enemy in front, if there is one
 bool goryKillTryStart(PLAYER *pPlayer);
 
-// once a game frame: the kills' timelines and the thrown bodies
+// once a game frame: the kills' timelines
 void goryKillFrame(void);
 
 // draws the kill instead of the weapon (true when it did), and the blood on the screen after it

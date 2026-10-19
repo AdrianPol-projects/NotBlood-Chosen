@@ -44,7 +44,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "sound.h"
 #include "tile.h"
 #include "view.h"
-#include "gorykill.h"
 #include "weather.h"
 
 void SaveGame(CGameMenuItemZEditBitmap *, CGameMenuEvent *);
@@ -832,7 +831,6 @@ void SetWeaponFastSwitch(CGameMenuItemZBool *pItem);
 void SetAutosaveMode(CGameMenuItemZCycle *pItem);
 void SetLockSaving(CGameMenuItemZBool *pItem);
 void SetRestoreLastSave(CGameMenuItemZBool *pItem);
-void SetGoryKills(CGameMenuItemZBool *pItem);
 void SetVanillaMode(CGameMenuItemZCycle *pItem);
 
 ///////////////
@@ -874,7 +872,6 @@ CGameMenuItemSlider itemOptionsGameSliderAutoAimRange("AUTO AIM RANGE:", 3, 66, 
 CGameMenuItemZBool itemOptionsGameBoolAutoRun("AUTO RUN:", 3, 66, 80, 180, 0, SetAutoRun, NULL, NULL);
 CGameMenuItemZCycle itemOptionsGameWeaponSwitch("EQUIP PICKUPS:", 3, 66, 90, 180, 0, SetWeaponSwitch, pzWeaponSwitchStrings, ARRAY_SSIZE(pzWeaponSwitchStrings), 0);
 CGameMenuItemZBool itemOptionsGameWeaponFastSwitch("FAST WEAPON SWITCH:", 3, 66, 100, 180, 0, SetWeaponFastSwitch, NULL, NULL);
-CGameMenuItemZBool itemOptionsGameGoryKills("GORY KILLS:", 3, 66, 110, 180, 0, SetGoryKills, NULL, NULL);
 CGameMenuItemZCycle itemOptionsGameAutosaveMode("AUTOSAVE TRIGGER:", 3, 66, 120, 180, 0, SetAutosaveMode, pzAutosaveModeStrings, ARRAY_SSIZE(pzAutosaveModeStrings), 0);
 CGameMenuItemZBool itemOptionsGameLockSaving("LOCK MANUAL SAVING:", 3, 66, 130, 180, 0, SetLockSaving, "AUTOSAVES ONLY", "NEVER");
 CGameMenuItemZBool itemOptionsGameRestoreLastSave("ASK TO RESTORE LAST SAVE:", 3, 66, 140, 180, 0, SetRestoreLastSave, NULL, NULL);
@@ -2079,7 +2076,6 @@ void SetupOptionsMenu(void)
     menuOptionsGame.Add(&itemOptionsGameBoolAutoRun, false);
     menuOptionsGame.Add(&itemOptionsGameWeaponSwitch, false);
     menuOptionsGame.Add(&itemOptionsGameWeaponFastSwitch, false);
-    menuOptionsGame.Add(&itemOptionsGameGoryKills, false);
     menuOptionsGame.Add(&itemOptionsGameAutosaveMode, false);
     menuOptionsGame.Add(&itemOptionsGameLockSaving, false);
     menuOptionsGame.Add(&itemOptionsGameRestoreLastSave, false);
@@ -2094,8 +2090,6 @@ void SetupOptionsMenu(void)
     itemOptionsGameAutosaveMode.tooltip_pzTextUpper = "Set when autosave will trigger";
     itemOptionsGameLockSaving.tooltip_pzTextUpper = "Disable manual saving/save scumming";
     itemOptionsGameRestoreLastSave.tooltip_pzTextUpper = "Prompt to restore last save game on death";
-    itemOptionsGameGoryKills.tooltip_pzTextUpper = "USE on a nearly dead enemy finishes it (single player)";
-    itemOptionsGameGoryKills.tooltip_pzTextLower = "Needs the Blood Extra Crispy mod's BEC_1.2 folder";
     itemOptionsGameBoolVanillaMode.tooltip_pzTextUpper = "Disable all non-vanilla features/mutators";
     itemOptionsGameBoolVanillaMode.tooltip_pzTextLower = "and restores bugs (v1.21 DOS compatibility mode)";
 
@@ -2160,8 +2154,6 @@ void SetupOptionsMenu(void)
     itemOptionsGameAutosaveMode.m_nFocus = gAutosave % ARRAY_SSIZE(pzAutosaveModeStrings);
     itemOptionsGameLockSaving.at20 = !!gLockManualSaving;
     itemOptionsGameRestoreLastSave.at20 = !!gRestoreLastSave;
-    itemOptionsGameGoryKills.at20 = !!gGoryKills;
-    itemOptionsGameGoryKills.bEnable = goryKillAvailable();
     itemOptionsGameBoolVanillaMode.m_nFocus = gVanilla % ARRAY_SSIZE(pzVanillaModeStrings);
     SetGameVanillaMode(gVanilla); // enable/disable menu items depending on current vanilla mode state
 
@@ -3311,11 +3303,6 @@ void SetLockSaving(CGameMenuItemZBool *pItem)
 void SetRestoreLastSave(CGameMenuItemZBool *pItem)
 {
     gRestoreLastSave = pItem->at20;
-}
-
-void SetGoryKills(CGameMenuItemZBool *pItem)
-{
-    gGoryKills = pItem->at20;
 }
 
 void SetGameVanillaMode(char nState)

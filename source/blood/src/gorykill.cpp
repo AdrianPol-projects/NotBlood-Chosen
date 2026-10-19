@@ -14,7 +14,11 @@ See the GNU General Public License for more details.
 */
 //-------------------------------------------------------------------------
 
-// Gory Kills from Blood Extra Crispy (see gorykill.h).
+// Blood Extra Crispy as a mod, and its Gory Kills (see gorykill.h).
+//
+// Chosen in the MODS menu, the mod's folder gives the game its art (tiles001-030.art: its title,
+// menu background, sprites and new tiles), its SOUNDS.RFF and SURFACE.DAT. Its maps, BLOOD.INI and
+// scripts aren't used: they are made for Nightdive's KEX engine (enemy types and texts only it has).
 //
 // The mod (for Nightdive's Refreshed Supply) scripts its kills in BEC_Players.txt: USE near a
 // suffering enemy removes it, plays a first-person QAV over the screen and runs a timeline (a timer
@@ -44,8 +48,6 @@ See the GNU General Public License for more details.
 #include "mmulti.h"
 #include "osd.h"
 #include "trig.h"
-
-int32_t gGoryKills = 0;
 
 namespace
 {
@@ -159,7 +161,7 @@ struct GKSTATE
 
 Resource gBecRes;  // the mod's EXTRAC.RFF
 bool bAvailable;
-char szDir[BMAX_PATH];
+char szDir[BMAX_PATH];  // the mod's folder (from the game folder), "" when it isn't chosen
 GKSTATE gState[kMaxPlayers];
 
 bool fileExists(const char *pzPath)
@@ -276,40 +278,57 @@ int osdcmd_gktest(osdcmdptr_t parm)
 
 } // namespace
 
+void goryKillSetModDir(const char *pzDir)
+{
+    Bstrncpyz(szDir, pzDir ? pzDir : "", sizeof(szDir));
+}
+
+const char *goryKillModFile(const char *pzName)
+{
+    static char path[BMAX_PATH];
+    if (!szDir[0])
+        return NULL;
+    BDIR *dir = Bopendir(szDir);
+    if (!dir)
+        return NULL;
+    bool bFound = false;
+    while (Bdirent *d = Breaddir(dir))
+    {
+        if (!Bstrcasecmp(d->name, pzName))
+        {
+            Bsnprintf(path, sizeof(path), "%s/%s", szDir, d->name);
+            bFound = true;
+            break;
+        }
+    }
+    Bclosedir(dir);
+    return bFound ? path : NULL;
+}
+
 void goryKillInit(void)
 {
-    static osdcvardata_t cvar = { "cl_gorykills", "Gory Kills: USE finishes a nearly dead enemy (needs Blood Extra Crispy's files)",
-                                  (void *)&gGoryKills, CVAR_BOOL, 0, 1 };
-    OSD_RegisterCvar(&cvar, osdcmd_cvar_set);
     OSD_RegisterFunction("gktest", "gktest <0-10>: a nearly dead enemy for that Gory Kill appears in front of you", osdcmd_gktest);
 
-    static char const *const kDirs[] = { "extracrispy", "ExtraCrispy", "EXTRACRISPY", "BEC_1.2", "bec_1.2", "BEC",
-                                         "mods/BEC_1.2", "mods/extracrispy", "Mods/BEC_1.2" };
     bAvailable = false;
-    for (char const *pzDir : kDirs)
-    {
-        char path[BMAX_PATH];
-        Bsnprintf(path, sizeof(path), "%s/EXTRAC.RFF", pzDir);
-        if (!fileExists(path))
-        {
-            Bsnprintf(path, sizeof(path), "%s/extrac.rff", pzDir);
-            if (!fileExists(path))
-                continue;
-        }
-        Bstrncpyz(szDir, pzDir, sizeof(szDir));
-        gBecRes.Init(path);
-        // the mod's files have ids, but not the flag Blood looks for before it indexes them
-        for (unsigned int i = 0; i < gBecRes.count; i++)
-            gBecRes.dict[i].flags |= DICT_ID;
-        gBecRes.Reindex();
-        bAvailable = true;
-        break;
-    }
-    if (!bAvailable)
+    if (!szDir[0])
         return;
+    char const *pzExtra = goryKillModFile("EXTRAC.RFF");
+    if (!pzExtra || !fileExists(pzExtra))
+    {
+        LOG_F(ERROR, "Blood Extra Crispy: no EXTRAC.RFF in %s", szDir);
+        return;
+    }
+    char path[BMAX_PATH];
+    Bstrncpyz(path, pzExtra, sizeof(path));
+    gBecRes.Init(path);
+    // the mod's files have ids, but not the flag Blood looks for before it indexes them
+    for (unsigned int i = 0; i < gBecRes.count; i++)
+        gBecRes.dict[i].flags |= DICT_ID;
+    gBecRes.Reindex();
+    bAvailable = true;
 
-    // new tiles only (tiles018 and up): the game's own art stays as it is
-    artSetExtraDir(szDir);
+    // the mod's art comes first: its own title, menus and sprites, and its new tiles
+    artSetExtraDir(szDir, 1);
 
     int nSeqs = 0, nQavs = 0;
     for (auto const &k : gKills)
@@ -338,7 +357,7 @@ bool goryKillActive(PLAYER *pPlayer)
 
 bool goryKillTryStart(PLAYER *pPlayer)
 {
-    if (!gGoryKills || !bAvailable || !singlePlayer() || !pPlayer || goryKillActive(pPlayer))
+    if (!bAvailable || !singlePlayer() || !pPlayer || goryKillActive(pPlayer))
         return false;
     spritetype *pSprite = pPlayer->pSprite;
     XSPRITE *pXSprite = pPlayer->pXSprite;

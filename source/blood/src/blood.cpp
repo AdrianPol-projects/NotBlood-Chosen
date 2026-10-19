@@ -2195,7 +2195,13 @@ int app_main(int argc, char const * const * argv)
 #endif
     gSysRes.Init(pUserRFF ? pUserRFF : "BLOOD.RFF");
     gGuiRes.Init("GUI.RFF");
-    gSoundRes.Init(pUserSoundRFF ? pUserSoundRFF : "SOUNDS.RFF");
+    {
+        // Blood Extra Crispy (MODS menu) brings its own SOUNDS.RFF
+        char modSounds[BMAX_PATH] = "";
+        if (char const *pzMod = goryKillModFile("SOUNDS.RFF"))
+            Bstrncpyz(modSounds, pzMod, sizeof(modSounds));
+        gSoundRes.Init(pUserSoundRFF ? pUserSoundRFF : modSounds[0] ? modSounds : "SOUNDS.RFF");
+    }
     goryKillInit(); // Blood Extra Crispy's files, if the player has them
 
     HookReplaceFunctions();

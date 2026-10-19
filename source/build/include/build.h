@@ -1248,8 +1248,9 @@ void    tileConvertAnimFormat(int32_t picnum, uint32_t const picanmdisk);
 void    artReadManifest(buildvfs_kfd fil, artheader_t * const local);
 void    artPreloadFile(buildvfs_kfd fil, artheader_t * const local);
 int32_t artLoadFiles(const char *filename, int32_t askedsize);
-// ART files (tilesNNN.art) that aren't in the search path are also looked for in this folder
-void artSetExtraDir(const char *dir);
+// ART files (tilesNNN.art) are also looked for in this folder: first (a mod's art), or when the
+// search path has none
+void artSetExtraDir(const char *dir, int32_t first);
 void    artClearMapArt(void);
 void    artSetupMapArt(const char *filename);
 bool    tileLoad(int16_t tilenume);

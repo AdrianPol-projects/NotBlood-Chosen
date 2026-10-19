@@ -41,7 +41,8 @@ static int32_t g_vm_size = 0;
 
 static char artfilename[BMAX_PATH];
 static char artfilenameformat[BMAX_PATH];
-static char artextradir[BMAX_PATH];  // ART files missing from the search path may be here (artSetExtraDir)
+static char artextradir[BMAX_PATH];  // ART files may also be here (artSetExtraDir)
+static int32_t artextrafirst;        // ... and come before the search path's
 static uint8_t artfromextra[MAXARTFILES_BASE];
 static char mapartfilename[BMAX_PATH];  // map-specific ART file name
 static int32_t mapartfnXXofs;  // byte offset to 'XX' (the number part) in the above
@@ -514,9 +515,27 @@ static const char *artGetIndexedFileName(int32_t tilefilei)
     }
 }
 
-void artSetExtraDir(const char *dir)
+void artSetExtraDir(const char *dir, int32_t first)
 {
     Bstrncpyz(artextradir, dir ? dir : "", sizeof(artextradir));
+    artextrafirst = first;
+}
+
+static buildvfs_kfd artOpenExtra(int32_t tilefilei, const char **fn)
+{
+    buildvfs_kfd fil = buildvfs_kfd_invalid;
+    for (uint8_t variant = 1; variant <= 2 && fil == buildvfs_kfd_invalid; variant++)
+    {
+        artfromextra[tilefilei] = variant;  // 1: tilesNNN.art, 2: the name as asked for
+        *fn = artGetIndexedFileName(tilefilei);
+        fil = kopen4load(*fn, 0);
+    }
+    if (fil == buildvfs_kfd_invalid)
+    {
+        artfromextra[tilefilei] = 0;
+        *fn = artGetIndexedFileName(tilefilei);
+    }
+    return fil;
 }
 
 // Returns:
@@ -526,22 +545,17 @@ void artSetExtraDir(const char *dir)
 //<-1: per-map ART issue
 static int32_t artReadIndexedFile(int32_t tilefilei)
 {
-    const char *fn = artGetIndexedFileName(tilefilei);
     const int32_t permap = (tilefilei >= MAXARTFILES_BASE);  // is it a per-map ART file?
-    buildvfs_kfd fil = kopen4load(fn, 0);
+    const int32_t extra = !permap && artextradir[0];
+    const char *fn = artGetIndexedFileName(tilefilei);
+    buildvfs_kfd fil = buildvfs_kfd_invalid;
 
-    if (fil == buildvfs_kfd_invalid && !permap && artextradir[0])
-    {
-        // not in the game's own files: the extra folder may have it (new tiles only, never a replacement)
-        for (uint8_t variant = 1; variant <= 2 && fil == buildvfs_kfd_invalid; variant++)
-        {
-            artfromextra[tilefilei] = variant;  // 1: tilesNNN.art, 2: the name as asked for
-            fn = artGetIndexedFileName(tilefilei);
-            fil = kopen4load(fn, 0);
-        }
-        if (fil == buildvfs_kfd_invalid)
-            artfromextra[tilefilei] = 0;
-    }
+    if (extra && artextrafirst)  // the extra folder's version first (a mod's art)
+        fil = artOpenExtra(tilefilei, &fn);
+    if (fil == buildvfs_kfd_invalid)
+        fil = kopen4load(fn, 0);
+    if (fil == buildvfs_kfd_invalid && extra && !artextrafirst)  // only what the game's own files lack
+        fil = artOpenExtra(tilefilei, &fn);
 
     if (fil != buildvfs_kfd_invalid)
     {

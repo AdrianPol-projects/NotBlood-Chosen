@@ -129,10 +129,11 @@ function mkdirs(path) {
 var SKIP_EXT = /\.(dem|exe|dll|com|bat|gog|ins|iso|cue|bin|msi)$/i;
 var MAX_FILE = 150 * 1048576;
 
-// Blood Extra Crispy (for its Gory Kills): only its new animations and tiles, in their own folder. Its
-// other files are its own versions of Blood's (SOUNDS.RFF, tiles, maps) and must not replace them.
-var BEC_DIR = 'BEC_1.2';
-var BEC_NEEDED = /^(extrac\.rff|tiles(01[89]|02\d|030)\.art)$/i;
+// Blood Extra Crispy (a mod in the MODS menu): its art, sounds and Gory Kill animations, in their own
+// folder. Its other files (maps, BLOOD.INI, scripts) are for the remaster only, and none of them may
+// replace Blood's own.
+var BEC_DIR = 'mods/BEC_1.2';
+var BEC_NEEDED = /^(extrac\.rff|sounds\.rff|surface\.dat|tiles0\d\d\.art)$/i;
 
 async function importExtraCrispy(entries, becRoot) {
     var mine = entries.filter(function (e) {
@@ -143,13 +144,13 @@ async function importExtraCrispy(entries, becRoot) {
         var name = mine[i].path.slice(becRoot.length);
         $('importText').textContent = 'Copying Extra Crispy\'s ' + name + ' (' + (i + 1) + '/' + mine.length + ')';
         var data = await mine[i].read();
-        try { game.FS.mkdir(GAME_DIR + '/' + BEC_DIR); } catch (e) { /* exists */ }
+        mkdirs(BEC_DIR + '/' + name);
         game.FS.writeFile(GAME_DIR + '/' + BEC_DIR + '/' + name, data);
         await new Promise(function (r) { setTimeout(r, 0); });
     }
     await new Promise(function (r) { syncFiles(r); });
-    $('importText').textContent = 'Blood Extra Crispy: ' + mine.length + ' files copied (only what Gory Kills need). ' +
-        'Switch them on in OPTIONS > GAME SETUP > GORY KILLS.';
+    $('importText').textContent = 'Blood Extra Crispy: ' + mine.length + ' files copied. ' +
+        'Choose it in the game: MODS > BLOOD EXTRA CRISPY.';
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
     refresh();
 }
