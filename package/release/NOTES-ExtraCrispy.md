@@ -28,7 +28,13 @@ A test of the *Blood Extra Crispy* mod (by VGames, for Nightdive's Refreshed Sup
 
 **Choosing the mod now restarts the app by itself.**
 
-**Not included (yet):** the mod's new weapons (the Gatling Gun, Devil's Bore, Trench Gun, dual guns and the rest) and its scripted extras (turrets, lawn mowers, cannons). Their pictures can show in the maps as plain decorations.
+- **Its weapons (a first set):** they share the number keys with Blood's; press the key again for the next one on it.
+  - **Gatling Gun** (key 7): it's where the Guns Akimbo powerup was. Hold fire; alt fire is its wider "overkill".
+  - **Devastator** and **rocket launcher** (key 7), and the **Trench Gun** (key 3): pick them up where the mod's maps place them. The rocket launcher's alt fire is the nuke, which takes ten rockets. The Trench Gun's alt fire is dragon's breath.
+  - **Devil's Bore** (key 8): it's where Beast Vision was.
+  - **Dual tommy guns, dual sawed-offs and dual flare guns:** pick up a second one of the gun you already have.
+
+**Not included (yet):** the rest of the mod's weapons (the Mourning Codex, Blunderbuss, Zombie Axe, Phantasm Orb, the Hero/Slasher powerups, Wrath Demon Mode) and its scripted extras (turrets, lawn mowers, cannons). Their pictures can show in the maps as plain decorations.
 
 To play the normal game again: MODS > ORIGINAL GAME.
 
