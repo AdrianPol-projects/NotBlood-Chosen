@@ -72,8 +72,11 @@ enum
     kBecBlunderbuss,   // one shot, then it's thrown away
     kBecCannon,        // a loaded cannon: USE gets behind it, one shot
     kBecCannonBall,    // a cannon ball carried to an empty cannon
+    kBecFireworks,     // the fireworks cannon: a show, then it's thrown away
     kBecWeaponMax
 };
+
+enum { kFireworksPicnum = 7590, kAAGunPicnum = 6394 };  // the AA guns are 6394-6396
 
 enum
 {
@@ -618,6 +621,38 @@ void cannonFire(CTX &c, bool bAlt)
         sprite[nCannon].picnum = kCannonEmptyPicnum;
 }
 
+//
+// the fireworks cannon (BEC_Players.txt, HoldingFWCannon): it goes off by itself, the mod's three kinds
+// of rockets at its times, and is thrown away when it's done
+//
+
+void fireworksTick(CTX &c)
+{
+    if (c.pState->nPhase == kPhaseLower || c.pState->nPhase == kPhaseRaise)
+        return;
+    // the mod's timer (2 a frame) and the times it fires at
+    static short const gTimes[] = { 32, 42, 63, 70, 84, 85, 95, 96, 106, 107, 117, 118, 128, 129, 139, 140, 150, 151,
+                                    161, 162, 172, 173, 182, 192, 203, 213 };
+    int const nBefore = c.pState->nVar[0];
+    c.pState->nVar[0] += 2;
+    for (int i = 0; i < (int)ARRAY_SIZE(gTimes); i++)
+    {
+        if (gTimes[i] <= nBefore || gTimes[i] > c.pState->nVar[0])
+            continue;
+        static short const gPicnums[3] = { 7390, 7393, 7396 };
+        int const nKind = i % 3;
+        if (nKind == 1)
+            rocket(c, gPicnums[nKind], 32, kBoomSmall, 0xC000, 600);
+        else if (spritetype *pFlare = c.missile(kMissileFlareRegular, 600))
+            pFlare->picnum = gPicnums[nKind];
+        c.sound(SFX("SFX_FCFIRE1") + nKind);
+        c.flash(40);
+        c.kick(15);
+    }
+    if (c.pState->nVar[0] >= 268)  // done: thrown away
+        c.useAmmo(1);
+}
+
 WEAPON const gWeapons[kBecWeaponMax] = {
     { "GATLING GUN", 7, -1, 540, 540, "", 4689, "QAV_GATUP", "QAV_GATIDLE", "QAV_GATDOWN", gatlingFire, gatlingTick, NULL },
     { "TRENCH GUN", 3, 2, 0, 8, "", 4725, "QAV_PUMPU", "QAV_PUMPI", "QAV_PUMPD", trenchFire, NULL, trenchTrigger },
@@ -633,6 +668,7 @@ WEAPON const gWeapons[kBecWeaponMax] = {
     { "BLUNDERBUSS", 0, -1, 1, 1, "", kBlunderbussPicnum, "QAV_BLUNUP", "QAV_BLUNID", "QAV_MOWERT", blunderbussFire, NULL, blunderbussTrigger },
     { "CANNON", 0, -1, 1, 1, "", kCannonPicnum, "QAV_CANNONI", "QAV_CANNONI", NULL, cannonFire, NULL, NULL },
     { "CANNON BALL", 0, -1, 1, 1, "", kCannonBallPicnum, NULL, NULL, NULL, NULL, NULL, NULL },
+    { "FIREWORKS CANNON", 0, -1, 1, 1, "", kFireworksPicnum, "QAV_FCFIRE", "QAV_FCFIRE", "QAV_MOWERT", NULL, fireworksTick, NULL },
 };
 
 CTX ctxFor(PLAYER *pPlayer)
@@ -866,7 +902,8 @@ int osdcmd_becput(osdcmdptr_t parm)
         return OSDCMD_SHOWHELP;
     int const nPicnum = !Bstrcasecmp(parm->parms[0], "mower") ? kMowerPicnum : !Bstrcasecmp(parm->parms[0], "maxim") ? kMaximPicnum
                       : !Bstrcasecmp(parm->parms[0], "blunderbuss") ? kBlunderbussPicnum : !Bstrcasecmp(parm->parms[0], "cannon") ? kCannonEmptyPicnum
-                      : !Bstrcasecmp(parm->parms[0], "ball") ? kCannonBallPicnum : atoi(parm->parms[0]);
+                      : !Bstrcasecmp(parm->parms[0], "ball") ? kCannonBallPicnum : !Bstrcasecmp(parm->parms[0], "fireworks") ? kFireworksPicnum
+                      : !Bstrcasecmp(parm->parms[0], "aagun") ? kAAGunPicnum : atoi(parm->parms[0]);
     spritetype *pSprite = gMe->pSprite;
     int const nDist = parm->numparms > 1 ? atoi(parm->parms[1]) : 120;
     int const x = pSprite->x + mulscale30(nDist, Cos(pSprite->ang)), y = pSprite->y + mulscale30(nDist, Sin(pSprite->ang));
@@ -1142,6 +1179,14 @@ bool becWeaponUse(PLAYER *pPlayer)
         takeUp(pPlayer, kBecMower, kMowerTime);
         return true;
     }
+    nSprite = inReach(pPlayer, kFireworksPicnum);
+    if (nSprite >= 0)
+    {
+        sfxPlay3DSound(pPlayer->pSprite, becDefine("SFX_BTNTPU", -1), -1, 0);
+        actPostSprite(nSprite, kStatFree);
+        takeUp(pPlayer, kBecFireworks, 1);
+        return true;
+    }
     nSprite = inReach(pPlayer, kCannonBallPicnum);
     if (nSprite >= 0)  // a cannon ball, carried (out of sight: Caleb has it)
     {
@@ -1263,11 +1308,54 @@ void becWeaponsLevelStart(bool bSaveLoad)
     UNREFERENCED_PARAMETER(bSaveLoad);
 }
 
+namespace
+{
+// the AA guns (BEC_Players.txt): volleys of eleven flak shells into the sky while you're about
+int16_t gAADelay[kMaxSprites];
+int8_t gAAVolley[kMaxSprites];
+
+void aaGuns(void)
+{
+    if (!gMe || !gMe->pSprite)
+        return;
+    for (int nSprite = headspritestat[kStatDecoration]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+    {
+        spritetype *pGun = &sprite[nSprite];
+        if (pGun->picnum < kAAGunPicnum || pGun->picnum > kAAGunPicnum + 2)
+            continue;
+        if (approxDist(gMe->pSprite->x - pGun->x, gMe->pSprite->y - pGun->y) > 4000 * 16)
+            continue;
+        if (gAADelay[nSprite] > 0)
+        {
+            gAADelay[nSprite] -= 2;
+            continue;
+        }
+        if (gAAVolley[nSprite] > 10)  // a pause between volleys
+        {
+            gAAVolley[nSprite] = 0;
+            gAADelay[nSprite] = 50 + Random(100);
+            continue;
+        }
+        gAAVolley[nSprite]++;
+        gAADelay[nSprite] = 10;
+        int const nTilt = (pGun->picnum == kAAGunPicnum ? 1 : -1) * (1400 + Random(300));  // up, a little to the side
+        spritetype *pShell = actFireMissile(pGun, 0, -(16 << 8), mulscale30(nTilt, Cos(pGun->ang + 512)), mulscale30(nTilt, Sin(pGun->ang + 512)), -(1 << 14), kMissileBullet);
+        if (pShell)
+        {
+            pShell->xrepeat = pShell->yrepeat = 64;
+            actPropagateSpriteOwner(pShell, pGun);
+        }
+        sfxPlay3DSound(pGun, becDefine("SFX_GATF", -1), -1, 0);
+    }
+}
+} // namespace
+
 // touching one of the mod's weapon pictures in a map picks it up
 void becWeaponsFrame(void)
 {
     if (!bActive)
         return;
+    aaGuns();
     struct PLACED { short nPicnum; int8_t nWeapon; };
     static PLACED const gPlaced[] = {
         { 4725, kBecTrench },
