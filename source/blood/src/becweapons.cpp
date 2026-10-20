@@ -70,10 +70,16 @@ enum
     kBecTurret,        // the Maxim gun on its stand: USE gets behind it, RUN rips it off
     kBecMaxim,         // the Maxim carried
     kBecBlunderbuss,   // one shot, then it's thrown away
+    kBecCannon,        // a loaded cannon: USE gets behind it, one shot
+    kBecCannonBall,    // a cannon ball carried to an empty cannon
     kBecWeaponMax
 };
 
-enum { kMowerPicnum = 5840, kMaximPicnum = 5866, kBlunderbussPicnum = 5119 };
+enum
+{
+    kMowerPicnum = 5840, kMaximPicnum = 5866, kBlunderbussPicnum = 5119,
+    kCannonPicnum = 6276, kCannonEmptyPicnum = 6282, kCannonBallPicnum = 6281,
+};
 enum { kMowerTime = 37 };  // seconds: the mod's 2240 (its timer goes 2 a frame)
 
 // the mod's names, looked up once
@@ -179,7 +185,19 @@ struct CTX
         // its first frame now (its trigger, often): as Blood's StartQAV
         pQav->Play(-kTicsPerFrame, 0, nQavClient, pPlayer);
     }
-    void idle(int nIdle) { pState->nIdleQav = nIdle; play(nIdle, kPhaseIdle); }
+    void idle(int nIdle)
+    {
+        pState->nIdleQav = nIdle;
+        play(nIdle, kPhaseIdle);
+        if (!getQav(nIdle))  // nothing in its hands to show (a cannon ball carried)
+            pState->nPhase = kPhaseIdle, pState->nQav = -1, pState->nTimer = 0;
+    }
+    void lower()
+    {
+        play(becDefine(pWeapon->pzDown, -1), kPhaseLower);
+        if (pState->nPhase != kPhaseLower || !getQav(becDefine(pWeapon->pzDown, -1)))  // none: down at once
+            pState->nPhase = kPhaseLower, pState->nQav = -1, pState->nTimer = 0;
+    }
     void sound(int nSfx)
     {
         if (nSfx >= 0)
@@ -578,6 +596,28 @@ void blunderbussTrigger(CTX &c, int nTrigger)
     c.kick(60);
 }
 
+//
+// the cannons (BEC_Players.txt, "CANNON"): one shot, then the cannon is empty until a cannon ball is
+// carried to it
+//
+
+void cannonFire(CTX &c, bool bAlt)
+{
+    UNREFERENCED_PARAMETER(bAlt);
+    if (c.ammo() <= 0)
+        return;
+    c.useAmmo(1);
+    c.play(QAVID("QAV_CANNONF"), kPhaseFire);
+    c.sound(SFX("SFX_CANNONF"));
+    c.sound(SFX("SFX_BLUNDFI"));
+    rocket(c, kCannonBallPicnum, 32, kBoomLarge, 0x14000, 0);
+    c.flash(60);
+    c.kick(80);
+    int const nCannon = c.pState->nTurret;
+    if (nCannon >= 0 && nCannon < kMaxSprites && sprite[nCannon].statnum == kStatDecoration)
+        sprite[nCannon].picnum = kCannonEmptyPicnum;
+}
+
 WEAPON const gWeapons[kBecWeaponMax] = {
     { "GATLING GUN", 7, -1, 540, 540, "", 4689, "QAV_GATUP", "QAV_GATIDLE", "QAV_GATDOWN", gatlingFire, gatlingTick, NULL },
     { "TRENCH GUN", 3, 2, 0, 8, "", 4725, "QAV_PUMPU", "QAV_PUMPI", "QAV_PUMPD", trenchFire, NULL, trenchTrigger },
@@ -591,6 +631,8 @@ WEAPON const gWeapons[kBecWeaponMax] = {
     { "MAXIM GUN", 0, -1, 1, 1, "", kMaximPicnum, "QAV_MAXIM1", "QAV_MAXIM1", "QAV_MAXIM1", turretFire, NULL, NULL },
     { "MOBILE MAXIM", 0, -1, 250, 250, "", 5077, "QAV_MAXUP", "QAV_MAXID", "QAV_MOWERT", maximFire, maximTick, maximTrigger },
     { "BLUNDERBUSS", 0, -1, 1, 1, "", kBlunderbussPicnum, "QAV_BLUNUP", "QAV_BLUNID", "QAV_MOWERT", blunderbussFire, NULL, blunderbussTrigger },
+    { "CANNON", 0, -1, 1, 1, "", kCannonPicnum, "QAV_CANNONI", "QAV_CANNONI", NULL, cannonFire, NULL, NULL },
+    { "CANNON BALL", 0, -1, 1, 1, "", kCannonBallPicnum, NULL, NULL, NULL, NULL, NULL, NULL },
 };
 
 CTX ctxFor(PLAYER *pPlayer)
@@ -639,6 +681,7 @@ void raise(PLAYER *pPlayer, int nWeapon)
     memset(pState->nVar, 0, sizeof(pState->nVar));
     CTX c = ctxFor(pPlayer);
     c.pState->nIdleQav = becDefine(c.pWeapon->pzIdle, -1);
+    c.pState->nQav = -1;
     c.play(becDefine(c.pWeapon->pzUp, -1), kPhaseRaise);
     if (c.pState->nQav < 0)
         c.idle(c.pState->nIdleQav);
@@ -680,7 +723,7 @@ void giveWeapon(PLAYER *pPlayer, int nWeapon, int nAmmo)
         if (pState->nActive >= 0)
         {
             CTX c = ctxFor(pPlayer);
-            c.play(becDefine(c.pWeapon->pzDown, -1), kPhaseLower);
+            c.lower();
             pState->nNext = -2 - nWeapon;
             pState->nPending = -1;
         }
@@ -741,7 +784,7 @@ void takeUp(PLAYER *pPlayer, int nWeapon, int nAmmo)
     if (pState->nActive >= 0)
     {
         CTX c = ctxFor(pPlayer);
-        c.play(becDefine(c.pWeapon->pzDown, -1), kPhaseLower);
+        c.lower();
         pState->nNext = -2 - nWeapon;
     }
     else
@@ -759,14 +802,38 @@ void putDown(PLAYER *pPlayer, int nWeapon)
     pState->nHave &= ~(1u << nWeapon);
     pState->nAmmo[nWeapon] = 0;
     spritetype *pSprite = pPlayer->pSprite;
-    if (nWeapon == kBecTurret)  // the gun stays on its stand
+    int const nTurret = pState->nTurret;
+    bool const bObject = nTurret >= 0 && nTurret < kMaxSprites && sprite[nTurret].statnum == kStatDecoration;
+    pState->nTurret = -1;
+    if (nWeapon == kBecTurret || nWeapon == kBecCannon)  // the gun stays on its stand
     {
-        int const nTurret = pState->nTurret;
-        if (nTurret >= 0 && nTurret < kMaxSprites && sprite[nTurret].statnum == kStatDecoration)
+        if (bObject)
         {
             sprite[nTurret].cstat &= ~CSTAT_SPRITE_INVISIBLE;
             sprite[nTurret].cstat |= CSTAT_SPRITE_BLOCK;
         }
+        // Caleb steps back from it
+        vec3_t pos = { pSprite->x - mulscale30(pSprite->clipdist << 2, Cos(pSprite->ang)), pSprite->y - mulscale30(pSprite->clipdist << 2, Sin(pSprite->ang)), pSprite->z };
+        int16_t nSector = pSprite->sectnum;
+        updatesector(pos.x, pos.y, &nSector);
+        if (nSector >= 0)
+            setsprite(pSprite->index, &pos);
+        return;
+    }
+    if (nWeapon == kBecCannonBall)  // put down in front of Caleb
+    {
+        if (!bObject)
+            return;
+        int x = pSprite->x + mulscale30(pSprite->clipdist << 3, Cos(pSprite->ang)), y = pSprite->y + mulscale30(pSprite->clipdist << 3, Sin(pSprite->ang));
+        int16_t nSector = pSprite->sectnum;
+        updatesector(x, y, &nSector);
+        if (nSector < 0)
+            x = pSprite->x, y = pSprite->y, nSector = pSprite->sectnum;
+        int ceilZ, floorZ;
+        getzsofslope(nSector, x, y, &ceilZ, &floorZ);
+        vec3_t pos = { x, y, floorZ };
+        setsprite(nTurret, &pos);
+        sprite[nTurret].cstat &= ~CSTAT_SPRITE_INVISIBLE;
         return;
     }
     if (nWeapon != kBecMower)
@@ -798,7 +865,8 @@ int osdcmd_becput(osdcmdptr_t parm)
     if (parm->numparms < 1 || !gGameStarted || !gMe || !gMe->pSprite)
         return OSDCMD_SHOWHELP;
     int const nPicnum = !Bstrcasecmp(parm->parms[0], "mower") ? kMowerPicnum : !Bstrcasecmp(parm->parms[0], "maxim") ? kMaximPicnum
-                      : !Bstrcasecmp(parm->parms[0], "blunderbuss") ? kBlunderbussPicnum : atoi(parm->parms[0]);
+                      : !Bstrcasecmp(parm->parms[0], "blunderbuss") ? kBlunderbussPicnum : !Bstrcasecmp(parm->parms[0], "cannon") ? kCannonEmptyPicnum
+                      : !Bstrcasecmp(parm->parms[0], "ball") ? kCannonBallPicnum : atoi(parm->parms[0]);
     spritetype *pSprite = gMe->pSprite;
     int const nDist = parm->numparms > 1 ? atoi(parm->parms[1]) : 120;
     int const x = pSprite->x + mulscale30(nDist, Cos(pSprite->ang)), y = pSprite->y + mulscale30(nDist, Sin(pSprite->ang));
@@ -904,7 +972,7 @@ bool becWeaponProcess(PLAYER *pPlayer)
             if (pState->nActive >= 0)  // the one in hand goes down, the other comes up
             {
                 CTX c = ctxFor(pPlayer);
-                c.play(becDefine(c.pWeapon->pzDown, -1), kPhaseLower);
+                c.lower();
                 pState->nNext = -2 - (nNext - 1);
             }
             else
@@ -917,7 +985,7 @@ bool becWeaponProcess(PLAYER *pPlayer)
         else if (nNext == 0 && pState->nActive >= 0)  // Blood's weapon of that number
         {
             CTX c = ctxFor(pPlayer);
-            c.play(becDefine(c.pWeapon->pzDown, -1), kPhaseLower);
+            c.lower();
             pState->nNext = nNew;
             pPlayer->input.newWeapon = kWeaponNone;
         }
@@ -928,7 +996,7 @@ bool becWeaponProcess(PLAYER *pPlayer)
     if (pState->nActive >= 0 && pState->nNext == 0 && (pPlayer->input.keyFlags.nextWeapon || pPlayer->input.keyFlags.prevWeapon || pPlayer->input.keyFlags.lastWeapon))
     {
         CTX c = ctxFor(pPlayer);
-        c.play(becDefine(c.pWeapon->pzDown, -1), kPhaseLower);
+        c.lower();
         pState->nNext = pPlayer->lastWeapon > 0 ? (int)pPlayer->lastWeapon : (int)kWeaponPitchfork;
         pPlayer->input.keyFlags.nextWeapon = pPlayer->input.keyFlags.prevWeapon = pPlayer->input.keyFlags.lastWeapon = 0;
     }
@@ -990,10 +1058,10 @@ bool becWeaponProcess(PLAYER *pPlayer)
     {
         if (c.ammo() <= 0)  // empty: Blood's next weapon
         {
-            c.play(becDefine(c.pWeapon->pzDown, -1), kPhaseLower);
+            c.lower();
             pState->nNext = pPlayer->lastWeapon > 0 ? (int)pPlayer->lastWeapon : (int)kWeaponPitchfork;
         }
-        else if (c.buttonFire() || c.buttonAlt())
+        else if ((c.buttonFire() || c.buttonAlt()) && c.pWeapon->pFire)
             c.pWeapon->pFire(c, !c.buttonFire());
         else if (pState->nTimer <= 0)
             c.idle(pState->nIdleQav);
@@ -1038,10 +1106,27 @@ bool becWeaponUse(PLAYER *pPlayer)
     if (!bActive || !pPlayer->pXSprite || pPlayer->pXSprite->health <= 0)
         return false;
     WSTATE *pState = &gWState[pPlayer->nPlayer];
-    if (pState->nActive == kBecTurret && pState->nPhase != kPhaseLower)  // off the gun again
+    if ((pState->nActive == kBecTurret || pState->nActive == kBecCannon) && pState->nPhase != kPhaseLower)  // off the gun again
     {
         CTX c = ctxFor(pPlayer);
-        c.play(becDefine(c.pWeapon->pzDown, -1), kPhaseLower);
+        c.lower();
+        pState->nNext = pPlayer->lastWeapon > 0 ? (int)pPlayer->lastWeapon : (int)kWeaponPitchfork;
+        return true;
+    }
+    if (pState->nActive == kBecCannonBall && pState->nPhase != kPhaseLower)
+    {
+        // into an empty cannon, or put down
+        int const nCannon = inReach(pPlayer, kCannonEmptyPicnum);
+        if (nCannon >= 0)
+        {
+            sprite[nCannon].picnum = kCannonPicnum;
+            sfxPlay3DSound(pPlayer->pSprite, becDefine("SFX_CANNONL", -1), -1, 0);
+            if (pState->nTurret >= 0 && pState->nTurret < kMaxSprites)
+                actPostSprite(pState->nTurret, kStatFree);
+            pState->nTurret = -1;
+        }
+        CTX c = ctxFor(pPlayer);
+        c.lower();
         pState->nNext = pPlayer->lastWeapon > 0 ? (int)pPlayer->lastWeapon : (int)kWeaponPitchfork;
         return true;
     }
@@ -1057,7 +1142,20 @@ bool becWeaponUse(PLAYER *pPlayer)
         takeUp(pPlayer, kBecMower, kMowerTime);
         return true;
     }
-    nSprite = inReach(pPlayer, kMaximPicnum);
+    nSprite = inReach(pPlayer, kCannonBallPicnum);
+    if (nSprite >= 0)  // a cannon ball, carried (out of sight: Caleb has it)
+    {
+        sfxPlay3DSound(pPlayer->pSprite, becDefine("SFX_BTNTPU", -1), -1, 0);
+        sprite[nSprite].cstat |= CSTAT_SPRITE_INVISIBLE;
+        sprite[nSprite].cstat &= ~(CSTAT_SPRITE_BLOCK | CSTAT_SPRITE_BLOCK_HITSCAN);
+        takeUp(pPlayer, kBecCannonBall, 1);
+        pState->nTurret = nSprite;
+        if (pPlayer == gMe)
+            viewSetMessage("Carrying a cannon ball: USE on an empty cannon loads it", 0, MESSAGE_PRIORITY_PICKUP);
+        return true;
+    }
+    int const nCannon = inReach(pPlayer, kCannonPicnum);
+    nSprite = nCannon >= 0 ? nCannon : inReach(pPlayer, kMaximPicnum);
     if (nSprite >= 0)
     {
         // behind the gun: where it stands, facing where it faces; it's in Caleb's hands, not on its stand
@@ -1072,7 +1170,7 @@ bool becWeaponUse(PLAYER *pPlayer)
         pPlayer->q16ang = fix16_from_int(pTurret->ang);
         pTurret->cstat |= CSTAT_SPRITE_INVISIBLE;
         pTurret->cstat &= ~CSTAT_SPRITE_BLOCK;
-        takeUp(pPlayer, kBecTurret, 1);
+        takeUp(pPlayer, nCannon >= 0 ? kBecCannon : kBecTurret, 1);
         pState->nTurret = nSprite;
         return true;
     }
@@ -1084,7 +1182,7 @@ bool becWeaponMounted(PLAYER *pPlayer)
     if (!bActive)
         return false;
     WSTATE *pState = &gWState[pPlayer->nPlayer];
-    return pState->nActive == kBecTurret || pState->nPending == kBecTurret;
+    return pState->nActive == kBecTurret || pState->nPending == kBecTurret || pState->nActive == kBecCannon || pState->nPending == kBecCannon;
 }
 
 void becWeaponMountedInput(PLAYER *pPlayer, bool bRun)
