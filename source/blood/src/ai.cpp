@@ -45,6 +45,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "aitchern.h"
 #include "aizomba.h"
 #include "aizombf.h"
+#include "becdudes.h"
 #include "blood.h"
 #include "db.h"
 #include "dude.h"
@@ -885,6 +886,9 @@ void aiActivateDude(spritetype *pSprite, XSPRITE *pXSprite)
             aiNewState(pSprite, pXSprite, &tentacleChase);
         }
         break;
+    default:
+        becActivateDude(pSprite, pXSprite); // Blood Extra Crispy's enemies
+        break;
     }
 }
 
@@ -1106,11 +1110,14 @@ int aiDamageSprite(spritetype *pSprite, XSPRITE *pXSprite, int nSource, DAMAGE_T
             break;
         }
     }
+    becDamageDude(pSprite, pXSprite, nSource, nDmgType, nDamage); // Blood Extra Crispy's enemies
     return nDamage;
 }
 
 void RecoilDude(spritetype *pSprite, XSPRITE *pXSprite)
 {
+    if (becRecoilDude(pSprite, pXSprite)) // Blood Extra Crispy's enemies
+        return;
     char v4 = Chance(0x8000);
     DUDEEXTRA *pDudeExtra = &gDudeExtra[pSprite->extra];
     if (pSprite->statnum == kStatDude && (pSprite->type >= kDudeBase && pSprite->type < kDudeMax)) {
@@ -1670,7 +1677,8 @@ void aiInitSprite(spritetype *pSprite)
         break;
     #endif
     default:
-        aiNewState(pSprite, pXSprite, &genIdle);
+        if (!becInitSprite(pSprite, pXSprite)) // Blood Extra Crispy's enemies
+            aiNewState(pSprite, pXSprite, &genIdle);
         break;
     }
     aiSetTarget(pXSprite, 0, 0, 0);
@@ -1724,6 +1732,8 @@ void aiInitSprite(spritetype *pSprite)
         pSprite->flags = 15;
         break;
     }
+
+    becAfterInitSprite(pSprite, pXSprite); // Blood Extra Crispy's enemies
 
     #ifdef NOONE_EXTENSIONS
     if (gModernMap)

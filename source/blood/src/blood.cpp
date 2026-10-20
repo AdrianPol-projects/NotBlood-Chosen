@@ -78,6 +78,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #ifdef NOONE_EXTENSIONS
 #include "nnexts.h"
 #include "gorykill.h"
+#include "becdudes.h"
+#include "becweapons.h"
 #endif
 
 #ifdef _WIN32
@@ -1375,6 +1377,8 @@ void ProcessFrame(void)
     }
     modesFrame();
     goryKillFrame();
+    becProcessFrame();
+    becWeaponsFrame();
     trProcessBusy();
     evProcess((int)gFrameClock);
     seqProcess(kTicsPerFrame);

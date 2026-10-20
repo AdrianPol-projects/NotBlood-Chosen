@@ -641,6 +641,46 @@ void Resource::AddFromBuffer(const char* name, const char* type, char* data, int
     }
 }
 
+// a file of another .RFF that stays open (a mod's), read from there when it's needed; false if this
+// one has a file of that name or id already
+bool Resource::AddFromResource(Resource &from, DICTNODE *pFrom, const char *name, int id)
+{
+    char name2[BMAX_PATH], type2[BMAX_PATH];
+    dassert(dict != NULL && pFrom != NULL);
+    Bstrncpyz(name2, name, sizeof(name2));
+    Bstrncpyz(type2, pFrom->type, sizeof(type2));
+    Bstrupr(name2);
+    Bstrupr(type2);
+    if (*Probe(name2, type2) || (id >= 0 && *Probe((unsigned int)id, type2)))
+        return false;
+    if (2 * count >= buffSize)
+        Grow();
+    DICTNODE *node = &dict[count++];
+    Flush(node);
+    for (char **pp : { &node->type, &node->name, &node->oldname, &node->path })
+    {
+        if (*pp)
+            Free(*pp);
+        *pp = NULL;
+    }
+    node->type = (char*)Alloc(strlen(type2)+1);
+    node->name = (char*)Alloc(strlen(name2)+1);
+    node->oldname = (char*)Alloc(strlen(name2)+1);
+    strcpy(node->type, type2);
+    strcpy(node->name, name2);
+    strcpy(node->oldname, name2);
+    node->buffer = NULL;
+    node->offset = pFrom->offset;
+    node->size = pFrom->size;
+    node->flags = DICT_FOREIGN | (pFrom->flags & DICT_CRYPT) | (id >= 0 ? DICT_ID : 0);
+    node->foreignHandle = from.handle;
+    node->id = id;
+    *Probe(name2, type2) = node;
+    if (id >= 0)
+        *Probe((unsigned int)id, type2) = node;
+    return true;
+}
+
 void *Resource::Alloc(int nSize)
 {
 #ifdef USE_QHEAP
@@ -756,12 +796,13 @@ void Resource::Read(DICTNODE *n, void *p)
     }
     else
     {
-        int r = klseek(handle, n->offset, SEEK_SET);
+        int const h = (n->flags & DICT_FOREIGN) ? n->foreignHandle : handle;
+        int r = klseek(h, n->offset, SEEK_SET);
         if (r == -1)
         {
             ThrowError("Error seeking to resource!");
         }
-        if ((uint32_t)kread(handle, p, n->size) != n->size)
+        if ((uint32_t)kread(h, p, n->size) != n->size)
         {
             ThrowError("Error loading resource!");
         }

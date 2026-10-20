@@ -160,7 +160,7 @@ THINGINFO_EXTRA gThingInfoExtra[] = {
     true,
 };
 
-DUDEINFO_EXTRA gDudeInfoExtra[] = {
+DUDEINFO_EXTRA gDudeInfoExtra[kDudeMax] = {
     
     { false,  false,  -1, -1, -1, -1, -1, -1 },     // 200
     { false,  false,  0, 9, 13, 13, 17, 14 },       // 201

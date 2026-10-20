@@ -31,6 +31,8 @@ See the GNU General Public License for more details.
 #include "compat.h"
 #include "common_game.h"
 #include "actor.h"
+#include "becdudes.h"
+#include "becweapons.h"
 #include "blood.h"
 #include "config.h"
 #include "db.h"
@@ -188,39 +190,36 @@ bool fileExists(const char *pzPath)
     return true;
 }
 
-// copies one file of the mod's EXTRAC.RFF into a game resource, unless the game has one already
-bool copyResource(Resource &to, unsigned int nId, const char *pzType, const char *pzName)
+// everything new in the mod's EXTRAC.RFF: its animations (SEQ, QAV) and sounds (SFX and their samples),
+// read from there when they're used; the game's own files of the same ids stay
+void importAll(int &nSeqs, int &nQavs, int &nSounds)
 {
-    DICTNODE *hFrom = nId != (unsigned int)-1 ? gBecRes.Lookup(nId, pzType) : gBecRes.Lookup(pzName, pzType);
-    if (!hFrom)
-        return false;
-    int const nSize = gBecRes.Size(hFrom);
-    char *pData = (char *)Xmalloc(nSize);
-    gBecRes.Read(hFrom, pData);  // decrypted
-    char name[16];
-    if (nId != (unsigned int)-1)
-        Bsnprintf(name, sizeof(name), "BEC%u", nId);  // the mod reuses names for different ids
-    else
-        Bstrncpyz(name, pzName, sizeof(name));
-    to.AddFromBuffer(name, pzType, pData, nSize, nId != (unsigned int)-1 ? (int)nId : -1, 0);
-    Xfree(pData);
-    return true;
-}
-
-// a sound the kills play: from the game if it has it, else the mod's (with its sample)
-void takeSound(int nId)
-{
-    if (gSoundRes.Lookup(nId, "SFX"))
-        return;
-    DICTNODE *hSfx = gBecRes.Lookup((unsigned int)nId, "SFX");
-    if (!hSfx || gBecRes.Size(hSfx) < (int)sizeof(SFX))
-        return;
-    SFX sfx;
-    gBecRes.Read(hSfx, &sfx);
-    sfx.rawName[8] = '\0';
-    if (!gSoundRes.Lookup(sfx.rawName, "RAW") && !copyResource(gSoundRes, (unsigned int)-1, "RAW", sfx.rawName))
-        return;
-    copyResource(gSoundRes, nId, "SFX", NULL);
+    nSeqs = nQavs = nSounds = 0;
+    for (unsigned int i = 0; i < gBecRes.count; i++)
+    {
+        DICTNODE *n = &gBecRes.dict[i];
+        if (!n->type || n->id == (unsigned int)-1)
+            continue;
+        char name[16];
+        Bsnprintf(name, sizeof(name), "BEC%u", n->id);  // the mod reuses names for different ids
+        if (!Bstrcasecmp(n->type, "SEQ"))
+            nSeqs += gSysRes.AddFromResource(gBecRes, n, name, (int)n->id);
+        else if (!Bstrcasecmp(n->type, "QAV"))
+            nQavs += gSysRes.AddFromResource(gBecRes, n, name, (int)n->id);
+        else if (!Bstrcasecmp(n->type, "SFX") && gBecRes.Size(n) >= (int)sizeof(SFX) && !gSoundRes.Lookup(n->id, "SFX"))
+        {
+            SFX sfx;
+            gBecRes.Read(n, &sfx);
+            sfx.rawName[8] = '\0';
+            if (!gSoundRes.Lookup(sfx.rawName, "RAW"))
+            {
+                DICTNODE *hRaw = gBecRes.Lookup(sfx.rawName, "RAW");
+                if (!hRaw || !gSoundRes.AddFromResource(gBecRes, hRaw, sfx.rawName))
+                    continue;
+            }
+            nSounds += gSoundRes.AddFromResource(gBecRes, n, name, (int)n->id);
+        }
+    }
 }
 
 bool singlePlayer(void)
@@ -383,19 +382,17 @@ void goryKillInit(void)
     // the mod's art comes first: its own title, menus and sprites, and its new tiles
     artSetExtraDir(szDir, 1);
 
-    int nSeqs = 0, nQavs = 0;
+    int nSeqs, nQavs, nSounds;
+    importAll(nSeqs, nQavs, nSounds);
+    int nKills = 0;
     for (auto const &k : gKills)
-    {
-        if (k.nBodySeq && !gSysRes.Lookup(k.nBodySeq, "SEQ") && copyResource(gSysRes, k.nBodySeq, "SEQ", NULL))
-            nSeqs++;
-        nQavs += !!gBecRes.Lookup(k.nQav, "QAV");
-        for (GKEVENT const *pEv = k.pEvents; pEv->nType != kEvEnd; pEv++)
-            if (pEv->nType == kEvSound)
-                for (int i = 0; i < max<int>(pEv->nRand, 1); i++)
-                    takeSound(pEv->nSound + i);
-    }
-    LOG_F(INFO, "Gory Kills: Blood Extra Crispy files in %s (%d of %d kills, %d new body animations)", szDir, nQavs,
-          (int)ARRAY_SIZE(gKills), nSeqs);
+        nKills += !!gSysRes.Lookup(k.nQav, "QAV");
+    LOG_F(INFO, "Blood Extra Crispy: files in %s (%d new animations, %d new weapon animations, %d new sounds; %d of %d kills)",
+          szDir, nSeqs, nQavs, nSounds, nKills, (int)ARRAY_SIZE(gKills));
+
+    // its new enemies (their definitions are in its BloodEX.kpf)
+    becDudesInit(goryKillModFile("BloodEX.kpf"));
+    becWeaponsInit();
 }
 
 bool goryKillAvailable(void)

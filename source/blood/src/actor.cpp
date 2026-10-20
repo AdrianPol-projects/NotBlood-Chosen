@@ -50,6 +50,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "aitchern.h"
 #include "aizomba.h"
 #include "aizombf.h"
+#include "becdudes.h"
+#include "becweapons.h"
 #include "blood.h"
 #include "callback.h"
 #include "config.h"
@@ -2592,6 +2594,8 @@ void actInit(bool bSaveLoad) {
         }
     }
     
+    becLevelStart(bSaveLoad); // Blood Extra Crispy's enemies
+
     const char bHalfMotherSpiderHp = gGameOptions.uSpriteBannedFlags&BANNED_MSPIDERS_HP && !(!Bstrcmp(BloodIniFile, "BLOOD.INI") && (gGameOptions.nEpisode == 1 && gGameOptions.nLevel == 7)); // do not lower HP for E2M8
     const char bMaxTchernobogHp = gGameOptions.uSpriteBannedFlags&BANNED_TCHERNOBOG_HP; // max tchernobog HP
     dudeInfo[kDudeSpiderMother-kDudeBase].startHealth = bHalfMotherSpiderHp ? 50 : 100;
@@ -3018,6 +3022,8 @@ void actKillDude(int nKillerSprite, spritetype *pSprite, DAMAGE_TYPE damageType,
     dassert(nXSprite > 0);
     XSPRITE *pXSprite = &xsprite[pSprite->extra];
     
+    if (becKillDudeFirst(pSprite, pXSprite, nKillerSprite, damageType, damage)) // Blood Extra Crispy's: alive after all
+        return;
     switch (pSprite->type) {
     #ifdef NOONE_EXTENSIONS
     case kDudeModernCustom:
@@ -3185,14 +3191,17 @@ void actKillDude(int nKillerSprite, spritetype *pSprite, DAMAGE_TYPE damageType,
         break;
     }
 
-    if (!gSysRes.Lookup(getDudeInfo(nType+kDudeBase)->seqStartID + nSeq, "SEQ"))
+    const int nBecKill = becKillDude(pSprite, pXSprite, nKillerSprite, damageType, damage); // Blood Extra Crispy's enemies
+    if (nBecKill == kBecKillGone || (nBecKill == kBecKillNo && !gSysRes.Lookup(getDudeInfo(nType+kDudeBase)->seqStartID + nSeq, "SEQ")))
     {
         seqKill(3, nXSprite);
         gKillMgr.AddKill(pSprite);
+        becAfterKill(pSprite, pXSprite, nKillerSprite, damageType);
         actPostSprite(pSprite->index, kStatFree);
         return;
     }
 
+    if (nBecKill == kBecKillNo)
     switch (pSprite->type) {
     case kDudeZombieAxeNormal:
         sfxPlay3DSound(pSprite, 1107+Random(2), -1, 0);
@@ -3495,6 +3504,7 @@ void actKillDude(int nKillerSprite, spritetype *pSprite, DAMAGE_TYPE damageType,
         }
     }
     gKillMgr.AddKill(pSprite);
+    becAfterKill(pSprite, pXSprite, nKillerSprite, damageType); // Blood Extra Crispy's enemies
     actCheckRespawn(pSprite);
     pSprite->type = kThingBloodChunks;
     actPostSprite(pSprite->index, kStatThing);
@@ -3754,6 +3764,8 @@ void actHitcodeToData(int a1, HITINFO *pHitInfo, int *a3, spritetype **a4, XSPRI
 
 void actImpactMissile(spritetype *pMissile, int hitCode)
 {
+    if (becImpactMissile(pMissile)) // Blood Extra Crispy's rockets
+        return;
     int nXMissile = pMissile->extra;
     dassert(nXMissile > 0 && nXMissile < kMaxXSprites);
     XSPRITE *pXMissile = &xsprite[pMissile->extra];
@@ -5615,6 +5627,7 @@ static bool MoveMissileBulletVectorTest(spritetype *pSource, spritetype *pShoote
                     }
                 }
             }
+            becVectorHit(pSprite, dmgType, gHitInfo.hitz); // Blood Extra Crispy's head and belly shots
             actDamageSprite(nShooter, pSprite, dmgType, pVectorData->dmg<<shift);
             int nXSprite = pSprite->extra;
             if (nXSprite > 0)

@@ -415,7 +415,7 @@ enum {
     kDudeBurningTinyCaleb = 252,
     kDudeBurningBeast = 253,
     kDudeVanillaMax = 254,
-    kDudeMax,
+    kDudeMax = 290, // 256 up: Blood Extra Crispy's (becdudes.h)
     
     kMissileBase = 300,
     kMissileButcherKnife = kMissileBase,

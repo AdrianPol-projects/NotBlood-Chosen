@@ -517,6 +517,10 @@ blood_game_objs := \
 	bot.cpp \
 	chosenmodes.cpp \
 	gorykill.cpp \
+	becdefs.cpp \
+	becdudes.cpp \
+	becai.cpp \
+	becweapons.cpp \
 	weaponlist.cpp \
 	controls.cpp \
 	credits.cpp \

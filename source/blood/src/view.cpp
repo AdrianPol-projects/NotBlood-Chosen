@@ -33,6 +33,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "common_game.h"
 
 #include "aihand.h"
+#include "becdudes.h"
+#include "becweapons.h"
 #include "blood.h"
 #include "bot.h"
 #include "chosenmodes.h"
@@ -2436,6 +2438,8 @@ void UpdateStatusBar(ClockTicks arg)
                     0, 0, 512, gAmmoIcons[pPlayer->weaponAmmo].nScale);
             DrawStatNumber("%3d", num, kSBarNumberAmmo, 267+xscalehud, 187, 0, 0, 512);
         }
+        else if (becWeaponAmmo(pPlayer) >= 0) // Blood Extra Crispy's weapon
+            DrawStatNumber("%3d", becWeaponAmmo(pPlayer), kSBarNumberAmmo, 267+xscalehud, 187, 0, 0, 512);
 
         if (gGameOptions.nGameType <= kGameTypeCoop) // don't show keys for bloodbath/teams as all players have every key
         {
@@ -2483,6 +2487,8 @@ void UpdateStatusBar(ClockTicks arg)
                 num /= 10;
             DrawStatNumber("%3d", num, 2240, 42-xscalehud, 183, 0, 0, 256);
         }
+        else if (becWeaponAmmo(pPlayer) >= 0) // Blood Extra Crispy's weapon
+            DrawStatNumber("%3d", becWeaponAmmo(pPlayer), 2240, 42-xscalehud, 183, 0, 0, 256);
         DrawStatSprite(2173, 284+xscalehud, 187, 16, nPalette, 512);
         if (pPlayer->armor[1])
         {
@@ -2569,6 +2575,8 @@ void UpdateStatusBar(ClockTicks arg)
                 num /= 10;
             DrawStatNumber("%3d", num, 2240, 216, 183, 0, 0);
         }
+        else if (becWeaponAmmo(pPlayer) >= 0) // Blood Extra Crispy's weapon
+            DrawStatNumber("%3d", becWeaponAmmo(pPlayer), 2240, 216, 183, 0, 0);
         for (int i = 9; i >= 1; i--)
         {
             int x = 135+((i-1)/3)*23;
@@ -5303,6 +5311,7 @@ RORHACK:
                 cY -= fix16_from_float(25.f/2.f);
             
             if (goryKillDraw(gView, nShade, cX, cY, nPalette)) {}
+            else if (becWeaponDraw(gView, nShade, cX, cY, nPalette)) {} // Blood Extra Crispy's weapon
             else
             #ifdef NOONE_EXTENSIONS
                 if (gView->sceneQav < 0) WeaponDraw(gView, nShade, cX, cY, nPalette);
@@ -5398,10 +5407,15 @@ RORHACK:
         UpdateGotSectorSectorFX();
     }
     viewDrawInterface(delta);
-    if (IsPlayerSprite(gView->pSprite) && (gView->hand == 1))
+    if (IsPlayerSprite(gView->pSprite) && (gView->hand == 1) && !becBiting(gView))
     {
         int zn = ((gView->zWeapon-gView->zView-(12<<8))>>7)+220;
         gChoke.Draw(160, zn);
+    }
+    else if (IsPlayerSprite(gView->pSprite) && becBiting(gView)) // Blood Extra Crispy's Skeletal Zombie, not a hand
+    {
+        int zn = ((gView->zWeapon-gView->zView-(12<<8))>>7)+220;
+        becChokeDraw(160, zn);
     }
     if (byte_1A76C6)
     {

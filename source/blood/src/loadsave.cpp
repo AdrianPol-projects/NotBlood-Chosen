@@ -794,6 +794,7 @@ void LoadSaveSetup(void)
 #ifdef NOONE_EXTENSIONS
     void nnExtLoadSaveConstruct(void);
 #endif
+    void BecLoadSaveConstruct(void);
     myLoadSave = new MyLoadSave();
     
     // NoOne: Seq must be in top of AI because of AISTATE callbacks (and seq callbacks in general).
@@ -823,4 +824,5 @@ void LoadSaveSetup(void)
 #ifdef NOONE_EXTENSIONS
     nnExtLoadSaveConstruct();
 #endif
+    BecLoadSaveConstruct();
 }

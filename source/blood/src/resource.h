@@ -34,6 +34,7 @@ enum DICTFLAGS {
     DICT_LOCK = 8,
     DICT_CRYPT = 16,
     DICT_BUFFER = 32,
+    DICT_FOREIGN = 64, // a file of another open .RFF (foreignHandle)
 };
 
 struct RFFHeader
@@ -81,6 +82,7 @@ struct DICTNODE : CACHENODE
     char *path;
     char *buffer;
     unsigned int id;
+    int foreignHandle;
 };
 
 class Resource
@@ -98,6 +100,7 @@ public:
     void Grow(void);
     void AddExternalResource(const char *name, const char *type, int id = -1, int flags = 0, const char* pzDirectory = NULL);
     void AddFromBuffer(const char* name, const char* type, char *data, int size, int id = -1, int flags = 0);
+    bool AddFromResource(Resource &from, DICTNODE *pFrom, const char *name, int id = -1);
     static void *Alloc(int nSize);
     static void Free(void *p);
     DICTNODE *Lookup(const char *name, const char *type);

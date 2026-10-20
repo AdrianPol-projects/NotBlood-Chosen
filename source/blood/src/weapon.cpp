@@ -51,6 +51,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #ifdef NOONE_EXTENSIONS
 #include "nnexts.h"
 #include "gorykill.h"
+#include "becweapons.h"
 #endif
 #include "view.h"
 
@@ -2320,6 +2321,11 @@ void WeaponProcess(PLAYER *pPlayer) {
 
     pPlayer->flashEffect = ClipLow(pPlayer->flashEffect - 1, 0);
     if (goryKillBusy(pPlayer)) // the weapon waits until the Gory Kill or kick is done
+    {
+        UpdateAimVector(pPlayer);
+        return;
+    }
+    if (becWeaponProcess(pPlayer)) // Blood Extra Crispy's weapon in hand
     {
         UpdateAimVector(pPlayer);
         return;

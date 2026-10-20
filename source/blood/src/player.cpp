@@ -55,6 +55,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #ifdef NOONE_EXTENSIONS
 #include "nnexts.h"
 #include "gorykill.h"
+#include "becdudes.h"
+#include "becweapons.h"
 #include "nnextsif.h"
 #endif
 
@@ -1119,6 +1121,7 @@ void playerStart(int nPlayer, int bNewLevel)
 {
     goryKillReset();
     PLAYER* pPlayer = &gPlayer[nPlayer];
+    becWeaponsPlayerStart(pPlayer); // none of Blood Extra Crispy's weapons in hand
     GINPUT* pInput = &pPlayer->input;
     ZONE* pStartZone = NULL;
 
@@ -1422,6 +1425,7 @@ void playerReset(PLAYER *pPlayer)
         pPlayer->weaponMode[i] = 0;
     }
     pPlayer->hasWeapon[kWeaponPitchfork] = 1;
+    becWeaponsPlayerReset(pPlayer); // and Blood Extra Crispy's
     pPlayer->curWeapon = kWeaponNone;
     pPlayer->qavCallback = -1;
     pPlayer->input.newWeapon = kWeaponPitchfork;
@@ -1853,7 +1857,9 @@ void PickUp(PLAYER *pPlayer, spritetype *pSprite)
     }
     else
 #endif
-    if (nType >= kItemBase && nType <= kItemMax) {
+    if (becWeaponPickUp(pPlayer, pSprite, buffer, sizeof(buffer))) // Blood Extra Crispy's weapons in place of some items
+        pickedUp = 1;
+    else if (nType >= kItemBase && nType <= kItemMax) {
         pickedUp = PickupItem(pPlayer, pSprite);
         if (pickedUp && customMsg == -1) {
             const char *pItemText = gItemText[nType - kItemBase];
@@ -2009,6 +2015,11 @@ int ActionScan(PLAYER *pPlayer, int *a2, int *a3)
 
 inline void playerDropHand(PLAYER *pPlayer)
 {
+    if (becBiting(pPlayer)) // Blood Extra Crispy's Skeletal Zombie, not a hand
+    {
+        becDropBite(pPlayer);
+        return;
+    }
     spritetype *pSprite2 = actSpawnDude(pPlayer->pSprite, kDudeHand, pPlayer->pSprite->clipdist<<1, 0);
     pSprite2->ang = (pPlayer->pSprite->ang+1024)&2047;
     int nSprite = pPlayer->pSprite->index;

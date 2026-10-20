@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "mmulti.h"
 #include "fx_man.h"
 #include "common_game.h"
+#include "becdudes.h"
 #include "blood.h"
 #include "endgame.h"
 #include "globals.h"
@@ -145,6 +146,8 @@ bool CKillMgr::AllowedType(spritetype *pSprite)
         return false;
     if (pSprite->type == kDudeGargoyleStatueFlesh || pSprite->type == kDudeGargoyleStatueStone) // if statue gargoyle, do not count as enemy until they activate
         return VanillaMode();
+    if (!becCountsAsKill(pSprite->type)) // Blood Extra Crispy's spirits, worms and headstones
+        return false;
     return pSprite->type != kDudeBat && pSprite->type != kDudeRat && pSprite->type != kDudeInnocent && pSprite->type != kDudeBurningInnocent;
 }
 
