@@ -66,8 +66,15 @@ enum
     kBecDualTommy,
     kBecDualShotgun,
     kBecDualFlare,
+    kBecMower,         // the Death Mower: grabbed with USE in the maps (on no key)
+    kBecTurret,        // the Maxim gun on its stand: USE gets behind it, RUN rips it off
+    kBecMaxim,         // the Maxim carried
+    kBecBlunderbuss,   // one shot, then it's thrown away
     kBecWeaponMax
 };
+
+enum { kMowerPicnum = 5840, kMaximPicnum = 5866, kBlunderbussPicnum = 5119 };
+enum { kMowerTime = 37 };  // seconds: the mod's 2240 (its timer goes 2 a frame)
 
 // the mod's names, looked up once
 #define QAVID(name) ([]() { static int n = becDefine(name, -1); return n; }())
@@ -85,6 +92,7 @@ struct WSTATE
     uint32_t nHave;     // the mod's weapons Caleb has (a bit each)
     int16_t nAmmo[kBecWeaponMax];  // their own ammo
     int32_t nVar[6];    // the weapon in hand's own counters (rounds in the magazine...)
+    int16_t nTurret;    // the Maxim stand Caleb is behind
 };
 
 enum { kPhaseNone, kPhaseRaise, kPhaseIdle, kPhaseFire, kPhaseLower };
@@ -474,6 +482,102 @@ void dualFlareTrigger(CTX &c, int nTrigger)
     c.flash(30);
 }
 
+//
+// the Death Mower (BEC_Players.txt, "DEATH MOWER"): it runs on its own and shreds what's in front of it;
+// fire throws it away. Its ammo is the seconds it has left.
+//
+
+void mowerFire(CTX &c, bool bAlt)
+{
+    UNREFERENCED_PARAMETER(bAlt);
+    c.pState->nAmmo[kBecMower] = 0;  // thrown away (the idle code puts it down)
+}
+
+void mowerTick(CTX &c)
+{
+    if (c.pState->nPhase == kPhaseLower || c.pState->nPhase == kPhaseRaise)
+        return;
+    c.vector("BV_MOWER", 3000);
+    if (++c.pState->nVar[0] >= kTicsPerSec)  // a second gone
+    {
+        c.pState->nVar[0] = 0;
+        c.useAmmo(1);
+        c.sound(SFX("SFX_MOWERA"));
+    }
+    // bloodier as it goes (the mod's QAV_MOWERA, B, C, D)
+    int const nLeft = c.ammo();
+    int const nIdle = nLeft > kMowerTime * 3 / 4 ? QAVID("QAV_MOWERA") : nLeft > kMowerTime / 2 ? QAVID("QAV_MOWERB")
+                    : nLeft > kMowerTime / 4 ? QAVID("QAV_MOWERC") : QAVID("QAV_MOWERD");
+    if (nIdle >= 0 && nIdle != c.pState->nIdleQav)
+        c.idle(nIdle);
+    c.kick(5);
+}
+
+//
+// the Maxim gun: on its stand (BEC_Players.txt, "MAXIM TURRET") and carried (weapon_maxim.txt)
+//
+
+void turretFire(CTX &c, bool bAlt)
+{
+    UNREFERENCED_PARAMETER(bAlt);
+    int const r = Random(150);
+    c.play(r <= 25 ? QAVID("QAV_MAXIM2") : r <= 100 ? QAVID("QAV_MAXIM3") + (int)Random(2) : QAVID("QAV_MAXIM6"), kPhaseFire);
+    for (int i = 0; i < 2; i++)
+        c.vector(Random(100) <= 10 ? "BV_GATLINGBULLETFLESH3" : "BV_GATLINGBULLETFLESH", 625);
+    c.sound(SFX("SFX_MAXFIRE"));
+    c.flash(40);
+    c.kick(10);
+}
+
+void maximFire(CTX &c, bool bAlt)
+{
+    UNREFERENCED_PARAMETER(bAlt);
+    c.play(QAVID("QAV_MAXFI"), kPhaseFire);
+}
+
+void maximTrigger(CTX &c, int nTrigger)
+{
+    UNREFERENCED_PARAMETER(nTrigger);
+    if (c.ammo() <= 0)
+        return;
+    c.useAmmo(1);
+    c.sound(SFX("SFX_MAXFIRE"));
+    c.vector(Random(100) <= 10 ? "BV_GATLINGBULLETFLESH3" : "BV_GATLINGBULLETFLESH", 900);
+    c.flash(40);
+    c.kick(15);
+}
+
+void maximTick(CTX &c)
+{
+    // the trigger held: it goes on
+    if (c.playing() == QAVID("QAV_MAXFI") && c.pState->nTimer <= kTicsPerFrame && (c.buttonFire() || c.buttonAlt()) && c.ammo() > 0)
+        c.play(QAVID("QAV_MAXFI"), kPhaseFire);
+}
+
+//
+// the Blunderbuss (weapon_blunderbuss.txt): one big blast
+//
+
+void blunderbussFire(CTX &c, bool bAlt)
+{
+    UNREFERENCED_PARAMETER(bAlt);
+    c.play(QAVID("QAV_BLUNF1"), kPhaseFire);
+}
+
+void blunderbussTrigger(CTX &c, int nTrigger)
+{
+    UNREFERENCED_PARAMETER(nTrigger);
+    if (c.ammo() <= 0)
+        return;
+    c.useAmmo(1);
+    c.sound(SFX("SFX_BLUNDFI"));
+    c.sound(SFX("SFX_SHOTFIRE"));
+    for (int i = 0; i < 24; i++)
+        c.vector(Random(100) <= 30 ? "BV_GATLINGBULLETFLESH3" : "BV_GATLINGBULLETFLESH", 3500);
+    c.flash(60);
+    c.kick(60);
+}
+
 WEAPON const gWeapons[kBecWeaponMax] = {
     { "GATLING GUN", 7, -1, 540, 540, "", 4689, "QAV_GATUP", "QAV_GATIDLE", "QAV_GATDOWN", gatlingFire, gatlingTick, NULL },
     { "TRENCH GUN", 3, 2, 0, 8, "", 4725, "QAV_PUMPU", "QAV_PUMPI", "QAV_PUMPD", trenchFire, NULL, trenchTrigger },
@@ -483,6 +587,10 @@ WEAPON const gWeapons[kBecWeaponMax] = {
     { "DUAL TOMMY GUNS", 4, 3, 0, 100, "", 4766, "QAV_2TOMUP", "QAV_2TOMIDLE", "QAV_2TOMDOWN", dualTommyFire, dualTommyTick, dualTommyTrigger },
     { "DUAL SAWED-OFFS", 3, 2, 0, 8, "", 4756, "QAV_2SHOTUP", "QAV_2SHOTI", "QAV_2SHOTDOWN", dualShotgunFire, NULL, dualShotgunTrigger },
     { "DUAL FLARE GUNS", 2, 1, 0, 9, "", 4763, "QAV_FLAR2UP", "QAV_FLAR2I", "QAV_FLAR2DWN", dualFlareFire, NULL, dualFlareTrigger },
+    { "DEATH MOWER", 0, -1, kMowerTime, kMowerTime, "", kMowerPicnum, "QAV_MOWERR", "QAV_MOWERA", "QAV_MOWERT", mowerFire, mowerTick, NULL },
+    { "MAXIM GUN", 0, -1, 1, 1, "", kMaximPicnum, "QAV_MAXIM1", "QAV_MAXIM1", "QAV_MAXIM1", turretFire, NULL, NULL },
+    { "MOBILE MAXIM", 0, -1, 250, 250, "", 5077, "QAV_MAXUP", "QAV_MAXID", "QAV_MOWERT", maximFire, maximTick, maximTrigger },
+    { "BLUNDERBUSS", 0, -1, 1, 1, "", kBlunderbussPicnum, "QAV_BLUNUP", "QAV_BLUNID", "QAV_MOWERT", blunderbussFire, NULL, blunderbussTrigger },
 };
 
 CTX ctxFor(PLAYER *pPlayer)
@@ -605,6 +713,113 @@ int osdcmd_becgive(osdcmdptr_t parm)
     return OSDCMD_OK;
 }
 
+// a sprite of the mod's world weapons in front of Caleb, within reach (the mod's grabDist, grabFOV)
+int inReach(PLAYER *pPlayer, int nPicnum)
+{
+    spritetype *pSprite = pPlayer->pSprite;
+    int nBest = -1, nBestDist = 160;
+    for (int nSprite = headspritestat[kStatDecoration]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+    {
+        spritetype *pItem = &sprite[nSprite];
+        if (pItem->picnum != nPicnum || (gBecFlags[nSprite] & kBecFlagUsed))
+            continue;
+        int const dx = pItem->x - pSprite->x, dy = pItem->y - pSprite->y;
+        int const nDist = approxDist(dx, dy);
+        int const nAngle = klabs(((getangle(dx, dy) + 1024 - pSprite->ang) & 2047) - 1024);
+        if (nDist < nBestDist && nAngle < 256 && klabs(pItem->z - pSprite->z) < (64 << 8))
+            nBest = nSprite, nBestDist = nDist;
+    }
+    return nBest;
+}
+
+// the one in hand is up at once (Blood's weapon goes down first)
+void takeUp(PLAYER *pPlayer, int nWeapon, int nAmmo)
+{
+    WSTATE *pState = &gWState[pPlayer->nPlayer];
+    pState->nHave |= 1u << nWeapon;
+    pState->nAmmo[nWeapon] = nAmmo;
+    if (pState->nActive >= 0)
+    {
+        CTX c = ctxFor(pPlayer);
+        c.play(becDefine(c.pWeapon->pzDown, -1), kPhaseLower);
+        pState->nNext = -2 - nWeapon;
+    }
+    else
+    {
+        pState->nPending = nWeapon;
+        if (pPlayer->curWeapon)
+            WeaponLower(pPlayer);
+    }
+}
+
+// the ones in no slot leave Caleb's hands for good
+void putDown(PLAYER *pPlayer, int nWeapon)
+{
+    WSTATE *pState = &gWState[pPlayer->nPlayer];
+    pState->nHave &= ~(1u << nWeapon);
+    pState->nAmmo[nWeapon] = 0;
+    spritetype *pSprite = pPlayer->pSprite;
+    if (nWeapon == kBecTurret)  // the gun stays on its stand
+    {
+        int const nTurret = pState->nTurret;
+        if (nTurret >= 0 && nTurret < kMaxSprites && sprite[nTurret].statnum == kStatDecoration)
+        {
+            sprite[nTurret].cstat &= ~CSTAT_SPRITE_INVISIBLE;
+            sprite[nTurret].cstat |= CSTAT_SPRITE_BLOCK;
+        }
+        return;
+    }
+    if (nWeapon != kBecMower)
+        return;
+    // the mower lands in front of Caleb, spent (the mod's ACTOR_MowerDone)
+    int const x = pSprite->x + mulscale30(pSprite->clipdist << 3, Cos(pSprite->ang));
+    int const y = pSprite->y + mulscale30(pSprite->clipdist << 3, Sin(pSprite->ang));
+    int16_t nSector = pSprite->sectnum;
+    updatesector(x, y, &nSector);
+    if (nSector < 0)
+        return;
+    int ceilZ, floorZ;
+    getzsofslope(nSector, x, y, &ceilZ, &floorZ);
+    spritetype *pMower = actSpawnSprite(nSector, x, y, floorZ, kStatDecoration, 0);
+    if (!pMower)
+        return;
+    pMower->picnum = kMowerPicnum;
+    pMower->xrepeat = pMower->yrepeat = 48;
+    pMower->ang = pSprite->ang;
+    pMower->cstat = 0;
+    pMower->type = 0;
+    gBecFlags[pMower->index] |= kBecFlagUsed;
+    sfxPlay3DSound(pMower, becDefine("SFX_MOWDROP", -1), -1, 0);
+}
+
+// becput <mower|maxim|blunderbuss>: one of the mod's world weapons in front of you, as its maps have them
+int osdcmd_becput(osdcmdptr_t parm)
+{
+    if (parm->numparms < 1 || !gGameStarted || !gMe || !gMe->pSprite)
+        return OSDCMD_SHOWHELP;
+    int const nPicnum = !Bstrcasecmp(parm->parms[0], "mower") ? kMowerPicnum : !Bstrcasecmp(parm->parms[0], "maxim") ? kMaximPicnum
+                      : !Bstrcasecmp(parm->parms[0], "blunderbuss") ? kBlunderbussPicnum : atoi(parm->parms[0]);
+    spritetype *pSprite = gMe->pSprite;
+    int const nDist = parm->numparms > 1 ? atoi(parm->parms[1]) : 120;
+    int const x = pSprite->x + mulscale30(nDist, Cos(pSprite->ang)), y = pSprite->y + mulscale30(nDist, Sin(pSprite->ang));
+    int16_t nSector = pSprite->sectnum;
+    updatesector(x, y, &nSector);
+    if (nSector < 0)
+        return OSDCMD_OK;
+    int ceilZ, floorZ;
+    getzsofslope(nSector, x, y, &ceilZ, &floorZ);
+    spritetype *pItem = actSpawnSprite(nSector, x, y, floorZ, kStatDecoration, 0);
+    if (pItem)
+    {
+        pItem->picnum = nPicnum;
+        pItem->xrepeat = pItem->yrepeat = nPicnum == kMaximPicnum ? 24 : 48;
+        pItem->ang = pSprite->ang;
+        pItem->cstat = 0;
+        pItem->type = 0;
+    }
+    return OSDCMD_OK;
+}
+
 class BecWeaponsLoadSave : public LoadSave
 {
     virtual void Load(void)
@@ -634,6 +849,7 @@ void becWeaponsInit(void)
     pQavs = new std::unordered_map<int, QAV *>;
     nQavClient = qavRegisterClient(qavTrigger);
     OSD_RegisterFunction("becgive", "becgive [all|number]: Blood Extra Crispy's weapons", osdcmd_becgive);
+    OSD_RegisterFunction("becput", "becput <mower|maxim|blunderbuss>: one of Blood Extra Crispy's world weapons in front of you", osdcmd_becput);
     int nOk = 0;
     for (auto const &w : gWeapons)
         nOk += getQav(becDefine(w.pzIdle, -1)) != NULL;
@@ -743,13 +959,15 @@ bool becWeaponProcess(PLAYER *pPlayer)
     }
     if (c.pWeapon->pTick)
         c.pWeapon->pTick(c);
-    if (pState->nTimer > 0)
+    if (pState->nTimer > 0 && pState->nPhase != kPhaseIdle)  // idle, it can be fired at any moment
         return true;
     switch (pState->nPhase)
     {
     case kPhaseLower:
     {
         int const nNext = pState->nNext;
+        if (gWeapons[pState->nActive].nSlot == 0)  // the ones in no slot are dropped (put down, thrown away)
+            putDown(pPlayer, pState->nActive);
         pState->nActive = -1;
         pState->nQav = -1;
         pState->nNext = 0;
@@ -809,9 +1027,87 @@ bool becWeaponDraw(PLAYER *pPlayer, int nShade, int x, int y, int nPal)
 
 int becWeaponAmmo(PLAYER *pPlayer)
 {
-    if (!bActive || gWState[pPlayer->nPlayer].nActive < 0)
+    int const nWeapon = gWState[pPlayer->nPlayer].nActive;
+    if (!bActive || nWeapon < 0 || nWeapon == kBecTurret)  // the gun on its stand never runs out
         return -1;
-    return ammoOf(pPlayer, gWState[pPlayer->nPlayer].nActive);
+    return ammoOf(pPlayer, nWeapon);
+}
+
+bool becWeaponUse(PLAYER *pPlayer)
+{
+    if (!bActive || !pPlayer->pXSprite || pPlayer->pXSprite->health <= 0)
+        return false;
+    WSTATE *pState = &gWState[pPlayer->nPlayer];
+    if (pState->nActive == kBecTurret && pState->nPhase != kPhaseLower)  // off the gun again
+    {
+        CTX c = ctxFor(pPlayer);
+        c.play(becDefine(c.pWeapon->pzDown, -1), kPhaseLower);
+        pState->nNext = pPlayer->lastWeapon > 0 ? (int)pPlayer->lastWeapon : (int)kWeaponPitchfork;
+        return true;
+    }
+    if (pState->nActive >= 0 && gWeapons[pState->nActive].nSlot == 0)
+        return false;
+    if (pState->nPending >= 0 || pState->nNext)
+        return false;
+    int nSprite = inReach(pPlayer, kMowerPicnum);
+    if (nSprite >= 0)
+    {
+        sfxPlay3DSound(pPlayer->pSprite, becDefine("SFX_PARTYO", -1), -1, 0);
+        actPostSprite(nSprite, kStatFree);
+        takeUp(pPlayer, kBecMower, kMowerTime);
+        return true;
+    }
+    nSprite = inReach(pPlayer, kMaximPicnum);
+    if (nSprite >= 0)
+    {
+        // behind the gun: where it stands, facing where it faces; it's in Caleb's hands, not on its stand
+        spritetype *pTurret = &sprite[nSprite];
+        spritetype *pSprite = pPlayer->pSprite;
+        sfxPlay3DSound(pSprite, becDefine("SFX_GATPU", -1), -1, 0);
+        if (Random(100) <= 25)
+            sfxPlay3DSound(pSprite, becDefine("SFX_VOMGFUN", -1), -1, 0);
+        vec3_t pos = { pTurret->x - mulscale30(pSprite->clipdist << 2, Cos(pTurret->ang)), pTurret->y - mulscale30(pSprite->clipdist << 2, Sin(pTurret->ang)), pSprite->z };
+        setsprite(pSprite->index, &pos);
+        pSprite->ang = pTurret->ang;
+        pPlayer->q16ang = fix16_from_int(pTurret->ang);
+        pTurret->cstat |= CSTAT_SPRITE_INVISIBLE;
+        pTurret->cstat &= ~CSTAT_SPRITE_BLOCK;
+        takeUp(pPlayer, kBecTurret, 1);
+        pState->nTurret = nSprite;
+        return true;
+    }
+    return false;
+}
+
+bool becWeaponMounted(PLAYER *pPlayer)
+{
+    if (!bActive)
+        return false;
+    WSTATE *pState = &gWState[pPlayer->nPlayer];
+    return pState->nActive == kBecTurret || pState->nPending == kBecTurret;
+}
+
+void becWeaponMountedInput(PLAYER *pPlayer, bool bRun)
+{
+    WSTATE *pState = &gWState[pPlayer->nPlayer];
+    spritetype *pSprite = pPlayer->pSprite;
+    // standing behind it
+    xvel[pSprite->index] = yvel[pSprite->index] = 0;
+    // JUMP: ripped off its stand, it goes with Caleb (the mod's mobile Maxim)
+    if (bRun && pState->nActive == kBecTurret && pState->nPhase != kPhaseLower)
+    {
+        int const nTurret = pState->nTurret;
+        if (nTurret >= 0 && nTurret < kMaxSprites && sprite[nTurret].statnum == kStatDecoration)
+            actPostSprite(nTurret, kStatFree);
+        pState->nTurret = -1;
+        pState->nHave &= ~(1u << kBecTurret);
+        pState->nActive = -1;
+        pState->nQav = -1;
+        sfxPlay3DSound(pSprite, becDefine("SFX_GATPU", -1), -1, 0);
+        pState->nHave |= 1u << kBecMaxim;
+        pState->nAmmo[kBecMaxim] = gWeapons[kBecMaxim].nMaxAmmo;
+        raise(pPlayer, kBecMaxim);
+    }
 }
 
 char const *becWeaponName(PLAYER *pPlayer, int *pnTile)
@@ -879,6 +1175,7 @@ void becWeaponsFrame(void)
         { 4725, kBecTrench },
         { 5553, kBecDevastator },
         { 5093, kBecRocket },
+        { kBlunderbussPicnum, kBecBlunderbuss },
     };
     for (int p = connecthead; p >= 0; p = connectpoint2[p])
     {

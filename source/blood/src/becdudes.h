@@ -106,6 +106,7 @@ enum
     kBecFlagHeadShot = 8,   // the last bullet hit its head (the mod's DD2_FLAG_HEADSHOT)
     kBecFlagBellyShot = 16, // or its belly
     kBecFlagLegShot = 32,   // or its legs
+    kBecFlagUsed = 64,      // one of the mod's world weapons, used up (a spent mower)
 };
 extern uint8_t gBecFlags[kMaxSprites];
 

@@ -2054,6 +2054,12 @@ void ProcessInput(PLAYER *pPlayer)
         pInput->keyFlags.action = 0;
         pInput->newWeapon = 0;
     }
+    if (becWeaponMounted(pPlayer)) // behind Blood Extra Crispy's Maxim gun: it turns, he stays; JUMP rips it off
+    {
+        becWeaponMountedInput(pPlayer, pInput->buttonFlags.jump);
+        pInput->forward = pInput->strafe = 0;
+        pInput->buttonFlags.jump = pInput->buttonFlags.crouch = 0;
+    }
     pPlayer->isRunning = gProfile[pPlayer->nPlayer].nWeaponHBobbing == 2 ? pInput->syncFlags.run : 0; // v1.0x weapon swaying 
     if (pInput->buttonFlags.byte || pInput->forward || pInput->strafe || pInput->q16turn)
         pPlayer->restTime = 0;
@@ -2256,6 +2262,8 @@ void ProcessInput(PLAYER *pPlayer)
             pPlayer->posture = kPostureCrouch;
         break;
     }
+    if (pInput->keyFlags.action && becWeaponUse(pPlayer)) // Blood Extra Crispy's lawn mowers and Maxim guns
+        pInput->keyFlags.action = 0;
     if (pInput->keyFlags.action && goryKillTryStart(pPlayer)) // a nearly dead enemy in front: finish it
         pInput->keyFlags.action = 0;
     if (pInput->keyFlags.action)
