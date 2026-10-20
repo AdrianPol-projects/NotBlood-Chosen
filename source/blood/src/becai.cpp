@@ -277,6 +277,7 @@ enum { kReviveTime = 2 * 120 };  // the raised corpse stands up, then fights
 
 int gReviveTime[kMaxSprites];    // when a corpse being raised stands up, 0 when none
 int gDeathTimer[kMaxSprites];    // a dead Necromancer's chance at being a Lich, a dog's turning
+int gAllyTime[kMaxSprites];      // when an ally is gone again (gFrameClock), 0 for never
 int nNextStone;                  // the next Odious Headstone (gFrameClock), 0 for none planned
 
 // Blood's death animation of a type: its seqStartID + 1 is a corpse lying there
@@ -347,6 +348,14 @@ void reviveNow(int nSprite)
     pXCorpse->isTriggered = 0;
     pXCorpse->locked = 0;
     pXCorpse->respawnPending = 0;
+    if (becIsAlly(nSprite))  // raised by Caleb (the Vile Anathema): it fights for him
+    {
+        int const nOwner = pCorpse->owner;
+        aiInitSprite(pCorpse);
+        if (nOwner >= 0 && nOwner < kMaxSprites)
+            becMakeAlly(pCorpse, &sprite[nOwner], 0);
+        return;
+    }
     gKillMgr.AddCount(pCorpse);  // one more to kill
     aiInitSprite(pCorpse);
     aiActivateDude(pCorpse, pXCorpse);
@@ -1297,7 +1306,145 @@ void corpseSeq(spritetype *pSprite, int nSeq)
     playSeq(pSprite, nSeq, nDudeToGibClient1);
 }
 
+//
+// allies: the gargoyles of the Mourning Codex, the dead the Vile Anathema raises
+//
+
+bool isEnemy(spritetype *pSprite)
+{
+    return pSprite->statnum == kStatDude && !IsPlayerSprite(pSprite) && !becIsAlly(pSprite->index) && pSprite->extra > 0
+        && xsprite[pSprite->extra].health > 0;
+}
+
+// the nearest enemy it can see, -1 for none
+int nearestEnemy(spritetype *pSprite, int nRange)
+{
+    int nBest = -1, nBestDist = nRange;
+    int const nEye = pSprite->z - (24 << 8);
+    for (int nSprite = headspritestat[kStatDude]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+    {
+        spritetype *pOther = &sprite[nSprite];
+        if (pOther == pSprite || !isEnemy(pOther))
+            continue;
+        int const nDist = approxDist(pOther->x - pSprite->x, pOther->y - pSprite->y);
+        if (nDist >= nBestDist || !cansee(pSprite->x, pSprite->y, nEye, pSprite->sectnum, pOther->x, pOther->y, pOther->z - (24 << 8), pOther->sectnum))
+            continue;
+        nBest = nSprite, nBestDist = nDist;
+    }
+    return nBest;
+}
+
+void allyThink(spritetype *pSprite, XSPRITE *pXSprite)
+{
+    int const nSprite = pSprite->index;
+    if (pXSprite->health <= 0)
+        return;
+    if (gAllyTime[nSprite] && (int)gFrameClock >= gAllyTime[nSprite])  // its time is up: back where it came from
+    {
+        gAllyTime[nSprite] = 0;
+        gBecFlags[nSprite] &= ~kBecFlagAlly;
+        sound(pSprite, SFX("SFX_NECREVI"));
+        gFX.fxSpawn(FX_29, pSprite->sectnum, pSprite->x, pSprite->y, pSprite->z, 0);
+        seqKill(3, pSprite->extra);
+        actPostSprite(nSprite, kStatFree);
+        return;
+    }
+    if ((nSprite + gFrame) & 7)  // a look around now and then
+        return;
+    spritetype *pTarget = becTarget(pXSprite);
+    if (pTarget && isEnemy(pTarget))
+        return;
+    int const nEnemy = nearestEnemy(pSprite, 40 * kMeter);
+    if (nEnemy >= 0)
+    {
+        aiSetTarget(pXSprite, nEnemy);
+        aiActivateDude(pSprite, pXSprite);
+        return;
+    }
+    // none about: after Caleb
+    if (pSprite->owner < 0 || pSprite->owner >= kMaxSprites)
+        return;
+    spritetype *pOwner = &sprite[pSprite->owner];
+    if (approxDist(pOwner->x - pSprite->x, pOwner->y - pSprite->y) > 6 * kMeter)
+    {
+        aiSetTarget(pXSprite, pOwner->x, pOwner->y, pOwner->z);
+        aiActivateDude(pSprite, pXSprite);
+    }
+}
+
+// what's left of a dead enemy: one of the mod's things, picked up with USE (becweapons.cpp)
+void dropItem(spritetype *pSprite, int nPicnum, int nRepeat)
+{
+    int ceilZ, floorZ;
+    getzsofslope(pSprite->sectnum, pSprite->x, pSprite->y, &ceilZ, &floorZ);
+    spritetype *pItem = actSpawnSprite(pSprite->sectnum, pSprite->x + Random2(64), pSprite->y + Random2(64), floorZ, kStatDecoration, 0);
+    if (!pItem)
+        return;
+    pItem->picnum = nPicnum;
+    pItem->xrepeat = pItem->yrepeat = nRepeat;
+    pItem->ang = Random(2048);
+    pItem->cstat = 0;
+    pItem->type = 0;
+    gBecFlags[pItem->index] = 0;
+}
+
 } // namespace
+
+void becMakeAlly(spritetype *pSprite, spritetype *pOwner, int nTicks)
+{
+    gBecFlags[pSprite->index] |= kBecFlagAlly;
+    pSprite->owner = pOwner->index;
+    gAllyTime[pSprite->index] = nTicks > 0 ? (int)gFrameClock + nTicks : 0;
+    if (pSprite->extra > 0)
+    {
+        XSPRITE *pXSprite = &xsprite[pSprite->extra];
+        int const nEnemy = nearestEnemy(pSprite, 40 * kMeter);
+        if (nEnemy >= 0)
+            aiSetTarget(pXSprite, nEnemy);
+        else
+            aiSetTarget(pXSprite, pOwner->x, pOwner->y, pOwner->z);
+        aiActivateDude(pSprite, pXSprite);
+    }
+}
+
+bool becIgnoreAttacker(spritetype *pSprite, int nSource)
+{
+    if (!becIsAlly(pSprite->index) || nSource < 0 || nSource >= kMaxSprites)
+        return false;
+    spritetype *pSource = &sprite[nSource];
+    return IsPlayerSprite(pSource) || (becIsAlly(nSource) && pSource->statnum == kStatDude);
+}
+
+int becRaiseCorpses(spritetype *pCaster, int nRange)
+{
+    int nCount = 0;
+    for (int nSprite = headspritestat[kStatThing]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+    {
+        spritetype *pCorpse = &sprite[nSprite];
+        if (pCorpse->type != kThingBloodChunks || pCorpse->extra <= 0 || gReviveTime[nSprite])
+            continue;
+        REVIVABLE const *pRevive = revivableFor(pCorpse->inittype);
+        if (!pRevive || underwater(pCorpse->sectnum) || seqGetStatus(3, pCorpse->extra) >= 0)
+            continue;
+        if (approxDist(pCorpse->x - pCaster->x, pCorpse->y - pCaster->y) > nRange
+            || !cansee(pCaster->x, pCaster->y, pCaster->z - (32 << 8), pCaster->sectnum, pCorpse->x, pCorpse->y, pCorpse->z - (8 << 8), pCorpse->sectnum))
+            continue;
+        playSeq(pCorpse, becDefine(pRevive->pzSeq, -1));
+        gFX.fxSpawn(FX_29, pCorpse->sectnum, pCorpse->x, pCorpse->y, pCorpse->z, 0);
+        gBecFlags[nSprite] = kBecFlagAlly;
+        pCorpse->owner = pCaster->index;
+        gReviveTime[nSprite] = (int)gFrameClock + kReviveTime;
+        nCount++;
+    }
+    return nCount;
+}
+
+void becCorpseSeq(spritetype *pSprite, char const *pzSeq)
+{
+    int const nSeq = becDefine(pzSeq, -1);
+    if (nSeq >= 0 && pSprite->extra > 0)
+        corpseSeq(pSprite, nSeq);
+}
 
 BECCALLBACK const *becFindCallback(char const *pzName)
 {
@@ -1875,7 +2022,19 @@ void becAiAfterKill(spritetype *pSprite, XSPRITE *pXSprite, int nKiller, DAMAGE_
             gore(pSprite, 3, false);
         }
     }
-    gBecFlags[nSprite] &= ~(kBecFlagHeadShot | kBecFlagBellyShot | kBecFlagLegShot);
+    // what they leave for Caleb to pick up (USE): a Necromancer its Vile Anathema or Bastion Chronometer
+    // (ai_necro.txt), a Phantasm its orb, an axe zombie its axe now and then
+    if (becDudesActive() && !becIsAlly(nSprite))
+    {
+        if (nWas == kDudeBecNecromancer)
+            dropItem(pSprite, Random(100) < 50 ? 7305 : 7353, 24);
+        else if (nWas == kDudePhantasm)
+            dropItem(pSprite, 5558, 24);
+        else if ((nWas == kDudeZombieAxeNormal || nWas == kDudeZombieAxeBuried || nWas == kDudeZombieAxeLaying) && Random(100) < 25)
+            dropItem(pSprite, 5481, 32);
+    }
+    gBecFlags[nSprite] &= ~(kBecFlagHeadShot | kBecFlagBellyShot | kBecFlagLegShot | kBecFlagAlly);
+    gAllyTime[nSprite] = 0;
     UNREFERENCED_PARAMETER(pXSprite);
 }
 
@@ -1883,6 +2042,7 @@ void becAiLevelStart(void)
 {
     memset(gReviveTime, 0, sizeof(gReviveTime));
     memset(gDeathTimer, 0, sizeof(gDeathTimer));
+    memset(gAllyTime, 0, sizeof(gAllyTime));
     nNextStone = 0;
     // attack dogs: next to some of the cultists (ai_cultist.txt A_AISpawnDog)
     int nDogs = 0;
@@ -1924,6 +2084,11 @@ void becAiFrame(void)
         if (pSprite->extra <= 0)
             continue;
         XSPRITE *pXSprite = &xsprite[pSprite->extra];
+        if (becIsAlly(nSprite))
+        {
+            allyThink(pSprite, pXSprite);
+            continue;
+        }
         if ((pSprite->type == kDudeBecNecromancer || pSprite->type == kDudeBecLich) && pXSprite->health > 0)
             bNecro = true;
         // the spirits start drifting about when you're near (BEC_Players.txt)
@@ -2063,12 +2228,14 @@ class BecAiLoadSave : public LoadSave
         Read(gReviveTime, sizeof(gReviveTime));
         Read(gDeathTimer, sizeof(gDeathTimer));
         Read(&nNextStone, sizeof(nNextStone));
+        Read(gAllyTime, sizeof(gAllyTime));
     }
     virtual void Save(void)
     {
         Write(gReviveTime, sizeof(gReviveTime));
         Write(gDeathTimer, sizeof(gDeathTimer));
         Write(&nNextStone, sizeof(nNextStone));
+        Write(gAllyTime, sizeof(gAllyTime));
     }
 };
 

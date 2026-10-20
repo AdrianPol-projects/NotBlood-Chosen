@@ -51,6 +51,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #ifdef NOONE_EXTENSIONS
 #include "nnexts.h"
 #include "gorykill.h"
+#include "becdudes.h"
 #include "becweapons.h"
 #endif
 #include "view.h"
@@ -416,6 +417,8 @@ void UpdateAimVector(PLAYER * pPlayer)
             if (pSprite == pPSprite)
                 continue;
             if (!gGameOptions.bFriendlyFire && IsTargetTeammate(pPlayer, pSprite))
+                continue;
+            if (becIsAlly(nSprite)) // Blood Extra Crispy's: fighting for you
                 continue;
             if (pSprite->flags&32)
                 continue;

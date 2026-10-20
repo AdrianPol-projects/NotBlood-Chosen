@@ -28,13 +28,23 @@ A test of the *Blood Extra Crispy* mod (by VGames, for Nightdive's Refreshed Sup
 
 **Choosing the mod now restarts the app by itself.**
 
-- **Its weapons (a first set):** they share the number keys with Blood's; press the key again for the next one on it.
+- **Its weapons:** they share the number keys with Blood's; press the key again for the next one on it.
   - **Gatling Gun** (key 7): it's where the Guns Akimbo powerup was. Hold fire; alt fire is its wider "overkill".
   - **Devastator** and **rocket launcher** (key 7), and the **Trench Gun** (key 3): pick them up where the mod's maps place them. The rocket launcher's alt fire is the nuke, which takes ten rockets. The Trench Gun's alt fire is dragon's breath.
   - **Devil's Bore** (key 8): it's where Beast Vision was.
   - **Dual tommy guns, dual sawed-offs and dual flare guns:** pick up a second one of the gun you already have.
+  - **Mourning Codex** (key 0): it's where Reflective Shots was. One spell, then the book is gone. Fire: thirteen flesh gargoyles fight for you for 15 seconds. Alt fire: a blizzard of ice spikes around you. Crouch + fire: lightning. Crouch + alt fire: Caleb's heart opens a Death Portal that pulls enemies in. (In the mod, the last two are on the map zoom keys.)
+  - **Things the dead leave** (pick them up with **USE**, key 1): an axe zombie's **axe** now and then (swing it, or alt fire to throw it; it can be picked up again where it lands), a Phantasm's **orb** (thrown, it finds the head of the enemy you look at and drills through it), and from each Necromancer either the **Vile Anathema** (fire: the corpses you can see rise and fight for you; alt fire: 15 seconds of skulls flying from your shoulder at what you look at) or the **Bastion Chronometer** (fire: 30 seconds of reflective shots; alt fire: the Doom Bell, which rings death all around it and then blows apart). Each is used once.
+- **Its world weapons** (USE in front of them):
+  - **Death Mower:** it runs by itself for 37 seconds and shreds what's in front of it. Fire throws it away.
+  - **Maxim gun** on its stand: USE gets behind it, USE again leaves it. JUMP rips it off its stand and you carry it (the mod uses RUN, which auto-run holds).
+  - **Blunderbuss:** one big blast, then it's thrown away.
+  - **Cannons:** one shot, then the cannon is empty. Carry a **cannon ball** to it (USE to pick it up, USE at the cannon to load it).
+  - **Fireworks cannon:** a show of rockets, then it's thrown away.
+  - The **AA guns** fire flak into the sky when you're near.
+- **Allies** (the Codex's gargoyles, the risen dead) don't attack you, and autoaim skips them. They don't count as kills.
 
-**Not included (yet):** the rest of the mod's weapons (the Mourning Codex, Blunderbuss, Zombie Axe, Phantasm Orb, the Hero/Slasher powerups, Wrath Demon Mode) and its scripted extras (turrets, lawn mowers, cannons). Their pictures can show in the maps as plain decorations.
+**Not included (yet):** the Hero/Slasher powerups (Ash, Draven, Candyman, Leatherface, the Terminator, Krueger, Voorhees), Wrath Demon Mode, the Sword, the mod's changes to Blood's own weapons, and flying the Phantasm Orb by hand (its alt fire throws it like fire does).
 
 To play the normal game again: MODS > ORIGINAL GAME.
 

@@ -146,7 +146,7 @@ bool CKillMgr::AllowedType(spritetype *pSprite)
         return false;
     if (pSprite->type == kDudeGargoyleStatueFlesh || pSprite->type == kDudeGargoyleStatueStone) // if statue gargoyle, do not count as enemy until they activate
         return VanillaMode();
-    if (!becCountsAsKill(pSprite->type)) // Blood Extra Crispy's spirits, worms and headstones
+    if (!becCountsAsKill(pSprite->type) || becIsAlly(pSprite->index)) // Blood Extra Crispy's spirits, worms, headstones and allies
         return false;
     return pSprite->type != kDudeBat && pSprite->type != kDudeRat && pSprite->type != kDudeInnocent && pSprite->type != kDudeBurningInnocent;
 }

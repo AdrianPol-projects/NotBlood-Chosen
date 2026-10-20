@@ -73,6 +73,11 @@ enum
     kBecCannon,        // a loaded cannon: USE gets behind it, one shot
     kBecCannonBall,    // a cannon ball carried to an empty cannon
     kBecFireworks,     // the fireworks cannon: a show, then it's thrown away
+    kBecCodex,         // the Mourning Codex: one spell, then the book is gone
+    kBecAxe,           // a zombie's axe: swung, or thrown (and picked up again where it lands)
+    kBecOrb,           // the Phantasm Orb: thrown, it finds a head
+    kBecAnathema,      // the Vile Anathema (a Necromancer's): the dead rise for Caleb, or skulls fly from his shoulder
+    kBecChronometer,   // the Bastion Chronometer (a Necromancer's): reflective shots, or the Doom Bell
     kBecWeaponMax
 };
 
@@ -82,6 +87,11 @@ enum
 {
     kMowerPicnum = 5840, kMaximPicnum = 5866, kBlunderbussPicnum = 5119,
     kCannonPicnum = 6276, kCannonEmptyPicnum = 6282, kCannonBallPicnum = 6281,
+};
+enum
+{
+    kAxePicnum = 5481, kAxeFlyingPicnum = 5496, kOrbPicnum = 5558, kAnathemaPicnum = 7305, kChronometerPicnum = 7353,
+    kBellPicnum = 7827, kSkullPicnum = 5798, kPortalPicnum = 4743,
 };
 enum { kMowerTime = 37 };  // seconds: the mod's 2240 (its timer goes 2 a frame)
 
@@ -102,6 +112,8 @@ struct WSTATE
     int16_t nAmmo[kBecWeaponMax];  // their own ammo
     int32_t nVar[6];    // the weapon in hand's own counters (rounds in the magazine...)
     int16_t nTurret;    // the Maxim stand Caleb is behind
+    int32_t nFrost;     // frames left of the Mourning Codex's blizzard around Caleb
+    int32_t nSkulls;    // of the Vile Anathema's skulls flying from his shoulder
 };
 
 enum { kPhaseNone, kPhaseRaise, kPhaseIdle, kPhaseFire, kPhaseLower };
@@ -125,6 +137,7 @@ struct WEAPON
     void (*pFire)(CTX &c, bool bAlt);       // fire pressed while it's idle
     void (*pTick)(CTX &c);                  // every frame while it's in hand
     void (*pTrigger)(CTX &c, int nTrigger); // a trigger frame of its QAV
+    bool bGone;                             // used up, it isn't lowered: it's gone from Caleb's hands
 };
 
 extern WEAPON const gWeapons[kBecWeaponMax];
@@ -197,8 +210,9 @@ struct CTX
     }
     void lower()
     {
-        play(becDefine(pWeapon->pzDown, -1), kPhaseLower);
-        if (pState->nPhase != kPhaseLower || !getQav(becDefine(pWeapon->pzDown, -1)))  // none: down at once
+        int const nDown = pWeapon->bGone && ammo() <= 0 ? -1 : becDefine(pWeapon->pzDown, -1);
+        play(nDown, kPhaseLower);
+        if (pState->nPhase != kPhaseLower || !getQav(nDown))  // none: down at once
             pState->nPhase = kPhaseLower, pState->nQav = -1, pState->nTimer = 0;
     }
     void sound(int nSfx)
@@ -227,13 +241,24 @@ struct CTX
 // the mod's missiles: Blood's, with the mod's picture, and the mod's explosion where they hit
 //
 
-enum { kBoomNone, kBoomSmall, kBoomStandard, kBoomLarge, kBoomNuke };
+enum { kBoomNone, kBoomSmall, kBoomStandard, kBoomLarge, kBoomNuke, kBoomOrb, kBoomAxe, kBoomPortal };
 
 uint8_t gMissileBoom[kMaxSprites];
 
+// the spells' things in the level: the Death Portal and the Doom Bell (decorations), the orb and the
+// portal on their way (missiles)
+enum { kSpellNone, kSpellPortal, kSpellBell };
+uint8_t gSpellKind[kMaxSprites];
+int32_t gSpellTime[kMaxSprites];    // frames left (the bell's: to its next ring)
+int16_t gSpellTarget[kMaxSprites];  // the orb's head, the bell's rings left
+
+int nFiringBoom;  // the one being fired: it can hit something at once, before actFireMissile returns it
+
 spritetype *rocket(CTX &c, int nPicnum, int nRepeat, int nBoom, int nSpeed, int nSpread, int nOffset = 0)
 {
+    nFiringBoom = nBoom;
     spritetype *pMissile = c.missile(kMissileFireballNapalm, nSpread, nOffset);
+    nFiringBoom = kBoomNone;
     if (!pMissile)
         return NULL;
     pMissile->picnum = nPicnum;
@@ -653,22 +678,360 @@ void fireworksTick(CTX &c)
         c.useAmmo(1);
 }
 
+// an enemy (not one of Caleb's allies), alive
+bool isEnemy(spritetype *pSprite)
+{
+    return pSprite->statnum == kStatDude && !IsPlayerSprite(pSprite) && !becIsAlly(pSprite->index) && pSprite->extra > 0
+        && xsprite[pSprite->extra].health > 0;
+}
+
+// the enemy nearest where Caleb looks that he can see (within nCone of it), -1 for none
+int enemyInSight(PLAYER *pPlayer, int nCone, int nRange)
+{
+    spritetype *pSprite = pPlayer->pSprite;
+    int nBest = -1, nBestScore = INT_MAX;
+    for (int nSprite = headspritestat[kStatDude]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+    {
+        spritetype *pOther = &sprite[nSprite];
+        if (pOther == pSprite || !isEnemy(pOther))
+            continue;
+        int const dx = pOther->x - pSprite->x, dy = pOther->y - pSprite->y;
+        int const nDist = approxDist(dx, dy);
+        int const nAngle = klabs(((getangle(dx, dy) + 1024 - pSprite->ang) & 2047) - 1024);
+        if (nDist > nRange || nAngle > nCone)
+            continue;
+        int top, bottom;
+        GetSpriteExtents(pOther, &top, &bottom);
+        if (!cansee(pSprite->x, pSprite->y, pPlayer->zView, pSprite->sectnum, pOther->x, pOther->y, (top + bottom) / 2, pOther->sectnum))
+            continue;
+        int const nScore = nDist + nAngle * 16;
+        if (nScore < nBestScore)
+            nBest = nSprite, nBestScore = nScore;
+    }
+    return nBest;
+}
+
+// what's within nRange of a spot, alive, not Caleb or his allies (taken first: hurting them changes the lists)
+int enemiesNear(spritetype *pAt, int nRange, bool bSeen, int16_t *pList, int nMax)
+{
+    int nCount = 0;
+    for (int nSprite = headspritestat[kStatDude]; nSprite >= 0 && nCount < nMax; nSprite = nextspritestat[nSprite])
+    {
+        spritetype *pOther = &sprite[nSprite];
+        if (!isEnemy(pOther) || approxDist(pOther->x - pAt->x, pOther->y - pAt->y) > nRange)
+            continue;
+        if (bSeen && !cansee(pAt->x, pAt->y, pAt->z - (16 << 8), pAt->sectnum, pOther->x, pOther->y, pOther->z - (24 << 8), pOther->sectnum))
+            continue;
+        pList[nCount++] = nSprite;
+    }
+    return nCount;
+}
+
+// a picture of the mod's on the floor in front of Caleb (a decoration)
+spritetype *putInFront(spritetype *pSprite, int nDist, int nPicnum, int nRepeat, bool bXSprite)
+{
+    int x = pSprite->x + mulscale30(nDist, Cos(pSprite->ang)), y = pSprite->y + mulscale30(nDist, Sin(pSprite->ang));
+    int16_t nSector = pSprite->sectnum;
+    updatesector(x, y, &nSector);
+    if (nSector < 0)
+        x = pSprite->x, y = pSprite->y, nSector = pSprite->sectnum;
+    int ceilZ, floorZ;
+    getzsofslope(nSector, x, y, &ceilZ, &floorZ);
+    spritetype *pItem = actSpawnSprite(nSector, x, y, floorZ, kStatDecoration, bXSprite);
+    if (!pItem)
+        return NULL;
+    pItem->picnum = nPicnum;
+    pItem->xrepeat = pItem->yrepeat = nRepeat;
+    pItem->ang = pSprite->ang;
+    pItem->cstat = 0;
+    pItem->type = 0;
+    pItem->owner = pSprite->index;
+    gBecFlags[pItem->index] = 0;
+    gSpellKind[pItem->index] = kSpellNone;
+    return pItem;
+}
+
+//
+// the Mourning Codex (weapon_grimoire.txt): one spell, and the book is spent. Fire: thirteen flesh gargoyles
+// fight for Caleb; alt fire: a blizzard around him; crouched, fire: lightning (the mod's key for it is map
+// zoom out); crouched, alt fire: his heart for a Death Portal (map zoom in)
+//
+
+void summonGargoyles(CTX &c)
+{
+    spritetype *pSprite = c.sprite();
+    for (int i = 0; i < 13; i++)
+    {
+        int const nAngle = (pSprite->ang + Random2(384)) & 2047;
+        int const nDist = 512 + Random(1024);
+        int const x = pSprite->x + mulscale30(nDist, Cos(nAngle)), y = pSprite->y + mulscale30(nDist, Sin(nAngle));
+        int16_t nSector = pSprite->sectnum;
+        updatesector(x, y, &nSector);
+        int const z = pSprite->z - (24 << 8) - (int)Random(24 << 8);
+        if (nSector < 0 || !cansee(pSprite->x, pSprite->y, pSprite->z - (24 << 8), pSprite->sectnum, x, y, z, nSector))
+            continue;
+        int ceilZ, floorZ;
+        getzsofslope(nSector, x, y, &ceilZ, &floorZ);
+        spritetype *pGarg = becSpawnDude(pSprite, kDudeGargoyleFlesh, x, y, ClipRange(z, ceilZ + (48 << 8), floorZ), pSprite->ang);
+        if (!pGarg)
+            continue;
+        becMakeAlly(pGarg, pSprite, 15 * kTicRate);  // the mod's 15 seconds
+        gFX.fxSpawn(FX_29, pGarg->sectnum, pGarg->x, pGarg->y, pGarg->z, 0);
+    }
+}
+
+void codexFire(CTX &c, bool bAlt)
+{
+    if (c.ammo() <= 0)
+        return;
+    bool const bCrouch = c.pPlayer->input.buttonFlags.crouch;
+    c.useAmmo(1);
+    if (bCrouch && !bAlt)
+    {
+        c.pState->nVar[1] = 0;
+        c.pState->nVar[2] = 400;  // the mod's Volt: the lightning's strength
+        c.play(QAVID("QAV_BOOKE1"), kPhaseFire);
+        c.sound(SFX("SFX_THUNDER1"));
+        c.sound(SFX("SFX_ZAPVOC"));
+    }
+    else if (bCrouch)
+    {
+        c.play(QAVID("QAV_BOOKHM"), kPhaseFire);
+        c.sound(SFX("SFX_HARTVOC"));
+    }
+    else if (bAlt)
+    {
+        c.play(QAVID("QAV_BOOKDM"), kPhaseFire);
+        c.sound(SFX("SFX_ICAST"));
+    }
+    else
+    {
+        c.play(QAVID("QAV_BOOKSM"), kPhaseFire);
+        c.sound(SFX("SFX_DSPAWN"));
+    }
+}
+
+void codexTick(CTX &c)
+{
+    int nPlaying = c.playing();
+    bool const bEnd = c.pState->nTimer <= kTicsPerFrame;
+    if (nPlaying == QAVID("QAV_BOOKE1") && ++c.pState->nVar[1] >= 25)  // the mod's 50 ticks of its
+        c.play(QAVID("QAV_BOOKE2"), kPhaseFire);
+    else if (nPlaying == QAVID("QAV_BOOKE2"))
+    {
+        c.pState->nVar[2] -= 4;
+        if (bEnd)
+            c.play(c.pState->nVar[2] > 0 ? QAVID("QAV_BOOKE2") : QAVID("QAV_BOOKE3"), kPhaseFire);
+    }
+    else if (nPlaying == QAVID("QAV_BOOKHM") && bEnd)
+        c.play(QAVID("QAV_BOOKHM2"), kPhaseFire);
+    nPlaying = c.playing();
+    if (nPlaying == QAVID("QAV_BOOKE2") || nPlaying == QAVID("QAV_BOOKE3"))
+    {
+        if (!Random(8))
+            c.sound(SFX("SFX_ARC1"));
+        if (!Random(8))
+            c.sound(SFX("SFX_ARC2"));
+        if (!Random(8))
+            c.sound(SFX("SFX_ARC3"));
+        c.flash(40);
+    }
+}
+
+void codexTrigger(CTX &c, int nTrigger)
+{
+    switch (nTrigger)
+    {
+    case 1:  // the blizzard
+        c.pState->nFrost = 8 * kTicsPerSec;
+        c.sound(SFX("SFX_DEMOTR"));
+        c.sound(SFX("SFX_IWIND"));
+        break;
+    case 7:  // the gargoyles
+        summonGargoyles(c);
+        break;
+    case 11:  // the lightning
+        if (++c.pState->nVar[3] & 1)
+        {
+            c.missile(kMissileTeslaRegular, 900);
+            c.kick(5);
+        }
+        break;
+    case 12:  // and its last, all about
+        for (int i = 0; i < 25; i++)
+            c.missile(kMissileTeslaRegular, 8000);
+        c.sound(SFX("SFX_ZAPFIRE"));
+        c.flash(80);
+        c.kick(40);
+        break;
+    case 13:
+        c.sound(SFX("SFX_ZAPFIRE"));
+        break;
+    case 14:  // the heart torn out: a Death Portal on its way
+    {
+        c.sound(SFX("SFX_RGFIRE2"));
+        c.sound(SFX("SFX_GIBSQ"));
+        spritetype *pPortal = rocket(c, kPortalPicnum, 48, kBoomPortal, 0x8000, 0);
+        if (pPortal)
+        {
+            gSpellTime[pPortal->index] = kTicsPerSec;  // it opens a second away (the mod's 60 ticks)
+            pPortal->cstat |= CSTAT_SPRITE_TRANSLUCENT;
+        }
+        c.flash(60);
+        break;
+    }
+    case 15:
+        c.sound(SFX("SFX_HARTSPE"));
+        break;
+    case 16:
+        c.sound(SFX("SFX_PFLESH"));
+        break;
+    case 18:
+        c.sound(SFX("SFX_HEARTBE"));
+        break;
+    }
+}
+
+//
+// a zombie's axe (weapon_axe.txt): swung, or thrown
+//
+
+void axeFire(CTX &c, bool bAlt)
+{
+    c.play(bAlt ? QAVID("QAV_THROAXE") : QAVID("QAV_AXESWIN"), kPhaseFire);
+}
+
+void axeTrigger(CTX &c, int nTrigger)
+{
+    if (nTrigger == 1)
+        c.sound(SFX("SFX_AZOMSWIP"));
+    else if (nTrigger == 2)  // the blow
+    {
+        c.vector("BV_AXE_PLAYER", 0);
+        c.vector("BV_SWORDSLASH", 400);
+        c.kick(10);
+    }
+    else if (nTrigger == 3)
+        c.sound(SFX("SFX_GARGTHRO"));
+    else if (nTrigger == 4 && c.ammo() > 0)  // thrown
+    {
+        c.useAmmo(1);
+        rocket(c, kAxePicnum, 32, kBoomAxe, 0xC000, 0);
+    }
+}
+
+//
+// the Phantasm Orb (weapon_orb.txt): thrown, it goes for the enemy Caleb looks at and drills through its head
+// (alt fire too: the mod's alt fire flies it by hand, Caleb's eyes in it)
+//
+
+void orbFire(CTX &c, bool bAlt)
+{
+    UNREFERENCED_PARAMETER(bAlt);
+    c.play(QAVID("QAV_FIREORB"), kPhaseFire);
+}
+
+void orbTrigger(CTX &c, int nTrigger)
+{
+    if (nTrigger != 1 || c.ammo() <= 0)
+        return;
+    c.useAmmo(1);
+    sfxKill3DSound(c.sprite(), -1, SFX("SFX_ORBIDLE"));
+    c.sound(SFX("SFX_ORBFIRE"));
+    spritetype *pOrb = rocket(c, kOrbPicnum, 16, kBoomOrb, 0x8000, 0);
+    if (pOrb)
+    {
+        gSpellTarget[pOrb->index] = enemyInSight(c.pPlayer, kAng30, 40 * 512);
+        gSpellTime[pOrb->index] = 10 * kTicsPerSec;  // it gives up after that
+        sfxPlay3DSound(pOrb, SFX("SFX_ORBFLY"), -1, 0);
+    }
+}
+
+//
+// the Necromancer's: the Vile Anathema (weapon_necro.txt) and the Bastion Chronometer (weapon_watch.txt), one use each
+//
+
+void necroFire(CTX &c, bool bAlt)
+{
+    c.pState->nVar[0] = bAlt;
+    c.play(c.nWeapon == kBecAnathema ? QAVID("QAV_NECROFIRE") : QAVID("QAV_WATCHFIRE"), kPhaseFire);
+}
+
+void anathemaTrigger(CTX &c, int nTrigger)
+{
+    if (nTrigger != 1 || c.ammo() <= 0)
+        return;
+    c.useAmmo(1);
+    c.sound(SFX("SFX_NECREVI"));
+    c.flash(60);
+    char buffer[80];
+    if (c.pState->nVar[0])  // alt: fifteen seconds of skulls flying from Caleb's shoulder at what he looks at
+    {
+        c.pState->nSkulls = 15 * kTicsPerSec;
+        Bsnprintf(buffer, sizeof(buffer), "Skulls fly at what you look at");
+    }
+    else  // the dead he can see rise and fight for him
+    {
+        int const n = becRaiseCorpses(c.sprite(), 40 * 512);
+        if (n)
+            Bsnprintf(buffer, sizeof(buffer), "%d of the dead rise for you", n);
+        else
+            Bsnprintf(buffer, sizeof(buffer), "No dead here to rise");
+    }
+    if (c.pPlayer == gMe)
+        viewSetMessage(buffer, 0, MESSAGE_PRIORITY_PICKUP);
+}
+
+void chronometerTrigger(CTX &c, int nTrigger)
+{
+    if (nTrigger != 1 || c.ammo() <= 0)
+        return;
+    c.useAmmo(1);
+    c.sound(SFX("SFX_GLASHIT2"));
+    c.flash(60);
+    if (c.pState->nVar[0])  // alt: the Doom Bell, in front of Caleb, ringing death about it
+    {
+        c.sound(SFX("SFX_GORGEF2"));
+        spritetype *pBell = putInFront(c.sprite(), 768, kBellPicnum, 40, false);
+        if (pBell)
+        {
+            pBell->cstat |= CSTAT_SPRITE_BLOCK;
+            gSpellKind[pBell->index] = kSpellBell;
+            gSpellTime[pBell->index] = kTicsPerSec / 2;
+            gSpellTarget[pBell->index] = 12;  // rings
+            gFX.fxSpawn(FX_29, pBell->sectnum, pBell->x, pBell->y, pBell->z, 0);
+        }
+    }
+    else  // thirty seconds of Blood's reflective shots
+    {
+        c.pPlayer->pwUpTime[kPwUpReflectShots] = ClipLow(c.pPlayer->pwUpTime[kPwUpReflectShots], 30 * kTicRate);
+        powerupActivate(c.pPlayer, kPwUpReflectShots);
+        if (c.pPlayer == gMe)
+            viewSetMessage("Time stands still for their bullets: they go back where they came from", 0, MESSAGE_PRIORITY_PICKUP);
+    }
+}
+
 WEAPON const gWeapons[kBecWeaponMax] = {
-    { "GATLING GUN", 7, -1, 540, 540, "", 4689, "QAV_GATUP", "QAV_GATIDLE", "QAV_GATDOWN", gatlingFire, gatlingTick, NULL },
-    { "TRENCH GUN", 3, 2, 0, 8, "", 4725, "QAV_PUMPU", "QAV_PUMPI", "QAV_PUMPD", trenchFire, NULL, trenchTrigger },
-    { "DEVASTATOR", 7, -1, 400, 200, "", 5553, "QAV_DUKEUP", "QAV_DUKEID", "QAV_DUKEDO", devastatorFire, NULL, devastatorTrigger },
-    { "ROCKET LAUNCHER", 7, -1, 100, 100, "", 5093, "QAV_SWUP", "QAV_SWIDLER", "QAV_SWDOWN", rocketFire, NULL, rocketTrigger },
-    { "DEVIL'S BORE", 8, -1, 60, 30, "", 4730, "QAV_RAILGU", "QAV_RAILGI", "QAV_RAILGD", railFire, NULL, railTrigger },
-    { "DUAL TOMMY GUNS", 4, 3, 0, 100, "", 4766, "QAV_2TOMUP", "QAV_2TOMIDLE", "QAV_2TOMDOWN", dualTommyFire, dualTommyTick, dualTommyTrigger },
-    { "DUAL SAWED-OFFS", 3, 2, 0, 8, "", 4756, "QAV_2SHOTUP", "QAV_2SHOTI", "QAV_2SHOTDOWN", dualShotgunFire, NULL, dualShotgunTrigger },
-    { "DUAL FLARE GUNS", 2, 1, 0, 9, "", 4763, "QAV_FLAR2UP", "QAV_FLAR2I", "QAV_FLAR2DWN", dualFlareFire, NULL, dualFlareTrigger },
-    { "DEATH MOWER", 0, -1, kMowerTime, kMowerTime, "", kMowerPicnum, "QAV_MOWERR", "QAV_MOWERA", "QAV_MOWERT", mowerFire, mowerTick, NULL },
-    { "MAXIM GUN", 0, -1, 1, 1, "", kMaximPicnum, "QAV_MAXIM1", "QAV_MAXIM1", "QAV_MAXIM1", turretFire, NULL, NULL },
-    { "MOBILE MAXIM", 0, -1, 250, 250, "", 5077, "QAV_MAXUP", "QAV_MAXID", "QAV_MOWERT", maximFire, maximTick, maximTrigger },
-    { "BLUNDERBUSS", 0, -1, 1, 1, "", kBlunderbussPicnum, "QAV_BLUNUP", "QAV_BLUNID", "QAV_MOWERT", blunderbussFire, NULL, blunderbussTrigger },
-    { "CANNON", 0, -1, 1, 1, "", kCannonPicnum, "QAV_CANNONI", "QAV_CANNONI", NULL, cannonFire, NULL, NULL },
-    { "CANNON BALL", 0, -1, 1, 1, "", kCannonBallPicnum, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "FIREWORKS CANNON", 0, -1, 1, 1, "", kFireworksPicnum, "QAV_FCFIRE", "QAV_FCFIRE", "QAV_MOWERT", NULL, fireworksTick, NULL },
+    { "GATLING GUN", 7, -1, 540, 540, "", 4689, "QAV_GATUP", "QAV_GATIDLE", "QAV_GATDOWN", gatlingFire, gatlingTick, NULL, false },
+    { "TRENCH GUN", 3, 2, 0, 8, "", 4725, "QAV_PUMPU", "QAV_PUMPI", "QAV_PUMPD", trenchFire, NULL, trenchTrigger, false },
+    { "DEVASTATOR", 7, -1, 400, 200, "", 5553, "QAV_DUKEUP", "QAV_DUKEID", "QAV_DUKEDO", devastatorFire, NULL, devastatorTrigger, false },
+    { "ROCKET LAUNCHER", 7, -1, 100, 100, "", 5093, "QAV_SWUP", "QAV_SWIDLER", "QAV_SWDOWN", rocketFire, NULL, rocketTrigger, false },
+    { "DEVIL'S BORE", 8, -1, 60, 30, "", 4730, "QAV_RAILGU", "QAV_RAILGI", "QAV_RAILGD", railFire, NULL, railTrigger, false },
+    { "DUAL TOMMY GUNS", 4, 3, 0, 100, "", 4766, "QAV_2TOMUP", "QAV_2TOMIDLE", "QAV_2TOMDOWN", dualTommyFire, dualTommyTick, dualTommyTrigger, false },
+    { "DUAL SAWED-OFFS", 3, 2, 0, 8, "", 4756, "QAV_2SHOTUP", "QAV_2SHOTI", "QAV_2SHOTDOWN", dualShotgunFire, NULL, dualShotgunTrigger, false },
+    { "DUAL FLARE GUNS", 2, 1, 0, 9, "", 4763, "QAV_FLAR2UP", "QAV_FLAR2I", "QAV_FLAR2DWN", dualFlareFire, NULL, dualFlareTrigger, false },
+    { "DEATH MOWER", 0, -1, kMowerTime, kMowerTime, "", kMowerPicnum, "QAV_MOWERR", "QAV_MOWERA", "QAV_MOWERT", mowerFire, mowerTick, NULL, false },
+    { "MAXIM GUN", 0, -1, 1, 1, "", kMaximPicnum, "QAV_MAXIM1", "QAV_MAXIM1", "QAV_MAXIM1", turretFire, NULL, NULL, false },
+    { "MOBILE MAXIM", 0, -1, 250, 250, "", 5077, "QAV_MAXUP", "QAV_MAXID", "QAV_MOWERT", maximFire, maximTick, maximTrigger, false },
+    { "BLUNDERBUSS", 0, -1, 1, 1, "", kBlunderbussPicnum, "QAV_BLUNUP", "QAV_BLUNID", "QAV_MOWERT", blunderbussFire, NULL, blunderbussTrigger, false },
+    { "CANNON", 0, -1, 1, 1, "", kCannonPicnum, "QAV_CANNONI", "QAV_CANNONI", NULL, cannonFire, NULL, NULL, false },
+    { "CANNON BALL", 0, -1, 1, 1, "", kCannonBallPicnum, NULL, NULL, NULL, NULL, NULL, NULL, false },
+    { "FIREWORKS CANNON", 0, -1, 1, 1, "", kFireworksPicnum, "QAV_FCFIRE", "QAV_FCFIRE", "QAV_MOWERT", NULL, fireworksTick, NULL, false },
+    { "MOURNING CODEX", 10, -1, 1, 1, "", 4705, "QAV_BOOKU", "QAV_BOOKI", "QAV_BOOKD", codexFire, codexTick, codexTrigger, true },
+    { "ZOMBIE AXE", 1, -1, 1, 1, "", kAxePicnum, "QAV_RAISAXE", "QAV_HOLDAXE", "QAV_LOWAXE", axeFire, NULL, axeTrigger, true },
+    { "PHANTASM ORB", 1, -1, 1, 1, "", kOrbPicnum, "QAV_RAISORB", "QAV_HOLDORB", "QAV_LOWORB", orbFire, NULL, orbTrigger, true },
+    { "VILE ANATHEMA", 1, -1, 1, 1, "", kAnathemaPicnum, "QAV_NECROUP", "QAV_NECROIDLE", "QAV_NECRODOWN", necroFire, NULL, anathemaTrigger, true },
+    { "BASTION CHRONOMETER", 1, -1, 1, 1, "", kChronometerPicnum, "QAV_WATCHUP", "QAV_WATCHIDLE", "QAV_WATCHDOWN", necroFire, NULL, chronometerTrigger, true },
 };
 
 CTX ctxFor(PLAYER *pPlayer)
@@ -746,7 +1109,7 @@ void giveWeapon(PLAYER *pPlayer, int nWeapon, int nAmmo)
 {
     WSTATE *pState = &gWState[pPlayer->nPlayer];
     WEAPON const &w = gWeapons[nWeapon];
-    bool const bNew = !has(pState, nWeapon);
+    bool const bNew = !has(pState, nWeapon) || (w.bGone && pState->nAmmo[nWeapon] <= 0);  // a one-use one again
     pState->nHave |= 1u << nWeapon;
     if (w.nBloodAmmo >= 0)
         pPlayer->ammoCount[w.nBloodAmmo] = ClipHigh(pPlayer->ammoCount[w.nBloodAmmo] + nAmmo, gAmmoInfo[w.nBloodAmmo].max);
@@ -763,6 +1126,8 @@ void giveWeapon(PLAYER *pPlayer, int nWeapon, int nAmmo)
             pState->nNext = -2 - nWeapon;
             pState->nPending = -1;
         }
+        else if (pPlayer->curWeapon)  // Blood's goes down first
+            WeaponLower(pPlayer);
     }
 }
 
@@ -903,7 +1268,9 @@ int osdcmd_becput(osdcmdptr_t parm)
     int const nPicnum = !Bstrcasecmp(parm->parms[0], "mower") ? kMowerPicnum : !Bstrcasecmp(parm->parms[0], "maxim") ? kMaximPicnum
                       : !Bstrcasecmp(parm->parms[0], "blunderbuss") ? kBlunderbussPicnum : !Bstrcasecmp(parm->parms[0], "cannon") ? kCannonEmptyPicnum
                       : !Bstrcasecmp(parm->parms[0], "ball") ? kCannonBallPicnum : !Bstrcasecmp(parm->parms[0], "fireworks") ? kFireworksPicnum
-                      : !Bstrcasecmp(parm->parms[0], "aagun") ? kAAGunPicnum : atoi(parm->parms[0]);
+                      : !Bstrcasecmp(parm->parms[0], "aagun") ? kAAGunPicnum : !Bstrcasecmp(parm->parms[0], "axe") ? kAxePicnum
+                      : !Bstrcasecmp(parm->parms[0], "orb") ? kOrbPicnum : !Bstrcasecmp(parm->parms[0], "anathema") ? kAnathemaPicnum
+                      : !Bstrcasecmp(parm->parms[0], "chronometer") ? kChronometerPicnum : atoi(parm->parms[0]);
     spritetype *pSprite = gMe->pSprite;
     int const nDist = parm->numparms > 1 ? atoi(parm->parms[1]) : 120;
     int const x = pSprite->x + mulscale30(nDist, Cos(pSprite->ang)), y = pSprite->y + mulscale30(nDist, Sin(pSprite->ang));
@@ -931,11 +1298,17 @@ class BecWeaponsLoadSave : public LoadSave
     {
         Read(gWState, sizeof(gWState));
         Read(gMissileBoom, sizeof(gMissileBoom));
+        Read(gSpellKind, sizeof(gSpellKind));
+        Read(gSpellTime, sizeof(gSpellTime));
+        Read(gSpellTarget, sizeof(gSpellTarget));
     }
     virtual void Save(void)
     {
         Write(gWState, sizeof(gWState));
         Write(gMissileBoom, sizeof(gMissileBoom));
+        Write(gSpellKind, sizeof(gSpellKind));
+        Write(gSpellTime, sizeof(gSpellTime));
+        Write(gSpellTarget, sizeof(gSpellTarget));
     }
 };
 
@@ -984,6 +1357,7 @@ void becWeaponsPlayerStart(PLAYER *pPlayer)
     pState->nActive = pState->nPending = -1;
     pState->nQav = -1;
     pState->nNext = 0;
+    pState->nFrost = pState->nSkulls = 0;
 }
 
 bool becWeaponProcess(PLAYER *pPlayer)
@@ -1171,6 +1545,29 @@ bool becWeaponUse(PLAYER *pPlayer)
         return false;
     if (pState->nPending >= 0 || pState->nNext)
         return false;
+    // what the dead leave (BEC_Players.txt: grabbed when Caleb hasn't one already): an axe, an orb, the Necromancer's
+    static struct { short nPicnum; int8_t nWeapon; } const gGrab[] = {
+        { kAxePicnum, kBecAxe }, { kOrbPicnum, kBecOrb }, { kAnathemaPicnum, kBecAnathema }, { kChronometerPicnum, kBecChronometer },
+    };
+    for (auto const &g : gGrab)
+    {
+        if (usable(pPlayer, g.nWeapon))
+            continue;
+        int const nItem = inReach(pPlayer, g.nPicnum);
+        if (nItem < 0)
+            continue;
+        actPostSprite(nItem, kStatFree);
+        sfxPlay3DSound(pPlayer->pSprite, kPickupSound, -1, 0);
+        pPlayer->pickupEffect = 30;
+        takeUp(pPlayer, g.nWeapon, 1);
+        if (pPlayer == gMe)
+        {
+            char buffer[64];
+            Bsnprintf(buffer, sizeof(buffer), "Picked up %s -SLOT %d-", gWeapons[g.nWeapon].pzName, gWeapons[g.nWeapon].nSlot);
+            viewSetMessage(buffer, 0, MESSAGE_PRIORITY_PICKUP);
+        }
+        return true;
+    }
     int nSprite = inReach(pPlayer, kMowerPicnum);
     if (nSprite >= 0)
     {
@@ -1276,6 +1673,9 @@ bool becWeaponPickUp(PLAYER *pPlayer, spritetype *pItem, char *pzMessage, int nM
     case kItemBeastVision:  // its Beast Vision the Devil's Bore
         nWeapon = kBecRailgun;
         break;
+    case kItemReflectShots:  // its Reflective Shots the Mourning Codex
+        nWeapon = kBecCodex;
+        break;
     // a second gun of one Caleb has: two of them
     case kItemWeaponTommygun:
         if (pPlayer->hasWeapon[kWeaponTommy] && !has(&gWState[pPlayer->nPlayer], kBecDualTommy))
@@ -1305,6 +1705,9 @@ void becWeaponsLevelStart(bool bSaveLoad)
     if (!bActive)
         return;
     memset(gMissileBoom, 0, sizeof(gMissileBoom));
+    memset(gSpellKind, 0, sizeof(gSpellKind));
+    memset(gSpellTime, 0, sizeof(gSpellTime));
+    memset(gSpellTarget, 0, sizeof(gSpellTarget));
     UNREFERENCED_PARAMETER(bSaveLoad);
 }
 
@@ -1348,6 +1751,265 @@ void aaGuns(void)
         sfxPlay3DSound(pGun, becDefine("SFX_GATF", -1), -1, 0);
     }
 }
+
+// the mod's deaths by the orb (Orb.txt): the body with the orb drilling through its head
+char const *orbDeathSeq(int nType)
+{
+    switch (nType)
+    {
+    case kDudeCultistTommy:
+    case kDudeCultistTommyProne:
+        return "SEQ_CUL1ORB";
+    case kDudeCultistShotgun:
+    case kDudeCultistShotgunProne:
+        return "SEQ_CUL2ORB";
+    case kDudeCultistTesla:
+        return "SEQ_CUL3ORB";
+    case kDudeCultistTNT:
+        return "SEQ_CUL4ORB";
+    case kDudeZombieAxeNormal:
+    case kDudeZombieAxeBuried:
+    case kDudeZombieAxeLaying:
+        return "SEQ_AXEZORB";
+    case kDudeBecZombieSkeletal:
+    case kDudeBecZombieSkeletalEarth:
+    case kDudeBecZombieSkeletalSleep:
+        return "SEQ_SKEZORB";
+    case kDudeZombieButcher:
+        return "SEQ_FATZORB";
+    case kDudeGillBeast:
+        return "SEQ_GILLORB";
+    case kDudeInnocent:
+        return "SEQ_INNOORB";
+    case kDudeBecCrimson:
+    case kDudeBecCrimsonEarth:
+        return "SEQ_CRIMORB";
+    }
+    return NULL;
+}
+
+// the nearest enemy to a spot, within nRange, -1 for none
+int nearestTo(spritetype *pAt, int nRange)
+{
+    int16_t list[64];
+    int const nCount = enemiesNear(pAt, nRange, false, list, 64);
+    int nBest = -1, nBestDist = INT_MAX;
+    for (int i = 0; i < nCount; i++)
+    {
+        int const nDist = approxDist(sprite[list[i]].x - pAt->x, sprite[list[i]].y - pAt->y);
+        if (nDist < nBestDist)
+            nBest = list[i], nBestDist = nDist;
+    }
+    return nBest;
+}
+
+void orbKill(spritetype *pOrb, spritetype *pTarget)
+{
+    int const nOwner = actSpriteOwnerToSpriteId(pOrb);
+    int const nType = pTarget->type;
+    sfxPlay3DSound(pTarget, becDefine("SFX_ORBDRIL", -1), -1, 0);
+    sfxPlay3DSound(pTarget, becDefine("SFX_GORHEAD", -1), -1, 0);
+    actDamageSprite(nOwner, pTarget, kDamageBullet, (xsprite[pTarget->extra].health << 4) + (1 << 12));
+    if (pTarget->extra > 0 && xsprite[pTarget->extra].health > 0)  // not hurt by bullets: by the spirit
+        actDamageSprite(nOwner, pTarget, kDamageSpirit, (xsprite[pTarget->extra].health << 4) + (1 << 12));
+    if (pTarget->extra > 0 && xsprite[pTarget->extra].health <= 0 && orbDeathSeq(nType))
+        becCorpseSeq(pTarget, orbDeathSeq(nType));
+}
+
+// the axe thrown lands: in whoever it hit, then on the floor to be picked up again
+void axeLands(spritetype *pAxe)
+{
+    int const nOwner = actSpriteOwnerToSpriteId(pAxe);
+    int const nHit = nearestTo(pAxe, 384);
+    if (nHit >= 0)
+    {
+        actDamageSprite(nOwner, &sprite[nHit], kDamageBullet, 1152);
+        sfxPlay3DSound(&sprite[nHit], becDefine("SFX_AXEHIT1", -1), -1, 0);
+    }
+    int x = pAxe->x - (xvel[pAxe->index] >> 12), y = pAxe->y - (yvel[pAxe->index] >> 12);  // back from the wall
+    int16_t nSector = pAxe->sectnum;
+    updatesector(x, y, &nSector);
+    if (nSector < 0)
+        x = pAxe->x, y = pAxe->y, nSector = pAxe->sectnum;
+    int ceilZ, floorZ;
+    getzsofslope(nSector, x, y, &ceilZ, &floorZ);
+    spritetype *pItem = actSpawnSprite(nSector, x, y, floorZ, kStatDecoration, 0);
+    if (pItem)
+    {
+        pItem->picnum = kAxePicnum;
+        pItem->xrepeat = pItem->yrepeat = 32;
+        pItem->ang = pAxe->ang;
+        pItem->cstat = 0;
+        pItem->type = 0;
+        gBecFlags[pItem->index] = 0;
+        gSpellKind[pItem->index] = kSpellNone;
+    }
+}
+
+// the Death Portal opens (DeathPortal.txt): it pulls in what it sees and swallows what comes near
+void openPortal(spritetype *pAt)
+{
+    spritetype *pPortal = actSpawnSprite(pAt->sectnum, pAt->x, pAt->y, pAt->z, kStatDecoration, 1);
+    if (!pPortal)
+        return;
+    pPortal->picnum = kPortalPicnum;
+    pPortal->xrepeat = pPortal->yrepeat = 64;
+    pPortal->cstat = CSTAT_SPRITE_TRANSLUCENT;
+    pPortal->shade = -128;
+    pPortal->type = 0;
+    pPortal->owner = actSpriteOwnerToSpriteId(pAt);
+    gBecFlags[pPortal->index] = 0;
+    int const nSeq = becDefine("SEQ_DEATHPOR", -1);
+    if (nSeq >= 0 && pPortal->extra > 0 && gSysRes.Lookup(nSeq, "SEQ"))
+        seqSpawn(nSeq, 3, pPortal->extra, -1);
+    gSpellKind[pPortal->index] = kSpellPortal;
+    gSpellTime[pPortal->index] = 4 * kTicsPerSec;
+    sfxPlay3DSound(pPortal, becDefine("SFX_RGTELEP", -1), -1, 0);
+}
+
+void portalTick(spritetype *pPortal)
+{
+    int16_t list[64];
+    int const nCount = enemiesNear(pPortal, 32 * 512, true, list, 64);
+    for (int i = 0; i < nCount; i++)
+    {
+        spritetype *pVictim = &sprite[list[i]];
+        int const dx = pPortal->x - pVictim->x, dy = pPortal->y - pVictim->y;
+        int const nDist = ClipLow(approxDist(dx, dy), 1);
+        if (nDist < 1024)
+        {
+            sfxPlay3DSound(pPortal, becDefine("SFX_RGTELEP", -1), -1, 0);
+            actDamageSprite(pPortal->owner, pVictim, kDamageExplode, 8000);
+            continue;
+        }
+        xvel[pVictim->index] += (int)(((int64_t)dx << 15) / nDist);
+        yvel[pVictim->index] += (int)(((int64_t)dy << 15) / nDist);
+    }
+}
+
+// the Doom Bell rings (sharedCallbacks.txt ACTOR_DoomBell): everything about it is hurt, every ring
+void bellTick(spritetype *pBell)
+{
+    int const nSprite = pBell->index;
+    if (--gSpellTime[nSprite] > 0)
+        return;
+    gSpellTime[nSprite] = 20;  // the mod's 40 ticks of its
+    int const nDoom = becDefine("SFX_DOOMBEL", -1);
+    sfxPlay3DSound(pBell, nDoom >= 0 ? nDoom : 270, -1, 0);
+    int16_t list[64];
+    int const nCount = enemiesNear(pBell, 16 * 512, false, list, 64);
+    for (int i = 0; i < nCount; i++)
+    {
+        actDamageSprite(pBell->owner, &sprite[list[i]], kDamageExplode, 200);
+        if (isEnemy(&sprite[list[i]]))
+            actDamageSprite(pBell->owner, &sprite[list[i]], kDamageSpirit, 200);
+    }
+    if (--gSpellTarget[nSprite] > 0)
+        return;
+    // its last: it blows apart
+    gSpellKind[nSprite] = kSpellNone;
+    spritetype *pBoom = actSpawnThing(pBell->sectnum, pBell->x, pBell->y, pBell->z - (16 << 8), kThingArmedTNTBundle);
+    if (pBoom)
+    {
+        if (pBell->owner >= 0)
+            actPropagateSpriteOwner(pBoom, &sprite[pBell->owner]);
+        actExplodeSprite(pBoom);
+    }
+    actPostSprite(nSprite, kStatFree);
+}
+
+// the orb finds its head; the portal on its way opens
+void spellMissiles(void)
+{
+    for (int nSprite = headspritestat[kStatProjectile]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+    {
+        int const nBoom = gMissileBoom[nSprite];
+        if (nBoom != kBoomOrb && nBoom != kBoomPortal)
+            continue;
+        spritetype *pMissile = &sprite[nSprite];
+        if (--gSpellTime[nSprite] <= 0)  // the portal opens where it is; the orb gives up
+        {
+            gMissileBoom[nSprite] = 0;
+            if (nBoom == kBoomPortal)
+                openPortal(pMissile);
+            else
+                sfxPlay3DSound(pMissile->x, pMissile->y, pMissile->z, becDefine("SFX_ORBEXPL", -1), pMissile->sectnum);
+            actPostSprite(nSprite, kStatFree);
+            continue;
+        }
+        if (nBoom != kBoomOrb)
+            continue;
+        int nTarget = gSpellTarget[nSprite];
+        if (nTarget < 0 || !isEnemy(&sprite[nTarget]))
+        {
+            nTarget = gSpellTarget[nSprite] = nearestTo(pMissile, 16 * 512);
+            if (nTarget < 0)
+                continue;
+        }
+        spritetype *pTarget = &sprite[nTarget];
+        int top, bottom;
+        GetSpriteExtents(pTarget, &top, &bottom);
+        int const dx = pTarget->x - pMissile->x, dy = pTarget->y - pMissile->y, dz = top + (bottom - top) / 6 - pMissile->z;
+        if (approxDist(dx, dy) < 256 && klabs(dz) < (32 << 8))
+        {
+            orbKill(pMissile, pTarget);
+            gMissileBoom[nSprite] = 0;
+            actPostSprite(nSprite, kStatFree);
+            continue;
+        }
+        // on toward its head, as fast as it goes (z is 16 times finer than x and y)
+        double const vx = xvel[nSprite], vy = yvel[nSprite], vz = zvel[nSprite];
+        double const fSpeed = sqrt(vx * vx + vy * vy + vz * vz);
+        double const fx = dx, fy = dy, fz = dz / 16.0;
+        double const fLen = sqrt(fx * fx + fy * fy + fz * fz);
+        if (fLen < 1)
+            continue;
+        xvel[nSprite] = (int)(fx / fLen * fSpeed);
+        yvel[nSprite] = (int)(fy / fLen * fSpeed);
+        zvel[nSprite] = (int)(fz / fLen * fSpeed);
+    }
+    for (int nSprite = headspritestat[kStatDecoration]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+    {
+        if (gSpellKind[nSprite] == kSpellBell)
+            bellTick(&sprite[nSprite]);
+        else if (gSpellKind[nSprite] == kSpellPortal)
+        {
+            portalTick(&sprite[nSprite]);
+            if (--gSpellTime[nSprite] <= 0)
+            {
+                gSpellKind[nSprite] = kSpellNone;
+                actPostSprite(nSprite, kStatFree);
+            }
+        }
+    }
+}
+
+// the spells on Caleb: the Codex's blizzard, the Anathema's skulls
+void playerSpells(PLAYER *pPlayer)
+{
+    WSTATE *pState = &gWState[pPlayer->nPlayer];
+    spritetype *pSprite = pPlayer->pSprite;
+    if (pState->nFrost > 0 && --pState->nFrost % 4 == 0)  // an ice spike into one of them about
+    {
+        int16_t list[64];
+        int const nCount = enemiesNear(pSprite, 16 * 512, true, list, 64);
+        if (nCount)
+        {
+            spritetype *pVictim = &sprite[list[Random(nCount)]];
+            sfxPlay3DSound(pVictim, becDefine("SFX_ISPIKE", -1), -1, 0);
+            actDamageSprite(pSprite->index, pVictim, kDamageBullet, 160);
+        }
+    }
+    if (pState->nSkulls > 0 && --pState->nSkulls % 4 == 0 && enemyInSight(pPlayer, kAng60, 40 * 512) >= 0)
+    {
+        Aim *aim = &pPlayer->aim;
+        spritetype *pSkull = actFireMissile(pSprite, -50, pPlayer->zWeapon - pSprite->z, aim->dx + Random2(200), aim->dy + Random2(200),
+                                            aim->dz + Random2(200), kMissileEctoSkull);
+        if (pSkull)
+            pSkull->picnum = kSkullPicnum;
+        sfxPlay3DSound(pSprite, becDefine("SFX_GORGEF2", -1), -1, 0);
+    }
+}
 } // namespace
 
 // touching one of the mod's weapon pictures in a map picks it up
@@ -1356,6 +2018,7 @@ void becWeaponsFrame(void)
     if (!bActive)
         return;
     aaGuns();
+    spellMissiles();
     struct PLACED { short nPicnum; int8_t nWeapon; };
     static PLACED const gPlaced[] = {
         { 4725, kBecTrench },
@@ -1367,7 +2030,11 @@ void becWeaponsFrame(void)
     {
         PLAYER *pPlayer = &gPlayer[p];
         if (!pPlayer->pSprite || !pPlayer->pXSprite || pPlayer->pXSprite->health <= 0)
+        {
+            gWState[p].nFrost = gWState[p].nSkulls = 0;
             continue;
+        }
+        playerSpells(pPlayer);
         spritetype *pSprite = pPlayer->pSprite;
         for (int nSprite = headspritesect[pSprite->sectnum]; nSprite >= 0; nSprite = nextspritesect[nSprite])
         {
@@ -1399,10 +2066,27 @@ void becWeaponsFrame(void)
 // the mod's rockets hit: its explosions (Blood's dynamite, bundle or barrel blowing up there)
 bool becImpactMissile(spritetype *pMissile)
 {
-    int const nBoom = gMissileBoom[pMissile->index];
+    int const nBoom = gMissileBoom[pMissile->index] ? gMissileBoom[pMissile->index] : nFiringBoom;
     if (!nBoom)
         return false;
     gMissileBoom[pMissile->index] = 0;
+    if (nBoom == kBoomOrb || nBoom == kBoomAxe || nBoom == kBoomPortal)
+    {
+        if (nBoom == kBoomOrb)  // into whoever it hit, or gone against the wall
+        {
+            int const nHit = nearestTo(pMissile, 384);
+            if (nHit >= 0)
+                orbKill(pMissile, &sprite[nHit]);
+            else
+                sfxPlay3DSound(pMissile->x, pMissile->y, pMissile->z, becDefine("SFX_ORBEXPL", -1), pMissile->sectnum);
+        }
+        else if (nBoom == kBoomAxe)
+            axeLands(pMissile);
+        else
+            openPortal(pMissile);
+        actPostSprite(pMissile->index, kStatFree);
+        return true;
+    }
     int const nThing = nBoom == kBoomSmall ? kThingArmedTNTStick : nBoom == kBoomStandard ? kThingArmedTNTBundle : kThingTNTBarrel;
     spritetype *pBoom = actSpawnThing(pMissile->sectnum, pMissile->x, pMissile->y, pMissile->z, nThing);
     if (pBoom)

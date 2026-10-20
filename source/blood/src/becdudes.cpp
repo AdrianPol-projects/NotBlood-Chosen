@@ -494,6 +494,13 @@ int osdcmd_becinfo(osdcmdptr_t UNUSED(parm))
         OSD_Printf("corpse %d of type %d: seq %d (%d), picnum %d\n", nSprite, (int)pSprite->inittype, seqGetID(3, pSprite->extra),
                    seqGetStatus(3, pSprite->extra), (int)pSprite->picnum);
     }
+    for (int nSprite = headspritestat[kStatDecoration]; nSprite >= 0; nSprite = nextspritestat[nSprite])  // what the dead left
+    {
+        spritetype *pSprite = &sprite[nSprite];
+        int const nPicnum = pSprite->picnum;
+        if ((nPicnum == 5481 || nPicnum == 5558 || nPicnum == 7305 || nPicnum == 7353) && approxDist(pPlayer->x - pSprite->x, pPlayer->y - pSprite->y) <= 8000)
+            OSD_Printf("item %d: picnum %d, dist %d\n", nSprite, nPicnum, approxDist(pPlayer->x - pSprite->x, pPlayer->y - pSprite->y));
+    }
     return OSDCMD_OK;
 }
 

@@ -940,7 +940,7 @@ int aiDamageSprite(spritetype *pSprite, XSPRITE *pXSprite, int nSource, DAMAGE_T
     cumulDamage[pSprite->extra] += nDamage;
     DUDEINFO *pDudeInfo = getDudeInfo(pSprite->type);
     int nSprite = pXSprite->reference;
-    if (nSource >= 0) {
+    if (nSource >= 0 && !becIgnoreAttacker(pSprite, nSource)) { // Blood Extra Crispy's allies don't turn on Caleb
         spritetype *pSource = &sprite[nSource];
         const char bTargetIsAlive = !EnemiesNBlood() || !aiDudeIsDead(nSource); // if target is dude and dude is not dead
         if (pSprite == pSource) return 0;

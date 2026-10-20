@@ -107,8 +107,21 @@ enum
     kBecFlagBellyShot = 16, // or its belly
     kBecFlagLegShot = 32,   // or its legs
     kBecFlagUsed = 64,      // one of the mod's world weapons, used up (a spent mower)
+    kBecFlagAlly = 128,     // fights for Caleb (the mod's _Ally and _Necro enemies): its owner is his sprite
 };
 extern uint8_t gBecFlags[kMaxSprites];
+
+inline bool becIsAlly(int nSprite) { return (gBecFlags[nSprite] & kBecFlagAlly) != 0; }
+
+// allies: Blood's enemies never go for their owner, so with Caleb's sprite as theirs they go for the others
+// (becai.cpp finds them their targets). nTicks: when it's gone again (0: it stays)
+void becMakeAlly(spritetype *pSprite, spritetype *pOwner, int nTicks);
+// in aiDamageSprite: an ally hit by Caleb or another ally doesn't turn on them
+bool becIgnoreAttacker(spritetype *pSprite, int nSource);
+// the Vile Anathema: the corpses Caleb can see rise and fight for him (how many)
+int becRaiseCorpses(spritetype *pCaster, int nRange);
+// a dead enemy's body plays one of the mod's death animations instead (the Phantasm Orb's)
+void becCorpseSeq(spritetype *pSprite, char const *pzSeq);
 
 // a vector hit a dude at that height: the mod's head and belly shots
 void becVectorHit(spritetype *pSprite, DAMAGE_TYPE nDmgType, int nHitZ);
