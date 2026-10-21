@@ -1160,18 +1160,29 @@ int osdcmd_becgive(osdcmdptr_t parm)
 // a sprite of the mod's world weapons in front of Caleb, within reach (the mod's grabDist, grabFOV)
 int inReach(PLAYER *pPlayer, int nPicnum)
 {
+    // the mod's grabDist is 90 of its units (16 of ours each), its grabFOV 180 degrees; the maps' ones are
+    // solid, so Caleb stops a good way off
     spritetype *pSprite = pPlayer->pSprite;
-    int nBest = -1, nBestDist = 160;
+    int nBest = -1, nBestDist = 90 * 16;
+    int16_t nEyeSect = pSprite->sectnum;  // the sector of Caleb's eyes (his sprite's can be the one below a step)
+    updatesectorz(pSprite->x, pSprite->y, pPlayer->zView, &nEyeSect);
+    if (nEyeSect < 0)
+        nEyeSect = pSprite->sectnum;
     for (int nSprite = headspritestat[kStatDecoration]; nSprite >= 0; nSprite = nextspritestat[nSprite])
     {
         spritetype *pItem = &sprite[nSprite];
-        if (pItem->picnum != nPicnum || (gBecFlags[nSprite] & kBecFlagUsed))
+        if (pItem->picnum != nPicnum || (gBecFlags[nSprite] & kBecFlagUsed) || (pItem->cstat & CSTAT_SPRITE_INVISIBLE))
             continue;
         int const dx = pItem->x - pSprite->x, dy = pItem->y - pSprite->y;
         int const nDist = approxDist(dx, dy);
         int const nAngle = klabs(((getangle(dx, dy) + 1024 - pSprite->ang) & 2047) - 1024);
-        if (nDist < nBestDist && nAngle < 256 && klabs(pItem->z - pSprite->z) < (64 << 8))
-            nBest = nSprite, nBestDist = nDist;
+        if (nDist >= nBestDist || nAngle >= 512 || klabs(pItem->z - pSprite->z) >= (64 << 8))
+            continue;
+        int top, bottom;
+        GetSpriteExtents(pItem, &top, &bottom);
+        if (!cansee(pSprite->x, pSprite->y, pPlayer->zView, nEyeSect, pItem->x, pItem->y, (top + bottom) / 2, pItem->sectnum))
+            continue;
+        nBest = nSprite, nBestDist = nDist;
     }
     return nBest;
 }
@@ -1286,7 +1297,8 @@ int osdcmd_becput(osdcmdptr_t parm)
         pItem->picnum = nPicnum;
         pItem->xrepeat = pItem->yrepeat = nPicnum == kMaximPicnum ? 24 : 48;
         pItem->ang = pSprite->ang;
-        pItem->cstat = 0;
+        pItem->cstat = CSTAT_SPRITE_BLOCK | CSTAT_SPRITE_BLOCK_HITSCAN;  // solid, as the maps have them
+        pItem->clipdist = 32;
         pItem->type = 0;
     }
     return OSDCMD_OK;

@@ -91,6 +91,7 @@ enum
     kSfxGillDie1 = 1703, kSfxIDonHme = 7002, kSfxIScream1 = 7007, kSfxPFlesh = 503, kSfxCerbPain = 1302,
     kSfxCerbDie1 = 1303, kSfxPhanSpot = 1600, kSfxPhanDie1 = 1603, kSfxPlay1109 = 734,
     kSfxGorBone = 22161, kSfxGorHead = 22162, kSfxGorRan1 = 22164, kSfxGorRip1 = 22167, kSfxDemMel1 = 22112,
+    kSfxCriDie1 = 22146, kSfxDogDie = 22249, kSfxDogPai = 22251, kSfxSZomDie = 22462, kSfxSZomPai = 22463,
 };
 
 #define SND(t, s) { t, kEvSound, 0, s }
@@ -136,6 +137,22 @@ GKEVENT const gEvHellHound[] = {
 GKEVENT const gEvPhantasm[] = {
     SND(120, kSfxPhanSpot), SND(100, kSfxPhanSpot), SND(56, kSfxAZomSwip), SND(50, kSfxGorHead),
     SNDR(50, kSfxPhanDie1, 2), LAUGH(50), END };
+// the mod's own enemies (BEC_Players.txt HUDQAVType 15, 500, 67, 68, 670, 70)
+GKEVENT const gEvCrimson[] = {
+    SND(120, kSfxGorBone), SNDR(90, kSfxCriDie1, 2), SND(90, kSfxGorHead), LAUGH(90),
+    SND(36, kSfxDemMel1), SND(30, kSfxPunt), BODY(20), END };
+GKEVENT const gEvSkeletal[] = {
+    SND(100, kSfxSZomPai), SND(90, kSfxSZomPai), SND(80, kSfxSZomDie), SND(80, kSfxGorRip1), LAUGH(80),
+    SND(26, kSfxDemMel1), SND(20, kSfxPunt), BODY(10), END };
+GKEVENT const gEvZomHead[] = {
+    SND(60, kSfxAZomPain), SND(50, kSfxAZomPain), SNDR(30, kSfxAZomDie1, 2), SND(30, kSfxGorHead), LAUGH(30), END };
+GKEVENT const gEvZomHalf[] = {
+    SND(60, kSfxAZomPain), SND(50, kSfxAZomPain), SNDR(30, kSfxAZomDie1, 2), SND(30, kSfxGorHead), LAUGH(30), BODY(30), END };
+GKEVENT const gEvSkeletalHead[] = {
+    SND(60, kSfxSZomPai), SND(50, kSfxSZomPai), SND(30, kSfxSZomDie), SND(30, kSfxGorHead), LAUGH(30), END };
+GKEVENT const gEvDog[] = {
+    SND(90, kSfxDogPai), SND(90, kSfxGorHead), SND(60, kSfxDogPai), SND(60, kSfxGorHead), SND(30, kSfxDogDie),
+    SND(30, kSfxGorHead), LAUGH(30), BODY(20), END };
 
 // the mod's distances: 128 (most) and 85 of its units, 16 Build units each
 enum { kNear = 2048, kNearer = 1360 };
@@ -148,7 +165,9 @@ enum { kKickDelay = 60 };
 
 // always kicked (no Gory Kill for them): burning ones and beasts, as in the mod's list
 short const gAlwaysKicked[] = { kDudeBurningInnocent, kDudeBurningCultist, kDudeBurningZombieAxe, kDudeBurningZombieButcher,
-                                kDudeBurningBeast, kDudeBeast, kDudeCultistBeast };
+                                kDudeBurningBeast, kDudeBeast, kDudeCultistBeast,
+                                // and the mod's new ones that walk about
+                                kDudeBecNecromancer, kDudeBecLich, kDudeBecMonsterDog, kDudeBecZomSlime, kDudeBecInferno };
 
 GKDEF const gKills[] = {
     { { kDudeCultistTommy, kDudeCultistTommyProne }, 200, kNear, 140, 626, 689, 15034, gEvCultist },
@@ -162,6 +181,12 @@ GKDEF const gKills[] = {
     { { kDudeInnocent }, -1, kNearer, 140, 640, 683, 13830, gEvInnocent },
     { { kDudeHellHound }, 200, kNear, 140, 662, 682, 5633, gEvHellHound },
     { { kDudePhantasm }, 200, kNearer, 140, 663, 681, 0, gEvPhantasm },
+    { { kDudeBecCrimson, kDudeBecCrimsonEarth }, 200, kNearer, 140, 693, 694, 14858, gEvCrimson },
+    { { kDudeBecZombieSkeletal, kDudeBecZombieSkeletalEarth, kDudeBecZombieSkeletalSleep }, 200, kNearer, 130, 857, 858, 14994, gEvSkeletal },
+    { { kDudeBecZomHalf }, -1, kNear, 80, 787, 788, 13825, gEvZomHalf },
+    { { kDudeBecZomHead }, -1, kNear, 80, 787, 788, 0, gEvZomHead },
+    { { kDudeBecZomSkeletalHead }, -1, kNear, 80, 859, 860, 0, gEvSkeletalHead },
+    { { kDudeBecDog }, -1, kNear, 120, 875, 876, 15030, gEvDog },
 };
 
 enum { kScreenBloodTime = 90 };
