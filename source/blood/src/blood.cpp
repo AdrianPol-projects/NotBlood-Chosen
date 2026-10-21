@@ -985,6 +985,11 @@ void StartLevel(GAMEOPTIONS *pOpt)
     gGameStarted = 1;
     ready2send = 1;
     gAutosaveInCurLevel = false;
+    if (gNetBuildWarning[0]) // joined a host with another build (network.cpp)
+    {
+        viewSetMessage(gNetBuildWarning, 0, MESSAGE_PRIORITY_SYSTEM);
+        gNetBuildWarning[0] = '\0';
+    }
     botLevelStart();
     if (bTriggerAutosave && !pOpt->bPermaDeath)
         AutosaveGame(true); // create autosave at start of the new level

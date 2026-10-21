@@ -52,6 +52,7 @@ void becWeaponMountedInput(PLAYER *pPlayer, bool bRun);
 
 void becWeaponsLevelStart(bool bSaveLoad);
 void becWeaponsPrecache(void);  // in Blood's level preload: the carried weapons' animations
+void becWeaponsHudDraw(PLAYER *pPlayer);  // the mod's HUD pictures (with the screen blood)
 void becWeaponsFrame(void);
 
 // for the weapon switch list: the mod's weapon in hand (its name and picture), NULL for none

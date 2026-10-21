@@ -127,6 +127,14 @@ enum { kPickupSound = 22071 };  // the mod's weapon pickups' pickup.pickupSound
 
 WSTATE gWState[kMaxPlayers];
 
+// the weather and the HUD's flashes (further down)
+extern int gLightning[kMaxPlayers];
+extern int gSkullShot[kMaxPlayers];
+uint8_t gWeather[kMaxSprites];       // a weather marker's kind (kWeather...)
+int32_t gWeatherTimer[kMaxSprites];  // the artillery's next shell (frames)
+int32_t gThunderNext;                // the storm's next thunder (gFrameClock)
+void weatherLevelStart(void);
+
 struct CTX;
 
 struct WEAPON
@@ -1460,9 +1468,37 @@ int osdcmd_bectestbot(osdcmdptr_t parm)
 {
     if (parm->numparms < 1 || !gGameStarted || !gMe || !gMe->pSprite)
         return OSDCMD_SHOWHELP;
+    if (!Bstrcasecmp(parm->parms[0], "weather"))  // the level's weather markers; you go to the nearest
+    {
+        spritetype *pSprite = gMe->pSprite, *pNearest = NULL;
+        int nNearest = INT_MAX;
+        for (int nSprite = headspritestat[kStatDecoration]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+        {
+            if (!gWeather[nSprite])
+                continue;
+            int const nDist = approxDist(sprite[nSprite].x - pSprite->x, sprite[nSprite].y - pSprite->y);
+            OSD_Printf("weather %d at sprite %d, %d away, sector %d %s\n", gWeather[nSprite], nSprite, nDist, sprite[nSprite].sectnum,
+                       (sector[sprite[nSprite].sectnum].ceilingstat & 1) ? "(sky)" : "");
+            if (nDist < nNearest)
+                nNearest = nDist, pNearest = &sprite[nSprite];
+        }
+        if (pNearest && parm->numparms > 1)
+        {
+            int ceilZ, floorZ;
+            getzsofslope(pNearest->sectnum, pNearest->x, pNearest->y, &ceilZ, &floorZ);
+            vec3_t pos = { pNearest->x, pNearest->y, floorZ };
+            setsprite(pSprite->index, &pos);
+        }
+        return OSDCMD_OK;
+    }
     if (!Bstrcasecmp(parm->parms[0], "puke") || !Bstrcasecmp(parm->parms[0], "blood"))
     {
         goryKillScreenPuke(gMe, !Bstrcasecmp(parm->parms[0], "blood"));
+        if (!Bstrcasecmp(parm->parms[0], "puke"))
+        {
+            gMe->pwUpTime[kPwUpDeliriumShroom] = ClipLow(gMe->pwUpTime[kPwUpDeliriumShroom], 3 * kTicRate);
+            powerupActivate(gMe, kPwUpDeliriumShroom);
+        }
         return OSDCMD_OK;
     }
     int const n = atoi(parm->parms[0]);
@@ -1484,6 +1520,9 @@ class BecWeaponsLoadSave : public LoadSave
         Read(gSpellKind, sizeof(gSpellKind));
         Read(gSpellTime, sizeof(gSpellTime));
         Read(gSpellTarget, sizeof(gSpellTarget));
+        Read(gWeather, sizeof(gWeather));
+        Read(gWeatherTimer, sizeof(gWeatherTimer));
+        Read(&gThunderNext, sizeof(gThunderNext));
     }
     virtual void Save(void)
     {
@@ -1492,6 +1531,9 @@ class BecWeaponsLoadSave : public LoadSave
         Write(gSpellKind, sizeof(gSpellKind));
         Write(gSpellTime, sizeof(gSpellTime));
         Write(gSpellTarget, sizeof(gSpellTarget));
+        Write(gWeather, sizeof(gWeather));
+        Write(gWeatherTimer, sizeof(gWeatherTimer));
+        Write(&gThunderNext, sizeof(gThunderNext));
     }
 };
 
@@ -1716,6 +1758,58 @@ int becWeaponAmmo(PLAYER *pPlayer)
     if (!bActive || nWeapon < 0 || nWeapon == kBecTurret)  // the gun on its stand never runs out
         return -1;
     return ammoOf(pPlayer, nWeapon);
+}
+
+// the mod's HUD pictures (BEC_Players.txt, weapon_pitchfork.txt; its HUD is 320x240, ours 320x200 with the
+// status bar at the bottom): the revolvers' Purify (left) and Purge (right) with their countdowns, the
+// Necromancer's things carried, the skull turret on the shoulder, the lightning's flash
+static void hudDigits(int x, int y, int nValue, int nFlags)
+{
+    char buffer[8];
+    Bsnprintf(buffer, sizeof(buffer), "%02d", ClipRange(nValue, 0, 99));
+    for (int i = 0; buffer[i]; i++)
+        rotatesprite((x + i * 4) << 16, y << 16, 65536, 0, 5050 + buffer[i] - '0', 0, 0, nFlags, 0, 0, xdim - 1, ydim - 1);
+}
+
+void becWeaponsHudDraw(PLAYER *pPlayer)
+{
+    if (!bActive || !pPlayer)
+        return;
+    WSTATE const *pState = &gWState[pPlayer->nPlayer];
+    int const nPlayer = pPlayer->nPlayer;
+    if (gLightning[nPlayer] > 0 && tilesiz[5924].x > 0)
+        rotatesprite(160 << 16, 100 << 16, 65536, 0, 5924, -128, 0, RS_AUTO | RS_STRETCH | RS_TRANS1, 0, 0, xdim - 1, ydim - 1);
+    if (!pPlayer->pXSprite || pPlayer->pXSprite->health <= 0)
+        return;
+    int const nBottom = 163;  // just above the status bar
+    if (pState->nActive == kBecRevolvers && pState->nPhase != kPhaseLower)
+    {
+        int const nLeft = RS_AUTO | RS_ALIGN_L, nRight = RS_AUTO | RS_ALIGN_R;
+        bool const bPurifyReady = pState->nPurify <= 0 && pState->nPurifyWait <= 0;
+        rotatesprite(12 << 16, nBottom << 16, 65536, 0, bPurifyReady ? 5118 : 5117, 0, 0, nLeft, 0, 0, xdim - 1, ydim - 1);
+        if (pState->nPurifyWait > 0)
+            hudDigits(27, nBottom, pState->nPurifyWait / kTicsPerSec + 1, nLeft);
+        rotatesprite(307 << 16, nBottom << 16, 65536, 0, pState->nPurgeWait > 0 ? 5061 : 5062, 0, 0, nRight, 0, 0, xdim - 1, ydim - 1);
+        if (pState->nPurgeWait > 0)
+            hudDigits(288, nBottom, pState->nPurgeWait / kTicsPerSec + 1, nRight);
+    }
+    // the things the dead left, carried (a small picture each, right)
+    static struct { int8_t nWeapon; short nTile; short x; } const gCarried[] = {
+        { kBecAnathema, 5219, 292 }, { kBecAxe, 5596, 300 }, { kBecOrb, 5597, 308 }, { kBecChronometer, 7364, 316 },
+    };
+    for (auto const &c : gCarried)
+        if (usable(pPlayer, c.nWeapon) && tilesiz[c.nTile].x > 0)
+            rotatesprite(c.x << 16, (nBottom - 14) << 16, 65536 / 8, 0, c.nTile, 0, 0, RS_AUTO | RS_ALIGN_R, 0, 0, xdim - 1, ydim - 1);
+    // the Vile Anathema's skull on his shoulder while its skulls fly, and their time
+    if (pState->nSkulls > 0)
+    {
+        int const nTile = gSkullShot[nPlayer] > 0 ? ((gSkullShot[nPlayer] & 1) ? 7849 : 7854) : 7841;
+        if (gSkullShot[nPlayer] > 0)
+            gSkullShot[nPlayer]--;
+        if (tilesiz[nTile].x > 0)
+            rotatesprite(30 << 16, 120 << 16, 65536, 0, nTile, 0, 0, RS_AUTO | RS_ALIGN_L, 0, 0, xdim - 1, ydim - 1);
+        hudDigits(24, 45, pState->nSkulls / kTicsPerSec + 1, RS_AUTO | RS_ALIGN_L);
+    }
 }
 
 bool becWeaponUse(PLAYER *pPlayer)
@@ -2008,17 +2102,185 @@ void becWeaponsPrecache(void)
 // the mod's weapons its maps place: pictures (decorations) its scripts turn into them
 void becWeaponsLevelStart(bool bSaveLoad)
 {
-    if (!bActive)
+    if (!bActive || bSaveLoad)  // a saved game brings its own
         return;
     memset(gMissileBoom, 0, sizeof(gMissileBoom));
     memset(gSpellKind, 0, sizeof(gSpellKind));
     memset(gSpellTime, 0, sizeof(gSpellTime));
     memset(gSpellTarget, 0, sizeof(gSpellTarget));
-    UNREFERENCED_PARAMETER(bSaveLoad);
+    weatherLevelStart();
 }
 
 namespace
 {
+//
+// the mod's weather (WeatherMaker.txt): its maps mark where with pictures (6421-6427, 6444, 6445). Near
+// one, rain, a storm (thunder and lightning), blood rain or snow falls around each player under the sky;
+// the artillery marker drops shells about itself now and then. (The mod sends invisible missiles that
+// drop the drops; here they're Blood's falling effects, made where the players are.)
+//
+
+enum { kWeatherNone, kWeatherRain, kWeatherStorm, kWeatherBloodRain, kWeatherSnow, kWeatherArtillery };
+enum { kWeatherRange = 25000 };  // how near a marker the players get its weather
+
+int gLightning[kMaxPlayers];         // frames left of the lightning's flash (drawn only)
+int gSkullShot[kMaxPlayers];         // frames left of the skull turret's fire picture (drawn only)
+
+void weatherLevelStart(void)
+{
+    memset(gWeather, 0, sizeof(gWeather));
+    memset(gWeatherTimer, 0, sizeof(gWeatherTimer));
+    gThunderNext = 0;
+    for (int nSprite = headspritestat[kStatDecoration]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+    {
+        spritetype *pMarker = &sprite[nSprite];
+        int nKind = kWeatherNone;
+        switch (pMarker->picnum)
+        {
+        case 6421: nKind = kWeatherArtillery; break;
+        case 6422: nKind = kWeatherBloodRain; break;
+        case 6424: case 6425: nKind = kWeatherRain; break;
+        case 6426: case 6445: nKind = kWeatherSnow; break;
+        case 6427: case 6444: nKind = kWeatherStorm; break;
+        }
+        if (!nKind)
+            continue;
+        gWeather[nSprite] = nKind;
+        gWeatherTimer[nSprite] = (3 + Random(15)) * kTicsPerSec;
+        pMarker->cstat |= CSTAT_SPRITE_INVISIBLE;
+        pMarker->cstat &= ~(CSTAT_SPRITE_BLOCK | CSTAT_SPRITE_BLOCK_HITSCAN);
+    }
+}
+
+// a drop where a player is: somewhere under the sky within reach of him
+void weatherDrop(spritetype *pPlayer, int nKind)
+{
+    int const x = pPlayer->x + Random2(3000), y = pPlayer->y + Random2(3000);
+    int16_t nSector = pPlayer->sectnum;
+    updatesector(x, y, &nSector);
+    if (nSector < 0 || !(sector[nSector].ceilingstat & 1))
+        return;
+    int ceilZ, floorZ;
+    getzsofslope(nSector, x, y, &ceilZ, &floorZ);
+    // snow lives a second (Blood's slow drift): it starts nearer the eyes
+    int const z = max(ceilZ + (8 << 8), pPlayer->z - ((nKind == kWeatherSnow ? 110 : 192) << 8));
+    if (z >= floorZ - (16 << 8))
+        return;
+    FX_ID const nFx = nKind == kWeatherBloodRain ? FX_13 : nKind == kWeatherSnow ? FX_28 : FX_16;
+    spritetype *pDrop = gFX.fxSpawn(nFx, nSector, x, y, z, 0);
+    if (!pDrop)
+        return;
+    switch (nKind)
+    {
+    case kWeatherSnow:  // MISSILE_SnowFall: slow, drifting
+        pDrop->picnum = 5467;
+        pDrop->xrepeat = pDrop->yrepeat = 16;
+        zvel[pDrop->index] = 0x10000;
+        xvel[pDrop->index] = Random2(0x8000);
+        yvel[pDrop->index] = Random2(0x8000);
+        break;
+    case kWeatherBloodRain:  // MISSILE_BloodRain: it splats where it lands
+        pDrop->picnum = 4741;
+        pDrop->xrepeat = pDrop->yrepeat = 32;
+        zvel[pDrop->index] = 0x80000;
+        break;
+    default:  // MISSILE_StormRain / RainFall: a streak of water
+        pDrop->picnum = 1147;
+        pDrop->xrepeat = 24;
+        pDrop->yrepeat = 128;
+        zvel[pDrop->index] = 0xc0000;
+        break;
+    }
+}
+
+// a shell from the sky (MISSILE_Artillery): it whistles down near its marker and blows up
+void weatherShell(spritetype *pMarker)
+{
+    int const x = pMarker->x + Random2(4000), y = pMarker->y + Random2(4000);
+    int16_t nSector = pMarker->sectnum;
+    updatesector(x, y, &nSector);
+    if (nSector < 0 || !(sector[nSector].ceilingstat & 1))
+        return;
+    int ceilZ, floorZ;
+    getzsofslope(nSector, x, y, &ceilZ, &floorZ);
+    vec3_t pos = { x, y, ceilZ + (16 << 8) };
+    setsprite(pMarker->index, &pos);  // the marker is where it comes from
+    nFiringBoom = kBoomStandard;
+    spritetype *pShell = actFireMissile(pMarker, 0, 0, 0, 0, 1 << 14, kMissileFireballNapalm);
+    nFiringBoom = kBoomNone;
+    if (!pShell)
+        return;
+    pShell->picnum = 5845;
+    pShell->xrepeat = pShell->yrepeat = 48;
+    gMissileBoom[pShell->index] = kBoomStandard;
+    if (pShell->extra > 0)
+        seqKill(3, pShell->extra);
+    sfxPlay3DSound(pShell, becDefine("SFX_SHELL1", -1) + Random(2), -1, 0);
+}
+
+void weather(void)
+{
+    bool bAny = false;
+    for (int nSprite = headspritestat[kStatDecoration]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+        bAny |= gWeather[nSprite] != kWeatherNone;
+    if (!bAny)
+        return;
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        PLAYER *pPlayer = &gPlayer[p];
+        if (gLightning[p] > 0)
+            gLightning[p]--;
+        if (!pPlayer->pSprite || !pPlayer->pXSprite || pPlayer->pXSprite->health <= 0)
+            continue;
+        spritetype *pSprite = pPlayer->pSprite;
+        uint32_t nKinds = 0;  // the weathers near him
+        for (int nSprite = headspritestat[kStatDecoration]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+            if (gWeather[nSprite] && gWeather[nSprite] != kWeatherArtillery
+                && approxDist(sprite[nSprite].x - pSprite->x, sprite[nSprite].y - pSprite->y) < kWeatherRange)
+                nKinds |= 1u << gWeather[nSprite];
+        for (int nKind = kWeatherRain; nKind <= kWeatherSnow; nKind++)
+        {
+            if (!((nKinds >> nKind) & 1))
+                continue;
+            int const nDrops = nKind == kWeatherStorm ? 6 : nKind == kWeatherRain ? 4 : nKind == kWeatherSnow ? 8 : 3;
+            for (int i = 0; i < nDrops; i++)
+                weatherDrop(pSprite, nKind == kWeatherStorm ? kWeatherRain : nKind);
+        }
+        // the storm: thunder now and then, and the flash of the lightning
+        if ((nKinds >> kWeatherStorm) & 1)
+        {
+            int const nNow = (int)gFrameClock;
+            if (!gThunderNext)
+                gThunderNext = nNow + (10 + Random(20)) * kTicRate;
+            else if (nNow >= gThunderNext)
+            {
+                gThunderNext = nNow + (10 + Random(20)) * kTicRate;
+                for (int q = connecthead; q >= 0; q = connectpoint2[q])
+                {
+                    if (!gPlayer[q].pSprite)
+                        continue;
+                    gLightning[q] = 6;
+                    sfxPlay3DSound(gPlayer[q].pSprite, becDefine("SFX_THUNDER1", -1), -1, 0);
+                }
+            }
+        }
+    }
+    // the artillery: a shell every few seconds while somebody is about
+    for (int nSprite = headspritestat[kStatDecoration]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+    {
+        if (gWeather[nSprite] != kWeatherArtillery)
+            continue;
+        bool bNear = false;
+        for (int p = connecthead; p >= 0 && !bNear; p = connectpoint2[p])
+            if (spritetype *pPlayer = gPlayer[p].pSprite)
+                bNear = approxDist(pPlayer->x - sprite[nSprite].x, pPlayer->y - sprite[nSprite].y) < kWeatherRange;
+        if (!bNear || --gWeatherTimer[nSprite] > 0)
+            continue;
+        gWeatherTimer[nSprite] = (3 + Random(17)) * kTicsPerSec;
+        weatherShell(&sprite[nSprite]);
+    }
+}
+
 // the AA guns (BEC_Players.txt): volleys of eleven flak shells into the sky while you're about
 int16_t gAADelay[kMaxSprites];
 int8_t gAAVolley[kMaxSprites];
@@ -2322,6 +2584,7 @@ void playerSpells(PLAYER *pPlayer)
         if (pSkull)
             pSkull->picnum = kSkullPicnum;
         sfxPlay3DSound(pSprite, becDefine("SFX_GORGEF2", -1), -1, 0);
+        gSkullShot[pPlayer->nPlayer] = 3;
     }
 }
 } // namespace
@@ -2333,6 +2596,7 @@ void becWeaponsFrame(void)
         return;
     aaGuns();
     spellMissiles();
+    weather();
     struct PLACED { short nPicnum; int8_t nWeapon; };
     static PLACED const gPlaced[] = {
         { 4725, kBecTrench },
@@ -2384,7 +2648,15 @@ bool becImpactMissile(spritetype *pMissile, int nHitCode)
     // on the screen until he wipes it off (USE), as the mod's ScreenPuke
     if (pMissile->type == kMissilePukeGreen && nHitCode == 3 && gHitInfo.hitsprite >= 0 && gHitInfo.hitsprite < kMaxSprites
         && IsPlayerSprite(&sprite[gHitInfo.hitsprite]))
-        goryKillScreenPuke(&gPlayer[sprite[gHitInfo.hitsprite].type - kDudePlayer1], pMissile->pal == 2);
+    {
+        PLAYER *pVictim = &gPlayer[sprite[gHitInfo.hitsprite].type - kDudePlayer1];
+        goryKillScreenPuke(pVictim, pMissile->pal == 2);
+        if (pMissile->pal != 2)  // the green makes his head swim (the mod's PU_DELIRIUM), as the shroom does
+        {
+            pVictim->pwUpTime[kPwUpDeliriumShroom] = ClipLow(pVictim->pwUpTime[kPwUpDeliriumShroom], 3 * kTicRate);
+            powerupActivate(pVictim, kPwUpDeliriumShroom);
+        }
+    }
     int const nBoom = gMissileBoom[pMissile->index] ? gMissileBoom[pMissile->index] : nFiringBoom;
     if (!nBoom)
         return false;

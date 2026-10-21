@@ -32,6 +32,7 @@ See the GNU General Public License for more details.
 #include "common_game.h"
 #include "actor.h"
 #include "becai.h"
+#include "becdefs.h"
 #include "becdudes.h"
 #include "becweapons.h"
 #include "blood.h"
@@ -291,6 +292,53 @@ void throwBody(PLAYER *pPlayer, GKDEF const *pDef)
         fxSpawnBlood(pThing, 0);
 }
 
+// the things the mod's kick also takes (BEC_Players.txt Iteration3): severed heads and other gibs fly
+// off, an Odious Headstone gets the hard kick, the soul gib (2400) lets out a life essence
+enum { kKickGib = 1, kKickStone, kKickSoul };
+
+int kickKind(spritetype *pThing)
+{
+    if (pThing->statnum != kStatThing || (pThing->cstat & CSTAT_SPRITE_INVISIBLE))
+        return 0;
+    if (gBecFlags[pThing->index] & kBecFlagStone)
+        return pThing->extra > 0 && xsprite[pThing->extra].health > 0 ? kKickStone : 0;
+    switch (pThing->picnum)
+    {
+    case 1098: case 2548: case 2447:
+        return kKickGib;
+    case 2400:
+        return kKickSoul;
+    }
+    return 0;
+}
+
+void kickThing(PLAYER *pPlayer, spritetype *pThing)
+{
+    spritetype *pSprite = pPlayer->pSprite;
+    int const nKind = kickKind(pThing);
+    int const dx = pThing->x - pSprite->x, dy = pThing->y - pSprite->y;
+    if (!nKind || approxDist(dx, dy) > kNearer + (pThing->clipdist << 2))
+        return;
+    int const nAngle = getangle(dx, dy);
+    sfxPlay3DSound(pThing, kSfxPunt, -1, 0);
+    switch (nKind)
+    {
+    case kKickGib:  // off it goes
+        xvel[pThing->index] += mulscale30(0x140000, Cos(nAngle));
+        yvel[pThing->index] += mulscale30(0x140000, Sin(nAngle));
+        zvel[pThing->index] -= 0x60000;
+        break;
+    case kKickStone:  // the hard kick: three of them break it
+        actDamageSprite(pSprite->index, pThing, kDamageExplode, 34 << 4);
+        break;
+    case kKickSoul:  // the soul goes free, and leaves its essence
+        actDropObject(pThing, kItemHealthLifeEssense);
+        sfxPlay3DSound(pThing, kSfxPhanDie1, -1, 0);
+        actPostSprite(pThing->index, kStatFree);
+        break;
+    }
+}
+
 // the kick lands on the enemy it was aimed at: the mod's three BV_QUICKKICK hits, each 4 damage (pummel)
 // and a hard push (its thrust 250.33; the pitchfork's 42.67 is Blood's 174762), if it's still in reach
 void kick(PLAYER *pPlayer, int nTarget)
@@ -299,6 +347,11 @@ void kick(PLAYER *pPlayer, int nTarget)
         return;
     spritetype *pSprite = pPlayer->pSprite;
     spritetype *pDude = &sprite[nTarget];
+    if (pDude->statnum == kStatThing)
+    {
+        kickThing(pPlayer, pDude);
+        return;
+    }
     if (pDude->statnum != kStatDude || pDude->extra <= 0 || xsprite[pDude->extra].health <= 0)
         return;
     int const dx = pDude->x - pSprite->x, dy = pDude->y - pSprite->y;
@@ -565,6 +618,40 @@ bool goryKillTryStart(PLAYER *pPlayer)
             nKickDist = nDist;
         }
     }
+    // things: a cultist lying there shot in the belly, suffering (the mod's kill of that cultist), and
+    // what can be kicked
+    bool bCorpse = false;
+    for (int nSprite = headspritestat[kStatThing]; nSprite >= 0; nSprite = nextspritestat[nSprite])
+    {
+        spritetype *pThing = &sprite[nSprite];
+        GKDEF const *pDef = NULL;
+        if (pThing->type == kThingBloodChunks && pThing->extra > 0 && xsprite[pThing->extra].data1 != 8)
+        {
+            static char const *const gSuffer[4] = { "SEQ_CU1SUF1", "SEQ_CU2SUF1", "SEQ_CU3SUF1", "SEQ_CU4SUF1" };
+            int const nSeq = seqGetID(3, pThing->extra);
+            for (int i = 0; i < 4 && nSeq > 0; i++)
+                if (nSeq == becDefine(gSuffer[i], -1))
+                    pDef = &gKills[i];
+        }
+        bool const bKickable = !pDef && kickKind(pThing) != 0;
+        if (!pDef && !bKickable)
+            continue;
+        int const dx = pThing->x - pSprite->x, dy = pThing->y - pSprite->y;
+        int const nDist = approxDist(dx, dy);
+        if (nDist > kNearer || klabs(pThing->z - pSprite->z) > (kNearer << 4))
+            continue;
+        int const nAngle = (getangle(dx, dy) - pSprite->ang) & 2047;
+        if (nAngle > 512 && nAngle < 1536)
+            continue;
+        int nTop, nBottom;
+        GetSpriteExtents(pThing, &nTop, &nBottom);
+        if (!cansee(pSprite->x, pSprite->y, pPlayer->zView, nEyeSect, pThing->x, pThing->y, (nTop + nBottom) >> 1, pThing->sectnum))
+            continue;
+        if (pDef && nDist < nBestDist)
+            nBest = nSprite, nBestDist = nDist, pBestDef = pDef, bCorpse = true;
+        else if (bKickable && nDist < nKickDist)
+            nKick = nSprite, nKickDist = nDist;
+    }
     if (nBest < 0 && (nKick < 0 || pState->nKickDelay > 0))
         return false;
     GKDEF const *pStart = nBest >= 0 ? pBestDef : &gKick;
@@ -589,6 +676,11 @@ bool goryKillTryStart(PLAYER *pPlayer)
     }
 
     spritetype *pDude = &sprite[nBest];
+    if (bCorpse)  // the suffering cultist: no more of him
+    {
+        actPostSprite(nBest, kStatFree);
+        return true;
+    }
     if (IsPlayerSprite(pDude))  // another player: dies (Caleb's frag), his body stays
     {
         LOG_F(INFO, "Gory Kill: player %d finished off player %d", pPlayer->nPlayer, pDude->type - kDudePlayer1);
@@ -665,6 +757,7 @@ void goryKillDrawScreenBlood(PLAYER *pPlayer)
 {
     if (!pPlayer)
         return;
+    becWeaponsHudDraw(pPlayer);  // the mod's HUD pictures, under the blood and puke
     GKSTATE *pState = &gState[pPlayer->nPlayer];
     if (pState->nPuke > 0)
     {

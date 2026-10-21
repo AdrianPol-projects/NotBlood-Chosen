@@ -34,6 +34,7 @@ See the GNU General Public License for more details.
 #include "becai.h"
 #include "becdefs.h"
 #include "becdudes.h"
+#include "becweapons.h"
 #include "blood.h"
 #include "choke.h"
 #include "db.h"
@@ -915,6 +916,7 @@ spritetype *becSpawnDude(spritetype *pSource, int nType, int x, int y, int z, in
 void becLevelStart(bool bSaveLoad)
 {
     becVoxelsLevel();  // the 3D models this level shows (a saved game's too)
+    becWeaponsLevelStart(bSaveLoad);  // the weapons' and spells' tables, the weather
     if (bSaveLoad)
         return;
     memset(gBecFlags, 0, sizeof(gBecFlags));

@@ -111,6 +111,7 @@ struct PKT_STARTGAME {
 };
 
 extern PKT_STARTGAME gPacketStartGame;
+extern char gNetBuildWarning[160];
 
 
 inline void PutPacketByte(char *&p, int a2)

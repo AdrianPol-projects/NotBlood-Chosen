@@ -15,8 +15,10 @@ A test of the *Blood Extra Crispy* mod (by VGames, for Nightdive's Refreshed Sup
 - **Its sounds.**
 - **Its maps:** the mod's versions of the official levels, with its extra decorations, gore and enemies.
 - **Gory Kills:** walk up to a nearly dead enemy, face it and press **USE**. Caleb finishes it in first person, heals a little, and kicks the body away. They work on cultists (all four), axe zombies, fat zombies, flesh gargoyles, gill beasts, innocents, hell hounds and phantasms, and on the mod's Crimson Innocents, Skeletal Zombies, crawling half zombies, zombie heads and attack dogs. The enemy must be badly hurt (below about 12 health), except innocents, heads, half zombies and dogs.
-- **Puke on your face** (fat zombies, pods, and the red blood of Crimson Innocents) stays on the screen until you press **USE**: Caleb wipes it off with his hand.
-- **Quick kick:** USE on an enemy that isn't hurt enough shows Caleb's foot and kicks it back. Burning enemies, beasts, Necromancers, Liches, Monster Dogs, Slime Zombies and the Inferno always get kicked. You can kick once a second.
+- **Its weather:** rain, storms (thunder and lightning), blood rain and snow fall where its maps have them, under the open sky; on E3M2 artillery shells come down.
+- **Its HUD:** the revolvers' Purify (left) and Purge (right) with their countdowns, small pictures of the things the dead left that you carry, and the Vile Anathema's skull on your shoulder while its skulls fly.
+- **Puke on your face** (fat zombies, pods, and the red blood of Crimson Innocents) stays on the screen until you press **USE**: Caleb wipes it off with his hand. The green one makes your view swim for a moment.
+- **Quick kick:** USE on an enemy that isn't hurt enough shows Caleb's foot and kicks it back. Burning enemies, beasts, Necromancers, Liches, Monster Dogs, Slime Zombies and the Inferno always get kicked. You can kick once a second. A cultist lying shot in the belly, suffering, is finished off with USE; severed heads and gibs can be kicked away; an Odious Headstone breaks after three kicks.
 - **In Bloodbath and team games** you can kick other players too, and finish off one who is nearly dead (it counts as your frag). Not your team mates, and not in co-op.
 - **Bots** (MULTIPLAYER > PLAY WITH BOTS, or bots in a network game) pick up and use the mod's weapons, and kick and finish off other players.
 - **Its new enemies,** with the mod's own pictures, sounds and behaviour (read from your copy of the mod):
@@ -49,6 +51,8 @@ A test of the *Blood Extra Crispy* mod (by VGames, for Nightdive's Refreshed Sup
 - **Allies** (the Codex's gargoyles, the risen dead) don't attack you, and autoaim skips them. They don't count as kills.
 
 **Not included (yet):** the Hero/Slasher powerups (Ash, Draven, Candyman, Leatherface, the Terminator, Krueger, Voorhees), Wrath Demon Mode, the Sword, the mod's changes to Blood's own weapons, and flying the Phantasm Orb by hand (its alt fire throws it like fire does).
+
+**Playing together:** everybody needs this same build with the mod chosen. If the host has another build, who joins gets a warning when the game starts (it still starts, but it can get out of sync).
 
 To play the normal game again: MODS > ORIGINAL GAME.
 

@@ -48,6 +48,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "view.h"
 
 char packet[576];
+char gNetBuildWarning[160];  // shown when the game starts: the host's build isn't ours
 bool gStartNewGame = 0;
 PACKETMODE gPacketMode = PACKETMODE_1;
 ClockTicks gNetFifoClock = 0;
@@ -1245,6 +1246,11 @@ void netInitialize(bool bConsole)
         Bstrncpyz(connectinfo.szVersion, onlineVersion(), sizeof(connectinfo.szVersion));
         Bstrncpyz(connectinfo.szMod, modCurrentName(), sizeof(connectinfo.szMod));
         PutPacketBuffer(pPacket, &connectinfo, sizeof(connectinfo));
+        // and the host's exact build, after it (older builds don't read it): who joins is warned when it
+        // isn't theirs (the Blood Extra Crispy test builds all say the same version)
+        char szBuild[32];
+        Bstrncpyz(szBuild, s_buildRev, sizeof(szBuild));
+        PutPacketBuffer(pPacket, szBuild, sizeof(szBuild));
         ENetPacket *pEPacket = enet_packet_create(packet, pPacket-packet, ENET_PACKET_FLAG_RELIABLE);
         enet_host_broadcast(gNetENetServer, BLOOD_ENET_SERVICE, pEPacket);
         //enet_packet_destroy(pEPacket);
@@ -1395,6 +1401,18 @@ void netInitialize(bool bConsole)
                             connecthead = connectinfo->connecthead;
                             for (int i = 0; i < numplayers; i++)
                                 connectpoint2[i] = connectinfo->connectpoint2[i];
+                            {
+                                // a warning only: the game goes on (it can get out of sync)
+                                char szHostBuild[33] = "";
+                                if (event.packet->dataLength >= 1 + sizeof(PKT_CONNECTINFO) + 32)
+                                    Bstrncpyz(szHostBuild, (char const *)connectinfo + sizeof(PKT_CONNECTINFO), sizeof(szHostBuild));
+                                if (strncmp(szHostBuild, s_buildRev, 32))
+                                {
+                                    Bsnprintf(gNetBuildWarning, sizeof(gNetBuildWarning), "Warning: the host has another build (%s, you %s): the game can get out of sync",
+                                              szHostBuild[0] ? szHostBuild : "older", s_buildRev);
+                                    LOG_F(WARNING, "%s", gNetBuildWarning);
+                                }
+                            }
                             //LOG_F(INFO, "BLOOD_SERVICE_CONNECTINFO");
                             break;
                         }
