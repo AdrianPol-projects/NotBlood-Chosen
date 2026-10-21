@@ -49,6 +49,8 @@ See the GNU General Public License for more details.
 #include "menuchosen.h"
 #include "bot.h"
 #include "chosenmodes.h"
+#include "becweapons.h"
+#include "gorykill.h"
 
 int gBotCount = 3;
 int gBotSkill = kBotSkillNormal;
@@ -1631,16 +1633,47 @@ static const BOTWEAPON gBotWeapon[kWeaponMax] = {
     { 90, 0, 0, 900, 140, 0 },                // beast hands
 };
 
+// Blood Extra Crispy's weapons (only while the mod is chosen in MODS): weapon numbers from here on,
+// their table from becweapons.cpp
+enum { kBotModWeapon = 100, kBotModWeaponMax = 64 };
+
+static const BOTWEAPON *BotWeaponInfo(int nWeapon)
+{
+    if (nWeapon >= kBotModWeapon)
+    {
+        static BOTWEAPON mod[kBotModWeaponMax];
+        BECBOTWEAPON info;
+        const int n = nWeapon - kBotModWeapon;
+        if (n >= kBotModWeaponMax || !becBotWeaponInfo(n, &info))
+            return &gBotWeapon[0];
+        mod[n] = { info.nPower, info.nMinDist, info.nBestDist, info.nMaxDist, info.nCone, info.nLeadSpeed };
+        return &mod[n];
+    }
+    return &gBotWeapon[ClipRange(nWeapon, 0, kWeaponMax-1)];
+}
+
+// the weapon in hand: Blood's, or the mod's (Blood's is "none" meanwhile)
+static int BotCurWeapon(PLAYER *pPlayer)
+{
+    const int n = becBotActive(pPlayer);
+    return n >= 0 ? kBotModWeapon + n : pPlayer->curWeapon;
+}
+
 static bool bTargetAbove; // the enemy is up high: splash weapons drive it out of there
 
 static int WeaponScore(PLAYER *pPlayer, int nWeapon, int nDist)
 {
-    const BOTWEAPON *pInfo = &gBotWeapon[nWeapon];
+    const BOTWEAPON *pInfo = BotWeaponInfo(nWeapon);
     if (!pInfo->nPower)
         return 0;
-    if (nWeapon == kWeaponBeast)
+    if (nWeapon >= kBotModWeapon)
+    {
+        if (!becBotUsable(pPlayer, nWeapon - kBotModWeapon))
+            return 0;
+    }
+    else if (nWeapon == kWeaponBeast)
         return pPlayer->curWeapon == kWeaponBeast ? 1000 : 0;
-    if (!WeaponIsEquipable(pPlayer, nWeapon))
+    else if (!WeaponIsEquipable(pPlayer, nWeapon))
         return 0;
     int nScore = pInfo->nPower * 10;
     if (nDist < pInfo->nMinDist)
@@ -1668,6 +1701,12 @@ static int BestWeapon(PLAYER *pPlayer, int nDist, int *pScore)
         if (nScore > nBestScore)
             nBest = w, nBestScore = nScore;
     }
+    for (int n = 0; n < becBotWeaponCount() && n < kBotModWeaponMax; n++)
+    {
+        const int nScore = WeaponScore(pPlayer, kBotModWeapon + n, nDist);
+        if (nScore > nBestScore)
+            nBest = kBotModWeapon + n, nBestScore = nScore;
+    }
     if (pScore)
         *pScore = nBestScore;
     return nBest;
@@ -1675,7 +1714,7 @@ static int BestWeapon(PLAYER *pPlayer, int nDist, int *pScore)
 
 static int PlayerPower(PLAYER *pPlayer) // a rough idea of how dangerous someone is, as a player could judge it
 {
-    int nPower = gBotWeapon[ClipRange(pPlayer->curWeapon, 0, kWeaponMax-1)].nPower;
+    int nPower = BotWeaponInfo(BotCurWeapon(pPlayer))->nPower;
     if (powerupCheck(pPlayer, kPwUpTwoGuns))
         nPower += nPower / 2;
     if (powerupCheck(pPlayer, kPwUpDeathMask))
@@ -1708,6 +1747,8 @@ static int ItemValue(PLAYER *pPlayer, spritetype *pItem)
 {
     const int nType = pItem->type;
     const int nHealth = pPlayer->pXSprite->health >> 4;
+    if (becBotItemGivesWeapon(pPlayer, nType)) // one of Blood Extra Crispy's weapons in its place
+        return 95;
     if (nType >= kItemWeaponBase && nType < kItemWeaponMax)
     {
         const int w = ItemWeapon(nType);
@@ -3633,7 +3674,7 @@ void botGetInput(int nPlayer, GINPUT *pInput)
         nLookAng = pBot->nWatchAng;
 
     // fighting
-    int nWeapon = pPlayer->curWeapon;
+    int nWeapon = BotCurWeapon(pPlayer);
     bool bFire = false, bAltFire = false;
     if (pEnemy)
     {
@@ -3649,14 +3690,15 @@ void botGetInput(int nPlayer, GINPUT *pInput)
             bTargetAbove = false;
             if (nBest && nBest != nWeapon && (nBestScore > nCurScore * 5 / 4 || !nCurScore))
             {
-                pInput->newWeapon = nBest;
-                pBot->nWeaponNext = nNow + 45 + BotRand(pBot, 60);
+                pInput->newWeapon = nBest >= kBotModWeapon ? becBotSlot(nBest - kBotModWeapon) : nBest;
+                // the mod's: its key again soon if another of that key came up
+                pBot->nWeaponNext = nNow + (nBest >= kBotModWeapon ? 8 : 45 + BotRand(pBot, 60));
             }
         }
         if (pBot->nState == kBotStateFight)
         {
             bPathMove = false;
-            const BOTWEAPON *pWeapon = &gBotWeapon[ClipRange(nWeapon, 0, kWeaponMax-1)];
+            const BOTWEAPON *pWeapon = BotWeaponInfo(nWeapon);
             int nWant = pWeapon->nBestDist * (130 - pBot->persona.nAggression * 6 / 10) / 100;
             if (pEnemyPlayer && powerupCheck(pEnemyPlayer, kPwUpDeathMask))
                 nWant = max(nWant, 4000); // can't hurt it: keep away
@@ -3736,7 +3778,7 @@ void botGetInput(int nPlayer, GINPUT *pInput)
         if (nNow >= pBot->nReactAt)
         {
             // aim: where it is, plus a lead for slow shots, plus a wobble that settles while tracking
-            const BOTWEAPON *pWeapon = &gBotWeapon[ClipRange(nWeapon, 0, kWeaponMax-1)];
+            const BOTWEAPON *pWeapon = BotWeaponInfo(nWeapon);
             int ax = pEnemy->x, ay = pEnemy->y;
             if (pWeapon->nLeadSpeed)
             {
@@ -3793,6 +3835,15 @@ void botGetInput(int nPlayer, GINPUT *pInput)
                     bAltFire = nEnemyDist > 2500 && BotChance(pBot, 10);
                     break;
                 }
+                BECBOTWEAPON mod;
+                if (nWeapon >= kBotModWeapon && becBotWeaponInfo(nWeapon - kBotModWeapon, &mod))
+                    bAltFire = (mod.nAltNear && nEnemyDist < mod.nAltNear) || (mod.nAltFar && nEnemyDist > mod.nAltFar);
+            }
+            // Blood Extra Crispy: a kick when it's close, and finished off with USE when it's nearly dead
+            if (goryKillAvailable() && pEnemyPlayer && bSeeNow && nOff < 200)
+            {
+                if ((pEnemyPlayer->pXSprite->health <= 200 && nEnemyDist < 1900) || (nEnemyDist < 1200 && BotChance(pBot, 25)))
+                    bWantUse = true;
             }
             // friendly fire in teams: don't shoot through a team mate
             if (bFire && gGameOptions.nGameType == kGameTypeTeams)
@@ -3819,7 +3870,7 @@ void botGetInput(int nPlayer, GINPUT *pInput)
             // something good in hand for whatever comes next
             const int nBest = BestWeapon(pPlayer, 2500, NULL);
             if (nBest && nBest != nWeapon && WeaponScore(pPlayer, nBest, 2500) > WeaponScore(pPlayer, nWeapon, 2500) * 5 / 4)
-                pInput->newWeapon = nBest;
+                pInput->newWeapon = nBest >= kBotModWeapon ? becBotSlot(nBest - kBotModWeapon) : nBest;
             pBot->nWeaponNext = nNow + 60 + BotRand(pBot, 60);
         }
     }
@@ -4046,7 +4097,7 @@ static void BotDescribe(int i, char *pzBuffer, int nSize)
     const int nGoalDist = pBot->nGoalSect >= 0 && pPlayer->pSprite ? BotDist(pPlayer->pSprite->x, pPlayer->pSprite->y, pBot->nGoalX, pBot->nGoalY) : -1;
     Bsnprintf(pzBuffer, nSize, "%s (%s %s): %s%s, hp %d, weapon %d, target %s, path %d/%d, goal %d away, frags %d, stuck %d", gProfile[i].name,
         gBotSkillNames[pBot->nSkill], gBotPersonaNames[pBot->nPersona], pBot->nState >= 0 && pBot->nState < kBotStateMax ? pzBotStateNames[pBot->nState] : "?",
-        pBot->bDetour ? " (to a lift switch)" : (pBot->nLiftWall >= 0 && nNow - pBot->nLiftSince < 30 ? " (lift)" : ""), pPlayer->pXSprite ? pPlayer->pXSprite->health >> 4 : 0, pPlayer->curWeapon, pzTarget, pBot->nPathPos, pBot->nPathLen, nGoalDist,
+        pBot->bDetour ? " (to a lift switch)" : (pBot->nLiftWall >= 0 && nNow - pBot->nLiftSince < 30 ? " (lift)" : ""), pPlayer->pXSprite ? pPlayer->pXSprite->health >> 4 : 0, BotCurWeapon(pPlayer), pzTarget, pBot->nPathPos, pBot->nPathLen, nGoalDist,
         pPlayer->fragCount, pBot->nStuckCount);
 }
 

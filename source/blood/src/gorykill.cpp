@@ -161,6 +161,9 @@ enum { kNear = 2048, kNearer = 1360 };
 // once a second (the mod's KickDelay)
 GKEVENT const gEvKick[] = { SND(14, kSfxDemMel1), KICK(8), END };
 GKDEF const gKick = { { 0 }, -1, kNearer, 24, 622, 669, 0, gEvKick, true };
+// another player (Bloodbath, the other team): kicked, or finished off when nearly dead as a cultist is
+// (his body stays his own)
+GKDEF const gPlayerKill = { { 0 }, 200, kNear, 140, 626, 689, 0, gEvCultist };
 enum { kKickDelay = 60 };
 
 // always kicked (no Gory Kill for them): burning ones and beasts, as in the mod's list
@@ -247,9 +250,11 @@ void importAll(int &nSeqs, int &nQavs, int &nSounds)
     }
 }
 
-bool singlePlayer(void)
+// another player Caleb can kick and kill (not in co-op, not his own team)
+bool playerTarget(PLAYER *pPlayer, spritetype *pTarget)
 {
-    return gGameOptions.nGameType == kGameTypeSinglePlayer && numplayers == 1;
+    return IsPlayerSprite(pTarget) && gGameOptions.nGameType != kGameTypeSinglePlayer && gGameOptions.nGameType != kGameTypeCoop
+        && !IsTargetTeammate(pPlayer, pTarget);
 }
 
 GKDEF const *killFor(int nType)
@@ -437,7 +442,7 @@ bool goryKillBusy(PLAYER *pPlayer)
 
 bool goryKillTryStart(PLAYER *pPlayer)
 {
-    if (!bAvailable || !singlePlayer() || !pPlayer || goryKillBusy(pPlayer))
+    if (!bAvailable || !pPlayer || goryKillBusy(pPlayer))
         return false;
     spritetype *pSprite = pPlayer->pSprite;
     XSPRITE *pXSprite = pPlayer->pXSprite;
@@ -456,12 +461,15 @@ bool goryKillTryStart(PLAYER *pPlayer)
     for (int nSprite = headspritestat[kStatDude]; nSprite >= 0; nSprite = nextspritestat[nSprite])
     {
         spritetype *pDude = &sprite[nSprite];
-        if (pDude == pSprite || IsPlayerSprite(pDude) || pDude->extra <= 0 || pDude->extra >= kMaxXSprites)
+        if (pDude == pSprite || pDude->extra <= 0 || pDude->extra >= kMaxXSprites)
+            continue;
+        bool const bPlayer = IsPlayerSprite(pDude);
+        if (bPlayer && !playerTarget(pPlayer, pDude))
             continue;
         XSPRITE *pXDude = &xsprite[pDude->extra];
         if (pXDude->health <= 0)
             continue;
-        GKDEF const *pDef = killFor(pDude->type);
+        GKDEF const *pDef = bPlayer ? &gPlayerKill : killFor(pDude->type);
         bool const bGory = pDef && (pDef->nHealth < 0 || pXDude->health <= pDef->nHealth);
         bool bKickable = pDef && !bGory;
         for (short nType : gAlwaysKicked)
@@ -522,8 +530,14 @@ bool goryKillTryStart(PLAYER *pPlayer)
         return true;
     }
 
-    // the enemy is gone: it's in Caleb's hands now (the QAV); it counts as killed, its drops stay
     spritetype *pDude = &sprite[nBest];
+    if (IsPlayerSprite(pDude))  // another player: dies (Caleb's frag), his body stays
+    {
+        LOG_F(INFO, "Gory Kill: player %d finished off player %d", pPlayer->nPlayer, pDude->type - kDudePlayer1);
+        actDamageSprite(pSprite->index, pDude, kDamageFall, xsprite[pDude->extra].health + (16 << 4));
+        return true;
+    }
+    // the enemy is gone: it's in Caleb's hands now (the QAV); it counts as killed, its drops stay
     xsprite[pDude->extra].health = 0;
     actKillDude(pSprite->index, pDude, kDamageFall, 16);
     actPostSprite(nBest, kStatFree);

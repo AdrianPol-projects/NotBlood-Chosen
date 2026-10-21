@@ -11,11 +11,13 @@ A test of the *Blood Extra Crispy* mod (by VGames, for Nightdive's Refreshed Sup
 4. Start NotBlood Crispy, go to **MODS**, choose **BLOOD EXTRA CRISPY**. The game restarts with the mod.
 
 **What you get:**
-- **Its look:** the title and menu background, and its edited sprites.
+- **Its look:** the title and menu background, its edited sprites, and its **3D models** (voxels) for about 570 things: switches, levers, valves, bottles, signs, lamps, chandeliers, pickups, the Maxim gun and the cannons. OPTIONS > VIDEO can turn voxels off.
 - **Its sounds.**
 - **Its maps:** the mod's versions of the official levels, with its extra decorations, gore and enemies.
-- **Gory Kills:** walk up to a nearly dead enemy, face it and press **USE**. Caleb finishes it in first person, heals a little, and kicks the body away. They work on cultists (all four), axe zombies, fat zombies, flesh gargoyles, gill beasts, innocents, hell hounds and phantasms. The enemy must be badly hurt (below about 12 health), except innocents. Single player only.
-- **Quick kick:** USE on an enemy that isn't hurt enough shows Caleb's foot and kicks it back. Burning enemies and beasts always get kicked. You can kick once a second.
+- **Gory Kills:** walk up to a nearly dead enemy, face it and press **USE**. Caleb finishes it in first person, heals a little, and kicks the body away. They work on cultists (all four), axe zombies, fat zombies, flesh gargoyles, gill beasts, innocents, hell hounds and phantasms, and on the mod's Crimson Innocents, Skeletal Zombies, crawling half zombies, zombie heads and attack dogs. The enemy must be badly hurt (below about 12 health), except innocents, heads, half zombies and dogs.
+- **Quick kick:** USE on an enemy that isn't hurt enough shows Caleb's foot and kicks it back. Burning enemies, beasts, Necromancers, Liches, Monster Dogs, Slime Zombies and the Inferno always get kicked. You can kick once a second.
+- **In Bloodbath and team games** you can kick other players too, and finish off one who is nearly dead (it counts as your frag). Not your team mates, and not in co-op.
+- **Bots** (MULTIPLAYER > PLAY WITH BOTS, or bots in a network game) pick up and use the mod's weapons, and kick and finish off other players.
 - **Its new enemies,** with the mod's own pictures, sounds and behaviour (read from your copy of the mod):
   - **Skeletal Zombies** and **Crimson Innocents** take the place of about two thirds of the axe zombies, and of some buried ones, which climb out of the ground. A badly hurt Skeletal Zombie jumps on your face and bites: press USE fast to push it off. Crimson Innocents punch and spew blood.
   - **Attack dogs** come with some of the shotgun and dynamite cultists. A dog killed by spirit damage gets back up as a **Monster Dog**.
@@ -35,7 +37,7 @@ A test of the *Blood Extra Crispy* mod (by VGames, for Nightdive's Refreshed Sup
   - **Dual tommy guns, dual sawed-offs and dual flare guns:** pick up a second one of the gun you already have.
   - **Mourning Codex** (key 0): it's where Reflective Shots was. One spell, then the book is gone. Fire: thirteen flesh gargoyles fight for you for 15 seconds. Alt fire: a blizzard of ice spikes around you. Crouch + fire: lightning. Crouch + alt fire: Caleb's heart opens a Death Portal that pulls enemies in. (In the mod, the last two are on the map zoom keys.)
   - **Things the dead leave** (pick them up with **USE**, key 1): an axe zombie's **axe** now and then (swing it, or alt fire to throw it; it can be picked up again where it lands), a Phantasm's **orb** (thrown, it finds the head of the enemy you look at and drills through it), and from each Necromancer either the **Vile Anathema** (fire: the corpses you can see rise and fight for you; alt fire: 15 seconds of skulls flying from your shoulder at what you look at) or the **Bastion Chronometer** (fire: 30 seconds of reflective shots; alt fire: the Doom Bell, which rings death all around it and then blows apart). Each is used once.
-- **Its world weapons** (USE in front of them):
+- **Its world weapons** (USE in front of them, up to about 3 steps away):
   - **Death Mower:** it runs by itself for 37 seconds and shreds what's in front of it. Fire throws it away.
   - **Maxim gun** on its stand: USE gets behind it, USE again leaves it. JUMP rips it off its stand and you carry it (the mod uses RUN, which auto-run holds).
   - **Blunderbuss:** one big blast, then it's thrown away.

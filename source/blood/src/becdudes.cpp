@@ -810,6 +810,8 @@ void becLevelStart(bool bSaveLoad)
     memset(gBecFlags, 0, sizeof(gBecFlags));
     if (!bActive)
         return;
+    if (gGameOptions.nMonsterSettings == 0)  // no monsters (Bloodbath): Blood deletes them all next
+        return;
     levelSwaps();
     becAiLevelStart();
 }

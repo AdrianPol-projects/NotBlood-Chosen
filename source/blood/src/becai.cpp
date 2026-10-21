@@ -1310,6 +1310,23 @@ void corpseSeq(spritetype *pSprite, int nSeq)
 // allies: the gargoyles of the Mourning Codex, the dead the Vile Anathema raises
 //
 
+// the nearest living player (the game runs the same on every player's machine: never the local one)
+spritetype *nearestPlayer(spritetype *pSprite, int nRange = INT_MAX)
+{
+    spritetype *pBest = NULL;
+    int nBestDist = nRange;
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+    {
+        PLAYER *pPlayer = &gPlayer[p];
+        if (!pPlayer->pSprite || !pPlayer->pXSprite || pPlayer->pXSprite->health <= 0)
+            continue;
+        int const nDist = approxDist(pPlayer->pSprite->x - pSprite->x, pPlayer->pSprite->y - pSprite->y);
+        if (nDist < nBestDist)
+            pBest = pPlayer->pSprite, nBestDist = nDist;
+    }
+    return pBest;
+}
+
 bool isEnemy(spritetype *pSprite)
 {
     return pSprite->statnum == kStatDude && !IsPlayerSprite(pSprite) && !becIsAlly(pSprite->index) && pSprite->extra > 0
@@ -2092,8 +2109,7 @@ void becAiFrame(void)
         if ((pSprite->type == kDudeBecNecromancer || pSprite->type == kDudeBecLich) && pXSprite->health > 0)
             bNecro = true;
         // the spirits start drifting about when you're near (BEC_Players.txt)
-        if (pSprite->type == kDudeBecSpirit && becInState(pXSprite, "AISTATE_SpiritIdle") && gMe && gMe->pSprite
-            && approxDist(gMe->pSprite->x - pSprite->x, gMe->pSprite->y - pSprite->y) < 30 * kMeter)
+        if (pSprite->type == kDudeBecSpirit && becInState(pXSprite, "AISTATE_SpiritIdle") && nearestPlayer(pSprite, 30 * kMeter))
             newState(pSprite, pXSprite, STATE("AISTATE_SpiritSearch"));
         // a rat with dynamite runs at you and goes off
         if ((gBecFlags[nSprite] & kBecFlagRatBomb) && pSprite->type == kDudeRat && pXSprite->health > 0 && becTarget(pXSprite))
@@ -2188,8 +2204,8 @@ void becAiFrame(void)
                     if (pZombie)
                     {
                         gKillMgr.AddCount(pZombie);
-                        if (gMe && gMe->pSprite)
-                            aiSetTarget(&xsprite[pZombie->extra], gMe->pSprite->index);
+                        if (spritetype *pPlayer = nearestPlayer(pZombie))
+                            aiSetTarget(&xsprite[pZombie->extra], pPlayer->index);
                         aiActivateDude(pZombie, &xsprite[pZombie->extra]);
                     }
                 }
@@ -2203,10 +2219,20 @@ void becAiFrame(void)
         nNextStone = 0;
     else if (!nNextStone)
         nNextStone = nNow + (180 + (int)Random(180)) * kTicRate;
-    else if (nNow >= nNextStone && gMe && gMe->pSprite && gMe->pXSprite && gMe->pXSprite->health > 0)
+    else if (nNow >= nNextStone)
     {
+        // near one of the players (in turn, the same on every machine)
         nNextStone = 0;
-        spritetype *pPlayer = gMe->pSprite;
+        static int nStonePlayer;
+        spritetype *pPlayer = NULL;
+        for (int i = 0; i < kMaxPlayers && !pPlayer; i++)
+        {
+            PLAYER *pTry = &gPlayer[nStonePlayer++ % kMaxPlayers];
+            if (pTry->pSprite && pTry->pXSprite && pTry->pXSprite->health > 0 && pTry->nPlayer < numplayers)
+                pPlayer = pTry->pSprite;
+        }
+        if (!pPlayer)
+            return;
         int const nAngle = pPlayer->ang + Random2(256);
         int const nDist = 3 * kMeter;
         int x = pPlayer->x + mulscale30(nDist, Cos(nAngle)), y = pPlayer->y + mulscale30(nDist, Sin(nAngle));

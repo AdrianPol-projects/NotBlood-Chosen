@@ -55,3 +55,21 @@ void becWeaponsFrame(void);
 
 // for the weapon switch list: the mod's weapon in hand (its name and picture), NULL for none
 char const *becWeaponName(PLAYER *pPlayer, int *pnTile);
+
+// for the bots (bot.cpp), as its own weapon table: how good each of the mod's weapons is, and at what
+// distance (Build units); angles in Blood's
+struct BECBOTWEAPON
+{
+    int nPower;
+    int nMinDist, nBestDist, nMaxDist;
+    int nCone;       // fire when the aim is this close
+    int nLeadSpeed;  // aim ahead for slow shots (0: hitscan)
+    int nAltNear, nAltFar;  // alt fire when the enemy is nearer / further than this (0: never)
+};
+int becBotWeaponCount(void);
+bool becBotWeaponInfo(int nWeapon, BECBOTWEAPON *pInfo);  // false: not one for bots to choose
+bool becBotUsable(PLAYER *pPlayer, int nWeapon);           // in its pack, with ammo
+int becBotActive(PLAYER *pPlayer);                         // the mod's weapon in hand or coming up, -1 none
+int becBotSlot(int nWeapon);                               // its number key
+// an item gives one of the mod's weapons Caleb hasn't got (a second gun of his: the pair)
+bool becBotItemGivesWeapon(PLAYER *pPlayer, int nItemType);

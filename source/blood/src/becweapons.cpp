@@ -1672,6 +1672,86 @@ char const *becWeaponName(PLAYER *pPlayer, int *pnTile)
     return w.pzName;
 }
 
+// the bots' view of the mod's weapons (bot.cpp gBotWeapon has Blood's: power 12 pitchfork .. 85 tesla)
+static BECBOTWEAPON const gBotWeapons[kBecWeaponMax] = {
+    { 95, 0, 2500, 9000, 60, 0, 1800, 0 },           // Gatling Gun (alt: its wider overkill up close)
+    { 80, 0, 1100, 4000, 60, 0, 1500, 0 },           // Trench Gun (alt: dragon's breath)
+    { 90, 900, 3500, 12000, 70, 0x2aaaaa, 0, 0 },    // Devastator
+    { 95, 1500, 5000, 16000, 60, 0x2aaaaa, 0, 0 },   // rocket launcher
+    { 100, 0, 6000, 30000, 30, 0, 0, 0 },            // Devil's Bore
+    { 80, 0, 2500, 10000, 55, 0, 0, 0 },             // dual tommy guns
+    { 90, 0, 1000, 3500, 60, 0, 0, 0 },              // dual sawed-offs
+    { 60, 300, 3000, 12000, 70, 0x2aaaaa, 0, 0 },    // dual flare guns
+    { 0 },                                           // Death Mower (it runs by itself)
+    { 0 },                                           // Maxim on its stand
+    { 90, 0, 2500, 9000, 60, 0, 0, 0 },              // Mobile Maxim
+    { 85, 0, 900, 2500, 80, 0, 0, 0 },               // Blunderbuss
+    { 0 }, { 0 }, { 0 },                             // cannon, cannon ball, fireworks
+    { 100, 0, 3000, 20000, 400, 0, 6000, 0 },        // Mourning Codex (alt: the blizzard when they're near)
+    { 50, 0, 600, 3000, 140, 0x2aaaaa, 0, 1000 },    // Zombie Axe (alt: thrown, further off)
+    { 85, 0, 2000, 10000, 250, 0, 0, 0 },            // Phantasm Orb (it finds its way)
+    { 70, 0, 3000, 15000, 300, 0, 30000, 0 },        // Vile Anathema (alt: the skulls, no corpses to raise)
+    { 60, 0, 2000, 10000, 400, 0, 4000, 0 },         // Bastion Chronometer (alt: the Doom Bell when near)
+};
+
+int becBotWeaponCount(void)
+{
+    return bActive ? kBecWeaponMax : 0;
+}
+
+bool becBotWeaponInfo(int nWeapon, BECBOTWEAPON *pInfo)
+{
+    if (!bActive || nWeapon < 0 || nWeapon >= kBecWeaponMax || !gBotWeapons[nWeapon].nPower)
+        return false;
+    *pInfo = gBotWeapons[nWeapon];
+    return true;
+}
+
+bool becBotUsable(PLAYER *pPlayer, int nWeapon)
+{
+    return bActive && nWeapon >= 0 && nWeapon < kBecWeaponMax && usable(pPlayer, nWeapon);
+}
+
+int becBotActive(PLAYER *pPlayer)
+{
+    if (!bActive)
+        return -1;
+    WSTATE const *pState = &gWState[pPlayer->nPlayer];
+    if (pState->nNext <= -2)
+        return -2 - pState->nNext;
+    if (pState->nPending >= 0)
+        return pState->nPending;
+    return pState->nPhase == kPhaseLower ? -1 : pState->nActive;
+}
+
+int becBotSlot(int nWeapon)
+{
+    return nWeapon >= 0 && nWeapon < kBecWeaponMax ? gWeapons[nWeapon].nSlot : 0;
+}
+
+bool becBotItemGivesWeapon(PLAYER *pPlayer, int nItemType)
+{
+    if (!bActive)
+        return false;
+    WSTATE *pState = &gWState[pPlayer->nPlayer];
+    switch (nItemType)
+    {
+    case kItemTwoGuns:
+        return !usable(pPlayer, kBecGatling);
+    case kItemBeastVision:
+        return !usable(pPlayer, kBecRailgun);
+    case kItemReflectShots:
+        return !usable(pPlayer, kBecCodex);
+    case kItemWeaponTommygun:
+        return pPlayer->hasWeapon[kWeaponTommy] && !has(pState, kBecDualTommy);
+    case kItemWeaponSawedoff:
+        return pPlayer->hasWeapon[kWeaponShotgun] && !has(pState, kBecDualShotgun);
+    case kItemWeaponFlarePistol:
+        return pPlayer->hasWeapon[kWeaponFlare] && !has(pState, kBecDualFlare);
+    }
+    return false;
+}
+
 bool becWeaponPickUp(PLAYER *pPlayer, spritetype *pItem, char *pzMessage, int nMessageSize)
 {
     if (!bActive)
@@ -1729,16 +1809,24 @@ namespace
 int16_t gAADelay[kMaxSprites];
 int8_t gAAVolley[kMaxSprites];
 
+// a player within that distance (any of them: the game runs the same on every player's machine)
+bool playerNear(spritetype *pSprite, int nRange)
+{
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+        if (spritetype *pPlayer = gPlayer[p].pSprite)
+            if (approxDist(pPlayer->x - pSprite->x, pPlayer->y - pSprite->y) <= nRange)
+                return true;
+    return false;
+}
+
 void aaGuns(void)
 {
-    if (!gMe || !gMe->pSprite)
-        return;
     for (int nSprite = headspritestat[kStatDecoration]; nSprite >= 0; nSprite = nextspritestat[nSprite])
     {
         spritetype *pGun = &sprite[nSprite];
         if (pGun->picnum < kAAGunPicnum || pGun->picnum > kAAGunPicnum + 2)
             continue;
-        if (approxDist(gMe->pSprite->x - pGun->x, gMe->pSprite->y - pGun->y) > 4000 * 16)
+        if (!playerNear(pGun, 4000 * 16))
             continue;
         if (gAADelay[nSprite] > 0)
         {
