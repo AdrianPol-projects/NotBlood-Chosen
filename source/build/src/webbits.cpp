@@ -89,6 +89,49 @@ void web_filesChanged(void)
     web_syncFiles();
 }
 
+// ---- the on-screen keyboard (the page's hidden text field, platform/Web/shell/app.js) -----------
+
+EM_JS(void, web_keyboardbutton, (float x, float y, float r, int outw, int outh), {
+    Module.kbdButton = r > 0 && outw > 0 && outh > 0 ? { x: x / outw, y: y / outh, rx: r / outw, ry: r / outh } : null;
+});
+
+EM_JS(int, web_keyboardopen, (), {
+    return Module.kbdOpen ? 1 : 0;
+});
+
+EM_JS(void, web_keyboardframe, (), {
+    if (Module.kbdPump)
+        Module.kbdPump();
+});
+
+EM_JS(void, web_keyboardclose, (), {
+    if (Module.kbdClose)
+        Module.kbdClose();
+});
+
+// what's typed in it, for the game as if from a keyboard: the text (the console, chat) and the keys
+// (Blood's menu fields read key presses, Shift for capitals, as SDL sends them on Android). The page
+// presses a key in one frame and lets go of it in the next, so the menu sees Shift still held.
+extern "C" EMSCRIPTEN_KEEPALIVE void web_keytext(char const *pText)
+{
+    SDL_Event ev = {};
+    ev.type = SDL_TEXTINPUT;
+    Bstrncpyz(ev.text.text, pText, sizeof(ev.text.text));
+    SDL_PushEvent(&ev);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void web_keyevent(int nScancode, int bDown, int bShift)
+{
+    SDL_Event ev = {};
+    ev.type = bDown ? SDL_KEYDOWN : SDL_KEYUP;
+    ev.key.state = bDown ? SDL_PRESSED : SDL_RELEASED;
+    ev.key.windowID = WEB_KEYBOARD_WINDOWID;
+    ev.key.keysym.mod = bShift ? KMOD_LSHIFT : KMOD_NONE;
+    ev.key.keysym.scancode = (SDL_Scancode)nScancode;
+    ev.key.keysym.sym = SDL_GetKeyFromScancode((SDL_Scancode)nScancode);
+    SDL_PushEvent(&ev);
+}
+
 EM_JS(int, web_hastouch, (), {
     return (navigator.maxTouchPoints || 0) > 0 || ('ontouchstart' in window) ? 1 : 0;
 });

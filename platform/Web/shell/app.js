@@ -371,6 +371,133 @@ function unlockAudio() {
     document.addEventListener('visibilitychange', function () { if (!document.hidden) wake(); });
 }
 
+// ---- the phone's keyboard ---------------------------------------------------------------------------
+// A browser shows its on-screen keyboard only for a text field focused during a tap. The touch
+// controls' KEYB button is drawn by the game, which says where (Module.kbdButton): a tap on it
+// focuses this hidden field (or lets go of it), and what's typed there goes to the game as keys.
+
+var kbd = $('kbd');
+var KBD_EMPTY = ' ';         // always one character in it, so a backspace is seen even when "empty"
+var kbdLast = KBD_EMPTY, kbdComposing = false;
+var SCANCODES = { Enter: 40, Escape: 41, Backspace: 42, Tab: 43, ArrowRight: 79, ArrowLeft: 80, ArrowDown: 81, ArrowUp: 82 };
+
+function kbdReset() {
+    kbd.value = kbdLast = KBD_EMPTY;
+    try { kbd.setSelectionRange(1, 1); } catch (e) { /* not focused */ }
+}
+
+function kbdSet(open) {
+    if (!game) return;
+    game.kbdOpen = open;
+    if (open) {
+        kbdReset();
+        kbd.focus({ preventScroll: true });
+        kbdReset();
+    } else if (document.activeElement === kbd)
+        $('canvas').focus({ preventScroll: true });  // back to the game (SDL sees it lose focus otherwise)
+}
+
+function kbdOnButton(t) {
+    var b = game && game.kbdButton;
+    if (!b) return false;
+    var r = $('canvas').getBoundingClientRect();
+    if (!r.width || !r.height) return false;
+    var dx = ((t.clientX - r.left) / r.width - b.x) / b.rx, dy = ((t.clientY - r.top) / r.height - b.y) / b.ry;
+    return dx * dx + dy * dy <= 1;
+}
+
+// the keys for what's typed (SDL scancodes, US layout): Blood's menu fields read key presses
+var KEY_SC = {}, KEY_SHIFTED = {};
+(function () {
+    var i, sym = { ' ': 44, '-': 45, '=': 46, '[': 47, ']': 48, '\\': 49, ';': 51, "'": 52, '`': 53, ',': 54, '.': 55, '/': 56 };
+    var shifted = { '_': '-', '+': '=', '{': '[', '}': ']', '|': '\\', ':': ';', '"': "'", '~': '`', '<': ',', '>': '.', '?': '/',
+        '!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '^': '6', '&': '7', '*': '8', '(': '9', ')': '0' };
+    for (i = 0; i < 26; i++) {
+        KEY_SC[String.fromCharCode(97 + i)] = 4 + i;
+        KEY_SC[String.fromCharCode(65 + i)] = 4 + i;
+        KEY_SHIFTED[String.fromCharCode(65 + i)] = true;
+    }
+    for (i = 1; i <= 9; i++) KEY_SC[String(i)] = 29 + i;
+    KEY_SC['0'] = 39;
+    for (var c in sym) KEY_SC[c] = sym[c];
+    for (c in shifted) { KEY_SC[c] = KEY_SC[shifted[c]]; KEY_SHIFTED[c] = true; }
+})();
+
+// one step a game frame (the game asks, Module.kbdPump): Blood's menus take one key a frame, and read
+// Shift while the key is down. A key: down, then up; with Shift: Shift down, the key down, both up.
+var SC_SHIFT = 225;
+var kbdQueue = [];
+
+function kbdEvent(sc, down, shift) { game.ccall('web_keyevent', null, ['number', 'number', 'number'], [sc, down, shift]); }
+
+function kbdPump() {
+    var step = kbdQueue.shift();
+    if (step) step();
+}
+
+function kbdKey(item) {
+    var sc = item.sc, shift = item.shift ? 1 : 0;
+    if (shift) kbdQueue.push(function () { kbdEvent(SC_SHIFT, 1, 1); });
+    kbdQueue.push(function () {
+        if (item.text) game.ccall('web_keytext', null, ['string'], [item.text]);
+        kbdEvent(sc, 1, shift);
+    });
+    kbdQueue.push(function () {
+        kbdEvent(sc, 0, shift);
+        if (shift) kbdEvent(SC_SHIFT, 0, 0);
+    });
+}
+
+function kbdPress(scancode) { kbdKey({ sc: scancode }); }
+function kbdText(text) {
+    for (var i = 0; i < text.length; i++) {
+        var ch = text[i];
+        if (KEY_SC[ch] !== undefined) kbdKey({ sc: KEY_SC[ch], shift: !!KEY_SHIFTED[ch], text: ch });
+    }
+}
+
+// what changed in the field since the last time: removed characters are backspaces, new ones text
+// (this also gets word suggestions and autocorrect right, which replace what was typed)
+function kbdInput() {
+    var v = kbd.value, n = 0;
+    while (n < v.length && n < kbdLast.length && v[n] === kbdLast[n]) n++;
+    for (var i = kbdLast.length; i > n; i--) kbdPress(SCANCODES.Backspace);
+    var add = v.slice(n).replace(/[^\x20-\x7e]/g, '');
+    if (add) kbdText(add);
+    kbdLast = v;
+    if (!kbdComposing) kbdReset();
+}
+
+kbd.addEventListener('input', function () { if (game) kbdInput(); });
+kbd.addEventListener('compositionstart', function () { kbdComposing = true; });
+kbd.addEventListener('compositionend', function () { kbdComposing = false; setTimeout(function () { if (game) kbdInput(); }, 0); });
+// keys typed here are the field's (the game gets them from kbdInput), not also SDL's
+kbd.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    var sc = SCANCODES[e.key];
+    if (sc && game && !e.isComposing) {
+        e.preventDefault();
+        kbdPress(sc);
+    }
+});
+kbd.addEventListener('keyup', function (e) { e.stopPropagation(); });
+kbd.addEventListener('keypress', function (e) { e.stopPropagation(); });
+// the browser closed it (the keyboard's own hide key, another app)
+kbd.addEventListener('blur', function () {
+    if (!game || !game.kbdOpen) return;
+    game.kbdOpen = false;
+    setTimeout(function () { if (!document.activeElement || document.activeElement === document.body) $('canvas').focus({ preventScroll: true }); }, 0);
+});
+
+document.addEventListener('touchend', function (e) {
+    if (!started || !game) return;
+    for (var i = 0; i < e.changedTouches.length; i++)
+        if (kbdOnButton(e.changedTouches[i])) {
+            kbdSet(!game.kbdOpen);
+            return;
+        }
+}, true);
+
 $('play').onclick = function () {
     if (!game || started || !haveGameData()) return;
     started = true;
@@ -387,6 +514,8 @@ $('play').onclick = function () {
     document.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
     // the online menu's empty SERVER means this page's own server
     game.notbloodServer = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+    game.kbdClose = function () { kbdSet(false); };
+    game.kbdPump = kbdPump;
     // window.notbloodArgs: command line options, for testing
     setTimeout(function () { game.callMain(window.notbloodArgs || []); }, 50);
 };

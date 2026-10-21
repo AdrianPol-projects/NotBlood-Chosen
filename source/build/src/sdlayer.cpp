@@ -3140,6 +3140,11 @@ int32_t handleevents_pollsdl(void)
                 continue;
             case SDL_KEYDOWN:
             case SDL_KEYUP:
+#ifdef NOTBLOOD_WEB
+                if (ev.key.windowID == WEB_KEYBOARD_WINDOWID)  // the phone's keyboard, not a hardware one
+                    break;
+#endif
+                fallthrough__;
             case SDL_MOUSEWHEEL:
                 touch_notifyHardwareInput();
                 break;
@@ -3371,6 +3376,11 @@ int32_t handleevents_pollsdl(void)
                         break;
                     case SDL_WINDOWEVENT_FOCUS_GAINED:
                     case SDL_WINDOWEVENT_FOCUS_LOST:
+#ifdef NOTBLOOD_WEB
+                        // the page's text field for the phone's keyboard took it: still the game's
+                        if (ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST && web_keyboardopen())
+                            break;
+#endif
                         appactive = (ev.window.event == SDL_WINDOWEVENT_FOCUS_GAINED);
                         if (g_mouseGrabbed && g_mouseEnabled)
                             grabmouse_low(appactive);
