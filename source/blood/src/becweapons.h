@@ -43,7 +43,7 @@ bool becWeaponPickUp(PLAYER *pPlayer, spritetype *pItem, char *pzMessage, int nM
 
 void becWeaponsPlayerReset(PLAYER *pPlayer);  // Blood's weapons reset: none of the mod's either
 void becWeaponsPlayerStart(PLAYER *pPlayer);  // a new level or life: none in hand
-bool becImpactMissile(spritetype *pMissile);  // one of the mod's rockets hits
+bool becImpactMissile(spritetype *pMissile, int nHitCode);  // one of the mod's rockets hits (and puke on a face)
 // USE: the mod's world weapons in front of Caleb (a lawn mower, a Maxim gun on its stand), or off the gun
 bool becWeaponUse(PLAYER *pPlayer);
 // behind the Maxim gun: Caleb stays where he is; JUMP rips it off its stand (the mod: RUN, which auto-run holds)
@@ -51,6 +51,7 @@ bool becWeaponMounted(PLAYER *pPlayer);
 void becWeaponMountedInput(PLAYER *pPlayer, bool bRun);
 
 void becWeaponsLevelStart(bool bSaveLoad);
+void becWeaponsPrecache(void);  // in Blood's level preload: the carried weapons' animations
 void becWeaponsFrame(void);
 
 // for the weapon switch list: the mod's weapon in hand (its name and picture), NULL for none

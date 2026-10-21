@@ -36,6 +36,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "globals.h"
 #include "loadsave.h"
 #include "menu.h"
+#include "becdudes.h"
+#include "gorykill.h"
 #include "messages.h"
 #include "network.h"
 #include "osdcmds.h"
@@ -785,6 +787,10 @@ const char *pzStatsPowerupRatioStrings[] = {
     "ON (21:9)",
 };
 
+// Blood Extra Crispy (chosen in MODS): VOXELS chooses how many of its 3D models too
+const char *pzBecVoxelStrings[] = { "OFF", "SOME", "ALL" };
+void SetBecVoxels(CGameMenuItemZCycle *);
+
 const char *pzWeaponSelectStrings[] = {
     "OFF",
     "BOTTOM",
@@ -886,6 +892,7 @@ CGameMenuItemChain itemOptionsDisplayMode("VIDEO MODE", 3, 66, 50, 180, 0, &menu
 CGameMenuItemChain itemOptionsDisplayView("VIEW SETUP", 3, 66, 60, 180, 0, &menuOptionsDisplayView, -1, NULL, 0);
 CGameMenuItemSlider itemOptionsDisplaySliderDetail("DETAIL:", 3, 66, 80, 180, &gDetail, 0, 4, 1, SetDetail, -1, -1);
 CGameMenuItemZBool itemOptionsDisplayBoolVoxels("VOXELS:", 3, 66, 90, 180, 0, SetVoxels, NULL, NULL);
+CGameMenuItemZCycle itemOptionsDisplayBecVoxels("VOXELS:", 3, 66, 90, 180, 0, SetBecVoxels, pzBecVoxelStrings, ARRAY_SSIZE(pzBecVoxelStrings), 0);
 CGameMenuItemZCycle itemOptionsDisplayCrosshair("CROSSHAIR:", 3, 66, 100, 180, 0, SetCrosshair, pzCrosshairStrings, ARRAY_SSIZE(pzCrosshairStrings), 0);
 CGameMenuItemZCycle itemOptionsDisplayLevelStats("LEVEL STATS:", 3, 66, 110, 180, 0, SetLevelStats, pzStatsPowerupRatioStrings, ARRAY_SSIZE(pzStatsPowerupRatioStrings), 0);
 CGameMenuItemZBool itemOptionsDisplayLevelStatsOnAutomap("LEVEL STATS ON AUTOMAP ONLY:", 3, 66, 120, 180, gLevelStatsOnlyOnMap, SetLevelStatsOnAutomap, NULL, NULL);
@@ -2189,7 +2196,10 @@ void SetupOptionsMenu(void)
     menuOptionsDisplay.Add(&itemOptionsDisplayMode, false);
     menuOptionsDisplay.Add(&itemOptionsDisplayView, false);
     menuOptionsDisplay.Add(&itemOptionsDisplaySliderDetail, false);
-    menuOptionsDisplay.Add(&itemOptionsDisplayBoolVoxels, false);
+    if (goryKillAvailable())
+        menuOptionsDisplay.Add(&itemOptionsDisplayBecVoxels, false);
+    else
+        menuOptionsDisplay.Add(&itemOptionsDisplayBoolVoxels, false);
     menuOptionsDisplay.Add(&itemOptionsDisplayCrosshair, false);
     menuOptionsDisplay.Add(&itemOptionsDisplayLevelStats, false);
     menuOptionsDisplay.Add(&itemOptionsDisplayLevelStatsOnAutomap, false);
@@ -2201,6 +2211,7 @@ void SetupOptionsMenu(void)
     menuOptionsDisplay.Add(&itemOptionsDisplayFOV, false);
     menuOptionsDisplay.Add(&itemBloodQAV, false);
     itemOptionsDisplayBoolVoxels.at20 = usevoxels;
+    itemOptionsDisplayBecVoxels.m_nFocus = usevoxels ? clamp(gBecModels, 1, 2) : 0;
     itemOptionsDisplayCrosshair.m_nFocus = gAimReticle % ARRAY_SSIZE(pzCrosshairStrings);
     itemOptionsDisplayLevelStats.m_nFocus = gLevelStats % ARRAY_SSIZE(pzStatsPowerupRatioStrings);
     itemOptionsDisplayLevelStatsOnAutomap.at20 = gLevelStatsOnlyOnMap;
@@ -2784,6 +2795,15 @@ void SetMonoStereo(CGameMenuItemZBool *pItem)
 void SetVoxels(CGameMenuItemZBool *pItem)
 {
     usevoxels = pItem->at20;
+}
+
+void SetBecVoxels(CGameMenuItemZCycle *pItem)
+{
+    usevoxels = pItem->m_nFocus > 0;
+    if (pItem->m_nFocus > 0)
+        gBecModels = pItem->m_nFocus;
+    if (gGameStarted)
+        becVoxelsLevel();  // now: the level's models loaded or freed
 }
 
 void SetCrosshair(CGameMenuItemZCycle *pItem)

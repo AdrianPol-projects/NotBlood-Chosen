@@ -24,6 +24,7 @@ See the GNU General Public License for more details.
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "build.h"
 #include "compat.h"
@@ -625,9 +626,55 @@ static char szKpf[BMAX_PATH];  // the mod's BloodEX.kpf
 
 // the mod's voxels (3D models): its defs/extraVoxels.txt gives one for each of these tiles (switches,
 // levers, valves, bottles, signs, lamps, pickups, its Maxim gun and cannons), the .kvx files are in its
-// BloodEX.kpf (a zip, mounted for them). After the game's own definitions: the models need its palette.
+// BloodEX.kpf (a zip, mounted for them). Each level loads only the ones its sprites use, and makes
+// their meshes while it loads: all of them (510 files) took too much memory and time on phones.
+// bec_models: 0 none, 1 switches, pickups and the mod's own things, 2 all (wall decorations, props too)
+int gBecModels = 1;
+
+namespace
+{
+
+enum { kVoxGroupOther, kVoxGroupKey, kVoxGroupAlways };  // which bec_models setting shows it
+
+struct BECVOXFILE
+{
+    std::string name;
+    int nVoxel;     // its voxel slot (kept for the whole game)
+    int nGroup;
+    bool bRotate;   // pickups turn
+    bool bLoaded;
+};
+struct BECVOXTILE { int nTile, nFile; };
+
+std::vector<BECVOXFILE> gVoxFiles;
+std::vector<BECVOXTILE> gVoxTiles;
+
+int voxGroup(char const *pzName)
+{
+    // EXTRAC/KVX/<group>/<file>, or EXTRAC/KVX/<file> for the mod's own things
+    char const *p = pzName + (Bstrncasecmp(pzName, "EXTRAC/KVX/", 11) ? 0 : 11);
+    if (!Bstrncasecmp(p, "PICKUPS/", 8))
+        return kVoxGroupAlways;  // they can turn up later (drops, respawns)
+    if (!Bstrncasecmp(p, "SWITCHES/", 9))
+        return kVoxGroupKey;
+    if (strchr(p, '/'))
+        return kVoxGroupOther;  // wall decorations, props, gibs, trees, lamps
+    // the mod's own things: what can turn up later (the dead's drops, spells, keys and guns dropped),
+    // the others only where the map has them
+    static char const *const gLater[] = { "ORB.", "VILE.", "WATCH.", "AXE.", "NECROSTONE", "DBELL", "CANNONBALL.",
+                                          "TOMMYGUNS.", "SHOTGUNS.", "FLAREGUNS.", "KEY", "ARMOR" };
+    for (char const *pzLater : gLater)
+        if (!Bstrncasecmp(p, pzLater, strlen(pzLater)))
+            return kVoxGroupAlways;
+    return kVoxGroupKey;
+}
+
+} // namespace
+
 void becVoxelsInit(void)
 {
+    gVoxFiles.clear();
+    gVoxTiles.clear();
     if (!bActive || !szKpf[0])
         return;
     if (initgroupfile(szKpf) < 0)
@@ -643,8 +690,7 @@ void becVoxelsInit(void)
     if (nLen > 0)
         kread(h, &text[0], nLen);
     kclose(h);
-    std::unordered_map<std::string, int> loaded;  // a file's voxel (several tiles share some)
-    int nTiles = 0, nFailed = 0;
+    std::unordered_map<std::string, int> files;
     for (size_t p = 0; p < text.size();)
     {
         size_t eol = text.find('\n', p);
@@ -660,29 +706,89 @@ void becVoxelsInit(void)
         char name[256];
         if (sscanf(line.c_str(), " Voxel %d { filename \"%255[^\"]\"", &nTile, name) != 2 || nTile < 0 || nTile >= MAXTILES)
             continue;
-        int nVoxel;
-        auto it = loaded.find(name);
-        if (it != loaded.end())
-            nVoxel = it->second;
+        auto it = files.find(name);
+        int nFile;
+        if (it != files.end())
+            nFile = it->second;
         else
         {
             while (nextvoxid < MAXVOXELS && (voxflags[nextvoxid] & VF_RESERVE))  // Blood's own voxels
                 nextvoxid++;
             if (nextvoxid >= MAXVOXELS)
                 break;
-            if (qloadkvx(nextvoxid, name))
+            BECVOXFILE f;
+            f.name = name;
+            f.nVoxel = nextvoxid++;
+            f.nGroup = voxGroup(name);
+            f.bRotate = line.find("rotate TRUE") != std::string::npos;
+            f.bLoaded = false;
+            nFile = files[name] = (int)gVoxFiles.size();
+            gVoxFiles.push_back(f);
+        }
+        gVoxTiles.push_back({ nTile, nFile });
+    }
+    LOG_F(INFO, "Blood Extra Crispy: 3D models for %d tiles (%d files), loaded with the levels that use them",
+          (int)gVoxTiles.size(), (int)gVoxFiles.size());
+}
+
+// the level's: the tiles its sprites show (and their animations, and a switch's other tile)
+void becVoxelsLevel(void)
+{
+    if (gVoxFiles.empty())
+        return;
+    static uint8_t used[MAXTILES];
+    memset(used, 0, sizeof(used));
+    for (int i = 0; i < kMaxSprites; i++)
+    {
+        if (sprite[i].statnum >= kMaxStatus)
+            continue;
+        int const nPic = sprite[i].picnum;
+        int const nFrames = picanm[nPic].num;
+        for (int t = nPic; t <= nPic + nFrames + 1 && t < MAXTILES; t++)
+            used[t] = 1;
+    }
+    int const nLevel = usevoxels ? clamp(gBecModels, 0, 2) : 0;
+    std::vector<uint8_t> want(gVoxFiles.size(), 0);
+    for (auto const &t : gVoxTiles)
+    {
+        BECVOXFILE const &f = gVoxFiles[t.nFile];
+        bool const bShown = nLevel >= 2 || (nLevel == 1 && f.nGroup >= kVoxGroupKey);
+        if (bShown && (used[t.nTile] || f.nGroup == kVoxGroupAlways))
+            want[t.nFile] = 1;
+    }
+    int nLoaded = 0, nFreed = 0, nFailed = 0;
+    for (size_t i = 0; i < gVoxFiles.size(); i++)
+    {
+        BECVOXFILE &f = gVoxFiles[i];
+        if (want[i] && !f.bLoaded)
+        {
+            if (qloadkvx(f.nVoxel, f.name.c_str()))
             {
                 nFailed++;
                 continue;
             }
-            nVoxel = loaded[name] = nextvoxid++;
+            if (f.bRotate)
+                voxflags[f.nVoxel] |= VF_ROTATE;
+            f.bLoaded = true;
+            nLoaded++;
         }
-        tiletovox[nTile] = nVoxel;
-        if (line.find("rotate TRUE") != std::string::npos)  // pickups turn
-            voxflags[nVoxel] |= VF_ROTATE;
-        nTiles++;
+        else if (!want[i] && f.bLoaded)
+        {
+            vox_clearid(f.nVoxel);
+            f.bLoaded = false;
+            nFreed++;
+        }
     }
-    LOG_F(INFO, "Blood Extra Crispy: 3D models for %d tiles (%d files, %d not loaded)", nTiles, (int)loaded.size(), nFailed);
+    int nTiles = 0;
+    for (auto const &t : gVoxTiles)
+    {
+        bool const bOn = gVoxFiles[t.nFile].bLoaded;
+        tiletovox[t.nTile] = bOn ? gVoxFiles[t.nFile].nVoxel : -1;
+        nTiles += bOn;
+    }
+    vox_buildmeshes();  // now, while the level loads, not when they first come into view
+    LOG_F(INFO, "Blood Extra Crispy: 3D models for %d tiles in this level (%d loaded, %d freed, %d failed; bec_models %d)",
+          nTiles, nLoaded, nFreed, nFailed, nLevel);
 }
 
 void becDudesInit(char const *pzKpf)
@@ -691,6 +797,9 @@ void becDudesInit(char const *pzKpf)
     Bstrncpyz(szKpf, pzKpf ? pzKpf : "", sizeof(szKpf));
     OSD_RegisterFunction("becspawn", "becspawn <name or number> [distance] [health]: one of Blood Extra Crispy's enemies appears in front of you", osdcmd_becspawn);
     OSD_RegisterFunction("becinfo", "becinfo: what Blood Extra Crispy's enemies are doing", osdcmd_becinfo);
+    static osdcvardata_t cvModels = { "bec_models", "Blood Extra Crispy's 3D models (0: none, 1: switches, pickups and its own things, 2: all, next level)",
+                                      (void *)&gBecModels, CVAR_INT, 0, 2 };
+    OSD_RegisterCvar(&cvModels, osdcmd_cvar_set);
     OSD_RegisterFunction("beckill", "beckill <bullet|explode|burn|spirit|tesla|fall> [head|belly]: the nearest enemy dies that way", osdcmd_beckill);
     if (!pzKpf || !becDefsLoad(pzKpf))
     {
@@ -805,6 +914,7 @@ spritetype *becSpawnDude(spritetype *pSource, int nType, int x, int y, int z, in
 
 void becLevelStart(bool bSaveLoad)
 {
+    becVoxelsLevel();  // the 3D models this level shows (a saved game's too)
     if (bSaveLoad)
         return;
     memset(gBecFlags, 0, sizeof(gBecFlags));

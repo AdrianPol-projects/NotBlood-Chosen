@@ -32,6 +32,7 @@ See the GNU General Public License for more details.
 #include "becdefs.h"
 #include "becdudes.h"
 #include "becweapons.h"
+#include "gorykill.h"
 #include "blood.h"
 #include "db.h"
 #include "dude.h"
@@ -78,6 +79,7 @@ enum
     kBecOrb,           // the Phantasm Orb: thrown, it finds a head
     kBecAnathema,      // the Vile Anathema (a Necromancer's): the dead rise for Caleb, or skulls fly from his shoulder
     kBecChronometer,   // the Bastion Chronometer (a Necromancer's): reflective shots, or the Doom Bell
+    kBecRevolvers,     // Caleb's revolvers, in place of the pitchfork (the mod's weapon_pitchfork.txt)
     kBecWeaponMax
 };
 
@@ -114,6 +116,8 @@ struct WSTATE
     int16_t nTurret;    // the Maxim stand Caleb is behind
     int32_t nFrost;     // frames left of the Mourning Codex's blizzard around Caleb
     int32_t nSkulls;    // of the Vile Anathema's skulls flying from his shoulder
+    int32_t nPurify;    // the revolvers: frames left of Purify, and of their waits (Purify, the Purge)
+    int32_t nPurifyWait, nPurgeWait;
 };
 
 enum { kPhaseNone, kPhaseRaise, kPhaseIdle, kPhaseFire, kPhaseLower };
@@ -1011,6 +1015,149 @@ void chronometerTrigger(CTX &c, int nTrigger)
     }
 }
 
+//
+// Caleb's revolvers (weapon_pitchfork.txt: the mod's pitchfork): twelve shots, then a reload (never out of
+// bullets). Alt fire: Purify, five seconds of them shooting every enemy in sight by themselves, then ten
+// to wait. Crouched, fire: the Purge, both barrels' blast (ten seconds to wait); crouched, alt fire: the
+// knife (the mod's keys for these two are map zoom in and out)
+//
+
+enum { kRevRounds = 12 };
+
+void revolverReload(CTX &c)
+{
+    c.play(QAVID("QAV_REVRL"), kPhaseFire);
+    c.sound(SFX("SFX_REVLOAD"));
+    c.pState->nAmmo[kBecRevolvers] = kRevRounds;
+}
+
+void revolverFire(CTX &c, bool bAlt)
+{
+    WSTATE *pState = c.pState;
+    bool const bCrouch = c.pPlayer->input.buttonFlags.crouch;
+    if (bCrouch && !bAlt)
+    {
+        if (pState->nPurgeWait <= 0)
+        {
+            c.play(QAVID("QAV_2REVFIRB"), kPhaseFire);
+            pState->nPurgeWait = 10 * kTicsPerSec;
+        }
+    }
+    else if (bCrouch)
+        c.play(QAVID("QAV_KNIFE"), kPhaseFire);
+    else if (bAlt)
+    {
+        if (pState->nPurify <= 0 && pState->nPurifyWait <= 0)
+        {
+            pState->nPurify = 5 * kTicsPerSec;
+            c.sound(SFX("SFX_HEARTBE"));
+        }
+    }
+    else if (c.ammo() <= 0)
+        revolverReload(c);
+    else
+        c.play(QAVID("QAV_REVFIRE2"), kPhaseFire);
+}
+
+void revolverTick(CTX &c)
+{
+    WSTATE *pState = c.pState;
+    if (pState->nPurifyWait > 0 && --pState->nPurifyWait == 0)
+        c.sound(SFX("SFX_READY"));
+    if (pState->nPurgeWait > 0)
+        pState->nPurgeWait--;
+    if (pState->nPhase == kPhaseRaise || pState->nPhase == kPhaseLower)
+        return;
+    if (pState->nPurify > 0)
+    {
+        if (--pState->nPurify == 0)  // done: reload, and a while before the next
+        {
+            pState->nPurifyWait = 10 * kTicsPerSec;
+            revolverReload(c);
+            return;
+        }
+        if (pState->nPurify % 4 == 0)
+        {
+            // a shot at each enemy it sees
+            spritetype *pSprite = c.sprite();
+            int16_t list[16];
+            int nCount = enemiesNear(pSprite, 1000 * 16, true, list, ARRAY_SSIZE(list));
+            // and the other players in Bloodbath and team games (not team mates)
+            for (int p = connecthead; p >= 0 && nCount < (int)ARRAY_SSIZE(list); p = connectpoint2[p])
+            {
+                PLAYER *pOther = &gPlayer[p];
+                if (pOther == c.pPlayer || !pOther->pSprite || !pOther->pXSprite || pOther->pXSprite->health <= 0
+                    || gGameOptions.nGameType == kGameTypeSinglePlayer || gGameOptions.nGameType == kGameTypeCoop
+                    || IsTargetTeammate(c.pPlayer, pOther->pSprite))
+                    continue;
+                spritetype *pTarget = pOther->pSprite;
+                if (approxDist(pTarget->x - pSprite->x, pTarget->y - pSprite->y) <= 1000 * 16
+                    && cansee(pSprite->x, pSprite->y, c.pPlayer->zView, pSprite->sectnum, pTarget->x, pTarget->y, pTarget->z - (24 << 8), pTarget->sectnum))
+                    list[nCount++] = pTarget->index;
+            }
+            for (int i = 0; i < nCount; i++)
+            {
+                spritetype *pEnemy = &sprite[list[i]];
+                int top, bottom;
+                GetSpriteExtents(pEnemy, &top, &bottom);
+                int const dx = pEnemy->x - pSprite->x, dy = pEnemy->y - pSprite->y;
+                int const nDist = ClipLow(approxDist(dx, dy), 1);
+                int const nAngle = getangle(dx, dy);
+                becFireVector(pSprite, 0, c.pPlayer->zWeapon - pSprite->z, Cos(nAngle) >> 16, Sin(nAngle) >> 16,
+                              divscale10((top + bottom) / 2 - c.pPlayer->zWeapon, nDist), "BV_REVOLVERBULLETFLESH");
+            }
+            if (nCount)
+            {
+                if (c.playing() != QAVID("QAV_REVFIRE3") || pState->nTimer <= kTicsPerFrame)
+                    c.play(QAVID("QAV_REVFIRE3"), kPhaseFire);
+                c.flash(30);
+                c.kick(10);
+            }
+        }
+        return;
+    }
+    if (c.ammo() <= 0 && pState->nPhase == kPhaseIdle)
+        revolverReload(c);
+}
+
+void revolverTrigger(CTX &c, int nTrigger)
+{
+    switch (nTrigger)
+    {
+    case 1:  // a shot
+        if (c.playing() != QAVID("QAV_REVFIRE2") || c.ammo() <= 0)
+            break;
+        c.useAmmo(1);
+        c.vector("BV_REVOLVERBULLETFLESH", 300);
+        c.sound(SFX("SFX_REVFIRE"));
+        c.flash(20);
+        c.kick(10);
+        break;
+    case 2:
+        c.sound(SFX("SFX_REVCOCK"));
+        break;
+    case 3:
+        c.sound(SFX("SFX_REVCHAR"));
+        break;
+    case 4:  // the Purge: both barrels' blast
+        c.sound(SFX("SFX_REVBOOM"));
+        rocket(c, 0, 16, kBoomSmall, 0x10000, 0, 8 * 16);
+        rocket(c, 0, 16, kBoomSmall, 0x10000, 0, -8 * 16);
+        c.pState->nAmmo[kBecRevolvers] = kRevRounds;
+        c.flash(60);
+        c.kick(40);
+        break;
+    case 5:  // the knife
+        c.sound(SFX("SFX_AZOMSWIP"));
+        c.vector("BV_KNIFESWIPE", 200);
+        break;
+    case 6:
+    case 9:
+        c.sound(SFX("SFX_REVFIRE"));
+        break;
+    }
+}
+
 WEAPON const gWeapons[kBecWeaponMax] = {
     { "GATLING GUN", 7, -1, 540, 540, "", 4689, "QAV_GATUP", "QAV_GATIDLE", "QAV_GATDOWN", gatlingFire, gatlingTick, NULL, false },
     { "TRENCH GUN", 3, 2, 0, 8, "", 4725, "QAV_PUMPU", "QAV_PUMPI", "QAV_PUMPD", trenchFire, NULL, trenchTrigger, false },
@@ -1032,6 +1179,7 @@ WEAPON const gWeapons[kBecWeaponMax] = {
     { "PHANTASM ORB", 1, -1, 1, 1, "", kOrbPicnum, "QAV_RAISORB", "QAV_HOLDORB", "QAV_LOWORB", orbFire, NULL, orbTrigger, true },
     { "VILE ANATHEMA", 1, -1, 1, 1, "", kAnathemaPicnum, "QAV_NECROUP", "QAV_NECROIDLE", "QAV_NECRODOWN", necroFire, NULL, anathemaTrigger, true },
     { "BASTION CHRONOMETER", 1, -1, 1, 1, "", kChronometerPicnum, "QAV_WATCHUP", "QAV_WATCHIDLE", "QAV_WATCHDOWN", necroFire, NULL, chronometerTrigger, true },
+    { "REVOLVERS", 1, -1, kRevRounds, kRevRounds, "", 4752, "QAV_REVUP", "QAV_REVIDLE", "QAV_REVDOWN", revolverFire, revolverTick, revolverTrigger, false },
 };
 
 CTX ctxFor(PLAYER *pPlayer)
@@ -1091,7 +1239,8 @@ int slotNext(PLAYER *pPlayer, int nSlot, int nFromBec, bool bFromBlood)
 {
     // the list: 0 = Blood's weapon of that number, 1.. = the mod's (index + 1)
     int list[kBecWeaponMax + 1], nCount = 0;
-    if (nSlot < kWeaponMax && WeaponIsEquipable(pPlayer, nSlot, true))
+    bool const bNoPitchfork = nSlot == kWeaponPitchfork && has(&gWState[pPlayer->nPlayer], kBecRevolvers);
+    if (nSlot < kWeaponMax && WeaponIsEquipable(pPlayer, nSlot, true) && !bNoPitchfork)
         list[nCount++] = 0;
     for (int i = 0; i < kBecWeaponMax; i++)
         if (gWeapons[i].nSlot == nSlot && usable(pPlayer, i))
@@ -1304,6 +1453,26 @@ int osdcmd_becput(osdcmdptr_t parm)
     return OSDCMD_OK;
 }
 
+// bectest <player> [dist] | puke | blood: that player (a bot) in front of you, or puke on your face (for trying them)
+int osdcmd_bectestbot(osdcmdptr_t parm)
+{
+    if (parm->numparms < 1 || !gGameStarted || !gMe || !gMe->pSprite)
+        return OSDCMD_SHOWHELP;
+    if (!Bstrcasecmp(parm->parms[0], "puke") || !Bstrcasecmp(parm->parms[0], "blood"))
+    {
+        goryKillScreenPuke(gMe, !Bstrcasecmp(parm->parms[0], "blood"));
+        return OSDCMD_OK;
+    }
+    int const n = atoi(parm->parms[0]);
+    if (n < 0 || n >= kMaxPlayers || !gPlayer[n].pSprite)
+        return OSDCMD_OK;
+    spritetype *pSprite = gMe->pSprite;
+    int const nDist = parm->numparms > 1 ? atoi(parm->parms[1]) : 400;
+    vec3_t pos = { pSprite->x + mulscale30(nDist, Cos(pSprite->ang)), pSprite->y + mulscale30(nDist, Sin(pSprite->ang)), pSprite->z };
+    setsprite(gPlayer[n].pSprite->index, &pos);
+    return OSDCMD_OK;
+}
+
 class BecWeaponsLoadSave : public LoadSave
 {
     virtual void Load(void)
@@ -1338,6 +1507,7 @@ void becWeaponsInit(void)
         return;
     pQavs = new std::unordered_map<int, QAV *>;
     nQavClient = qavRegisterClient(qavTrigger);
+    OSD_RegisterFunction("bectest", "bectest <player> [distance] | puke | blood: a player in front of you, or puke on your face (testing)", osdcmd_bectestbot);
     OSD_RegisterFunction("becgive", "becgive [all|number]: Blood Extra Crispy's weapons", osdcmd_becgive);
     OSD_RegisterFunction("becput", "becput <mower|maxim|blunderbuss>: one of Blood Extra Crispy's world weapons in front of you", osdcmd_becput);
     int nOk = 0;
@@ -1360,6 +1530,11 @@ void becWeaponsPlayerReset(PLAYER *pPlayer)
     memset(pState, 0, sizeof(*pState));
     pState->nActive = pState->nPending = -1;
     pState->nQav = -1;
+    if (bActive && getQav(QAVID("QAV_REVIDLE")))  // Caleb's revolvers, the mod's pitchfork
+    {
+        pState->nHave |= 1u << kBecRevolvers;
+        pState->nAmmo[kBecRevolvers] = kRevRounds;
+    }
 }
 
 void becWeaponsPlayerStart(PLAYER *pPlayer)
@@ -1370,6 +1545,7 @@ void becWeaponsPlayerStart(PLAYER *pPlayer)
     pState->nQav = -1;
     pState->nNext = 0;
     pState->nFrost = pState->nSkulls = 0;
+    pState->nPurify = 0;
 }
 
 bool becWeaponProcess(PLAYER *pPlayer)
@@ -1382,6 +1558,16 @@ bool becWeaponProcess(PLAYER *pPlayer)
         pState->nActive = pState->nPending = -1;
         pState->nQav = -1;
         return false;
+    }
+
+    // Blood's pitchfork coming up or in hand: Caleb's revolvers instead (they're the mod's pitchfork)
+    if (has(pState, kBecRevolvers) && pState->nActive < 0 && pState->nPending < 0 && pState->nNext == 0
+        && (pPlayer->input.newWeapon == kWeaponPitchfork || (pPlayer->curWeapon == kWeaponPitchfork && pPlayer->input.newWeapon == 0)))
+    {
+        pPlayer->input.newWeapon = kWeaponNone;
+        pState->nPending = kBecRevolvers;
+        if (pPlayer->curWeapon)
+            WeaponLower(pPlayer);
     }
 
     // a number key: the next weapon of that slot, which can be one of the mod's
@@ -1692,6 +1878,7 @@ static BECBOTWEAPON const gBotWeapons[kBecWeaponMax] = {
     { 85, 0, 2000, 10000, 250, 0, 0, 0 },            // Phantasm Orb (it finds its way)
     { 70, 0, 3000, 15000, 300, 0, 30000, 0 },        // Vile Anathema (alt: the skulls, no corpses to raise)
     { 60, 0, 2000, 10000, 400, 0, 4000, 0 },         // Bastion Chronometer (alt: the Doom Bell when near)
+    { 40, 0, 2000, 9000, 60, 0, 0, 0 },              // revolvers
 };
 
 int becBotWeaponCount(void)
@@ -1789,6 +1976,25 @@ bool becWeaponPickUp(PLAYER *pPlayer, spritetype *pItem, char *pzMessage, int nM
     Bsnprintf(pzMessage, nMessageSize, "Picked up %s -SLOT %d-", gWeapons[nWeapon].pzName, gWeapons[nWeapon].nSlot);
     sfxPlay3DSound(pPlayer->pSprite, kPickupSound, -1, 0);
     return true;
+}
+
+// in Blood's level preload: the animations of the mod's weapons the players carry, loaded with the level
+void becWeaponsPrecache(void)
+{
+    if (!bActive)
+        return;
+    uint32_t nHave = 0;
+    for (int p = connecthead; p >= 0; p = connectpoint2[p])
+        nHave |= gWState[p].nHave;
+    for (int i = 0; i < kBecWeaponMax; i++)
+    {
+        if (!((nHave >> i) & 1))
+            continue;
+        WEAPON const &w = gWeapons[i];
+        for (char const *pzQav : { w.pzUp, w.pzIdle, w.pzDown })
+            if (QAV *pQav = getQav(becDefine(pzQav, -1)))
+                pQav->Precache();
+    }
 }
 
 // the mod's weapons its maps place: pictures (decorations) its scripts turn into them
@@ -2164,8 +2370,13 @@ void becWeaponsFrame(void)
 }
 
 // the mod's rockets hit: its explosions (Blood's dynamite, bundle or barrel blowing up there)
-bool becImpactMissile(spritetype *pMissile)
+bool becImpactMissile(spritetype *pMissile, int nHitCode)
 {
+    // puke on a player's face (a Crimson Innocent's or Slime Zombie's red, a fat zombie's green): it stays
+    // on the screen until he wipes it off (USE), as the mod's ScreenPuke
+    if (pMissile->type == kMissilePukeGreen && nHitCode == 3 && gHitInfo.hitsprite >= 0 && gHitInfo.hitsprite < kMaxSprites
+        && IsPlayerSprite(&sprite[gHitInfo.hitsprite]))
+        goryKillScreenPuke(&gPlayer[sprite[gHitInfo.hitsprite].type - kDudePlayer1], pMissile->pal == 2);
     int const nBoom = gMissileBoom[pMissile->index] ? gMissileBoom[pMissile->index] : nFiringBoom;
     if (!nBoom)
         return false;

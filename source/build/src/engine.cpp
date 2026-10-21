@@ -11992,6 +11992,13 @@ static void PolymostProcessVoxels(void)
     LOG_F(INFO, "Generated 3D meshes for %d voxels in %.2f ms.", cnt, timerGetFractionalTicks() - time);
 }
 
+// the meshes of voxels loaded since the video mode was set (a level's, Blood Extra Crispy's)
+void vox_buildmeshes(void)
+{
+    if (videoGetRenderMode() == REND_POLYMOST)
+        PolymostProcessVoxels();
+}
+
 static void PolymostFreeVBOs(void)
 {
 # ifdef USE_GLEXT
@@ -12011,6 +12018,8 @@ static void PolymostFreeVBOs(void)
     }
 # endif
 }
+#else
+void vox_buildmeshes(void) {}
 #endif
 
 //

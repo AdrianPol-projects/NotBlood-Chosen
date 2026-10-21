@@ -31,6 +31,7 @@ See the GNU General Public License for more details.
 #include "compat.h"
 #include "common_game.h"
 #include "actor.h"
+#include "becai.h"
 #include "becdudes.h"
 #include "becweapons.h"
 #include "blood.h"
@@ -60,6 +61,7 @@ enum
     kEvLaugh,      // Caleb heals 10 (up to 200) and laughs now and then; blood on the screen
     kEvBody,       // the body flies away from Caleb with the kill's SEQ and stays as a corpse
     kEvKick,       // the quick kick lands: three short hits that push hard (the mod's BV_QUICKKICK)
+    kEvWipe,       // Caleb's hand wipes the puke off his face
     kEvEnd = -1,
 };
 
@@ -99,6 +101,7 @@ enum
 #define LAUGH(t) { t, kEvLaugh, 0, 0 }
 #define BODY(t) { t, kEvBody, 0, 0 }
 #define KICK(t) { t, kEvKick, 0, 0 }
+#define WIPE(t) { t, kEvWipe, 0, 0 }
 #define END { 0, kEvEnd, 0, 0 }
 
 // cultists (the four have the same timeline; tesla and TNT add a punt at the start)
@@ -194,6 +197,12 @@ GKDEF const gKills[] = {
 
 enum { kScreenBloodTime = 90 };
 
+// puke on Caleb's face (BEC_Players.txt ScreenPuke): it stays until he wipes it off with USE (QAV_WIPE, the
+// mod's HUDQAVType 62) or a while has gone by; green from fat zombies, the red blood from Crimson Innocents
+enum { kPukeTime = 600 / 2, kBloodPukeTime = 900 / 2 };
+GKEVENT const gEvWipe[] = { WIPE(30), END };
+GKDEF const gWipe = { { 0 }, -1, 0, 50, 713, 714, 0, gEvWipe, true };
+
 struct GKSTATE
 {
     GKDEF const *pDef;  // the kill playing, NULL for none
@@ -202,6 +211,8 @@ struct GKSTATE
     int nScreenBlood, nScreenBloodTile;
     int nKickDelay;
     int nKickTarget;
+    int nPuke;      // frames left of puke on the screen
+    bool bBloodPuke;
 };
 
 Resource gBecRes;  // the mod's EXTRAC.RFF
@@ -332,6 +343,9 @@ void runEvent(PLAYER *pPlayer, GKSTATE *pState, GKEVENT const *pEv)
     case kEvKick:
         kick(pPlayer, pState->nKickTarget);
         break;
+    case kEvWipe:
+        pState->nPuke = 0;
+        break;
     }
 }
 
@@ -425,6 +439,34 @@ void goryKillInit(void)
     becWeaponsInit();
 }
 
+// in Blood's level preload (PreloadTiles): the mod's animations this level needs, loaded with it, not
+// the first time they're used (the kills' hands for the enemies there, the kick, the extra deaths, the
+// mod's weapons carried)
+void goryKillPrecache(void)
+{
+    if (!bAvailable)
+        return;
+    auto precacheQav = [](int nQav) {
+        if (DICTNODE *hQav = gBecRes.Lookup(nQav, "QAV"))
+            ((QAV *)gBecRes.Lock(hQav))->Precache();
+    };
+    precacheQav(gKick.nQav);
+    for (auto const &k : gKills)
+    {
+        bool bThere = false;
+        for (int nSprite = headspritestat[kStatDude]; nSprite >= 0 && !bThere; nSprite = nextspritestat[nSprite])
+            for (short nDude : k.nDude)
+                bThere |= nDude && nDude == sprite[nSprite].type;
+        if (!bThere)
+            continue;
+        precacheQav(k.nQav);
+        if (k.nBodySeq)
+            seqPrecacheId(k.nBodySeq);
+    }
+    becAiPrecache();
+    becWeaponsPrecache();
+}
+
 bool goryKillAvailable(void)
 {
     return bAvailable;
@@ -446,6 +488,22 @@ bool goryKillTryStart(PLAYER *pPlayer)
         return false;
     spritetype *pSprite = pPlayer->pSprite;
     XSPRITE *pXSprite = pPlayer->pXSprite;
+    GKSTATE *pWiping = &gState[pPlayer->nPlayer];
+    if (pWiping->nPuke > 0 && pXSprite && pXSprite->health > 0)  // puke on his face: wiped off first
+    {
+        DICTNODE *hQav = gBecRes.Lookup(powerupCheck(pPlayer, kPwUpShadowCloak) ? gWipe.nQavCloak : gWipe.nQav, "QAV");
+        if (!hQav)
+        {
+            pWiping->nPuke = 0;
+            return false;
+        }
+        pWiping->pQav = (QAV *)gBecRes.Lock(hQav);
+        pWiping->pQav->nSprite = -1;
+        pWiping->pQav->Precache();
+        pWiping->pDef = &gWipe;
+        pWiping->nTimer = gWipe.nLength;
+        return false;  // USE still opens what's in front
+    }
     if (!pSprite || !pXSprite || pXSprite->health <= 0 || pPlayer->posture == kPostureSwim || pXSprite->height > 16)
         return false;
 
@@ -552,6 +610,10 @@ void goryKillFrame(void)
         GKSTATE *pState = &gState[i];
         if (pState->nScreenBlood > 0)
             pState->nScreenBlood--;
+        if (pState->nPuke > 0 && (pPlayer->pXSprite == NULL || pPlayer->pXSprite->health <= 0))
+            pState->nPuke = 0;
+        else if (pState->nPuke > 0)
+            pState->nPuke--;
         if (pState->nKickDelay > 0)
             pState->nKickDelay -= 2;
         if (!pState->pDef)
@@ -590,16 +652,34 @@ bool goryKillDraw(PLAYER *pPlayer, int nShade, int x, int y, int nPal)
     return true;
 }
 
+void goryKillScreenPuke(PLAYER *pPlayer, bool bBlood)
+{
+    if (!bAvailable || !pPlayer)
+        return;
+    GKSTATE *pState = &gState[pPlayer->nPlayer];
+    pState->nPuke = bBlood ? kBloodPukeTime : kPukeTime;
+    pState->bBloodPuke = bBlood;
+}
+
 void goryKillDrawScreenBlood(PLAYER *pPlayer)
 {
     if (!pPlayer)
         return;
     GKSTATE *pState = &gState[pPlayer->nPlayer];
+    if (pState->nPuke > 0)
+    {
+        // a translucent layer and a solid one, as the mod's two HUD pictures (5536+5617 green, 5615+5616 red)
+        int const nBack = pState->bBloodPuke ? 5615 : 5536, nFront = pState->bBloodPuke ? 5616 : 5617;
+        if (tilesiz[nBack].x > 0)
+            rotatesprite(160 << 16, 100 << 16, 65536, 0, nBack, 0, 0, RS_AUTO | RS_STRETCH | RS_TRANS1, 0, 0, xdim - 1, ydim - 1);
+        if (tilesiz[nFront].x > 0)
+            rotatesprite(160 << 16, 100 << 16, 65536, 0, nFront, 0, 0, RS_AUTO | RS_STRETCH, 0, 0, xdim - 1, ydim - 1);
+    }
     if (pState->nScreenBlood <= 0 || tilesiz[pState->nScreenBloodTile].x <= 0)
         return;
     // translucent, more so as it fades
-    int const nFlags = RS_AUTO | RS_TRANS1 | (pState->nScreenBlood < kScreenBloodTime / 2 ? RS_TRANS2 : 0);
-    rotatesprite(160 << 16, 140 << 16, 65536, 0, pState->nScreenBloodTile, 0, 0, nFlags, 0, 0, xdim - 1, ydim - 1);
+    int const nFlags = RS_AUTO | RS_STRETCH | RS_TRANS1 | (pState->nScreenBlood < kScreenBloodTime / 2 ? RS_TRANS2 : 0);
+    rotatesprite(160 << 16, 100 << 16, 65536, 0, pState->nScreenBloodTile, 0, 0, nFlags, 0, 0, xdim - 1, ydim - 1);
 }
 
 void goryKillReset(void)

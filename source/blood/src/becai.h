@@ -41,6 +41,7 @@ void becAiAfterKill(spritetype *pSprite, XSPRITE *pXSprite, int nKiller, DAMAGE_
 void becAiInit(spritetype *pSprite, XSPRITE *pXSprite);
 void becAiFrame(void);
 void becAiLevelStart(void);
+void becAiPrecache(void);  // in Blood's level preload: the extra deaths of the level's enemies
 
 // helpers shared with becdudes.cpp
 spritetype *becTarget(XSPRITE *pXSprite);

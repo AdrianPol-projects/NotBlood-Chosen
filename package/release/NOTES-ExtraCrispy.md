@@ -11,10 +11,11 @@ A test of the *Blood Extra Crispy* mod (by VGames, for Nightdive's Refreshed Sup
 4. Start NotBlood Crispy, go to **MODS**, choose **BLOOD EXTRA CRISPY**. The game restarts with the mod.
 
 **What you get:**
-- **Its look:** the title and menu background, its edited sprites, and its **3D models** (voxels) for about 570 things: switches, levers, valves, bottles, signs, lamps, chandeliers, pickups, the Maxim gun and the cannons. OPTIONS > VIDEO can turn voxels off.
+- **Its look:** the title and menu background, its edited sprites, and its **3D models** (voxels) for about 570 things: switches, levers, valves, bottles, signs, lamps, chandeliers, pickups, the Maxim gun and the cannons. OPTIONS > DISPLAY SETUP > VOXELS: **SOME** (the default: switches, levers, valves, pickups and the mod's own things), **ALL** (also its wall decorations and props, slower on phones) or **OFF**. A level loads only the ones it uses.
 - **Its sounds.**
 - **Its maps:** the mod's versions of the official levels, with its extra decorations, gore and enemies.
 - **Gory Kills:** walk up to a nearly dead enemy, face it and press **USE**. Caleb finishes it in first person, heals a little, and kicks the body away. They work on cultists (all four), axe zombies, fat zombies, flesh gargoyles, gill beasts, innocents, hell hounds and phantasms, and on the mod's Crimson Innocents, Skeletal Zombies, crawling half zombies, zombie heads and attack dogs. The enemy must be badly hurt (below about 12 health), except innocents, heads, half zombies and dogs.
+- **Puke on your face** (fat zombies, pods, and the red blood of Crimson Innocents) stays on the screen until you press **USE**: Caleb wipes it off with his hand.
 - **Quick kick:** USE on an enemy that isn't hurt enough shows Caleb's foot and kicks it back. Burning enemies, beasts, Necromancers, Liches, Monster Dogs, Slime Zombies and the Inferno always get kicked. You can kick once a second.
 - **In Bloodbath and team games** you can kick other players too, and finish off one who is nearly dead (it counts as your frag). Not your team mates, and not in co-op.
 - **Bots** (MULTIPLAYER > PLAY WITH BOTS, or bots in a network game) pick up and use the mod's weapons, and kick and finish off other players.
@@ -31,6 +32,7 @@ A test of the *Blood Extra Crispy* mod (by VGames, for Nightdive's Refreshed Sup
 **Choosing the mod now restarts the app by itself.**
 
 - **Its weapons:** they share the number keys with Blood's; press the key again for the next one on it.
+  - **Caleb's revolvers** (key 1) are the mod's pitchfork: twelve shots, then a reload; they never run out. Alt fire: **Purify**, five seconds of them shooting every enemy in sight by themselves, then ten seconds to wait. Crouch + fire: the **Purge**, both barrels' blast (ten seconds to wait). Crouch + alt fire: the **knife**.
   - **Gatling Gun** (key 7): it's where the Guns Akimbo powerup was. Hold fire; alt fire is its wider "overkill".
   - **Devastator** and **rocket launcher** (key 7), and the **Trench Gun** (key 3): pick them up where the mod's maps place them. The rocket launcher's alt fire is the nuke, which takes ten rockets. The Trench Gun's alt fire is dragon's breath.
   - **Devil's Bore** (key 8): it's where Beast Vision was.

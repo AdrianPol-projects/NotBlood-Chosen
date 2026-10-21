@@ -3764,7 +3764,7 @@ void actHitcodeToData(int a1, HITINFO *pHitInfo, int *a3, spritetype **a4, XSPRI
 
 void actImpactMissile(spritetype *pMissile, int hitCode)
 {
-    if (becImpactMissile(pMissile)) // Blood Extra Crispy's rockets
+    if (becImpactMissile(pMissile, hitCode)) // Blood Extra Crispy's rockets
         return;
     int nXMissile = pMissile->extra;
     dassert(nXMissile > 0 && nXMissile < kMaxXSprites);

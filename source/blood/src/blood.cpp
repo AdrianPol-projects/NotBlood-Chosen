@@ -450,6 +450,7 @@ void PreloadTiles(void)
     seqPrecacheId(dudeInfo[31].seqStartID+8);
     seqPrecacheId(dudeInfo[31].seqStartID+9);
     seqPrecacheId(dudeInfo[31].seqStartID+10);
+    goryKillPrecache(); // Blood Extra Crispy's (only when it's chosen in MODS)
     seqPrecacheId(dudeInfo[31].seqStartID+14);
     seqPrecacheId(dudeInfo[31].seqStartID+15);
     seqPrecacheId(dudeInfo[31].seqStartID+12);

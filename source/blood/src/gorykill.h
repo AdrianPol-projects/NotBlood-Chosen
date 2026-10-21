@@ -53,3 +53,6 @@ void goryKillDrawScreenBlood(PLAYER *pPlayer);
 
 // a new level or a loaded game: nothing is playing
 void goryKillReset(void);
+void goryKillPrecache(void);  // in the level preload: the mod's animations the level needs
+// puke hit his face: it stays on the screen until USE wipes it off (bBlood: a Crimson's red)
+void goryKillScreenPuke(PLAYER *pPlayer, bool bBlood);

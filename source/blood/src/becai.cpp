@@ -1993,6 +1993,22 @@ void extraDeath(spritetype *pSprite, DAMAGE_TYPE nDmgType)
 
 } // namespace
 
+// the level's enemies' extra deaths, loaded with the level (not the first time one dies)
+void becAiPrecache(void)
+{
+    for (auto const &d : gExtraDeaths)
+    {
+        bool bThere = false;
+        for (int nSprite = headspritestat[kStatDude]; nSprite >= 0 && !bThere; nSprite = nextspritestat[nSprite])
+            bThere = sprite[nSprite].type == d.nType;
+        if (!bThere)
+            continue;
+        for (char const *pzSeq : { d.pzHead, d.pzBelly, d.pzSuffer, d.pzLegs, d.pzSpirit, d.pzTesla })
+            if (pzSeq && becDefine(pzSeq, -1) >= 0)
+                seqPrecacheId(becDefine(pzSeq, -1));
+    }
+}
+
 // what the mod adds to Blood's own enemies' deaths
 void becAiAfterKill(spritetype *pSprite, XSPRITE *pXSprite, int nKiller, DAMAGE_TYPE nDmgType)
 {
