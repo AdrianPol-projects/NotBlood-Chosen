@@ -2264,6 +2264,7 @@ int app_main(int argc, char const * const * argv)
             loaddefinitions_game(tempFilename, FALSE);
         }
     }
+    becVoxelsInit(); // Blood Extra Crispy's 3D models (only when it's chosen in MODS)
 
     powerupInit();
     LOG_F(INFO, "Loading cosine table");

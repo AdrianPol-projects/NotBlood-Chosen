@@ -621,9 +621,74 @@ bool becDudesActive(void)
     return bActive;
 }
 
+static char szKpf[BMAX_PATH];  // the mod's BloodEX.kpf
+
+// the mod's voxels (3D models): its defs/extraVoxels.txt gives one for each of these tiles (switches,
+// levers, valves, bottles, signs, lamps, pickups, its Maxim gun and cannons), the .kvx files are in its
+// BloodEX.kpf (a zip, mounted for them). After the game's own definitions: the models need its palette.
+void becVoxelsInit(void)
+{
+    if (!bActive || !szKpf[0])
+        return;
+    if (initgroupfile(szKpf) < 0)
+    {
+        LOG_F(WARNING, "Blood Extra Crispy: %s can't be opened for its 3D models", szKpf);
+        return;
+    }
+    buildvfs_kfd h = kopen4load("defs/extraVoxels.txt", 0);
+    if (h == buildvfs_kfd_invalid)
+        return;
+    int const nLen = kfilelength(h);
+    std::string text(max(nLen, 0), '\0');
+    if (nLen > 0)
+        kread(h, &text[0], nLen);
+    kclose(h);
+    std::unordered_map<std::string, int> loaded;  // a file's voxel (several tiles share some)
+    int nTiles = 0, nFailed = 0;
+    for (size_t p = 0; p < text.size();)
+    {
+        size_t eol = text.find('\n', p);
+        if (eol == std::string::npos)
+            eol = text.size();
+        std::string line = text.substr(p, eol - p);
+        p = eol + 1;
+        size_t const nComment = line.find("//");
+        if (nComment != std::string::npos)
+            line.resize(nComment);
+        // Voxel <tile> { filename "<file>" [rotate TRUE] }
+        int nTile;
+        char name[256];
+        if (sscanf(line.c_str(), " Voxel %d { filename \"%255[^\"]\"", &nTile, name) != 2 || nTile < 0 || nTile >= MAXTILES)
+            continue;
+        int nVoxel;
+        auto it = loaded.find(name);
+        if (it != loaded.end())
+            nVoxel = it->second;
+        else
+        {
+            while (nextvoxid < MAXVOXELS && (voxflags[nextvoxid] & VF_RESERVE))  // Blood's own voxels
+                nextvoxid++;
+            if (nextvoxid >= MAXVOXELS)
+                break;
+            if (qloadkvx(nextvoxid, name))
+            {
+                nFailed++;
+                continue;
+            }
+            nVoxel = loaded[name] = nextvoxid++;
+        }
+        tiletovox[nTile] = nVoxel;
+        if (line.find("rotate TRUE") != std::string::npos)  // pickups turn
+            voxflags[nVoxel] |= VF_ROTATE;
+        nTiles++;
+    }
+    LOG_F(INFO, "Blood Extra Crispy: 3D models for %d tiles (%d files, %d not loaded)", nTiles, (int)loaded.size(), nFailed);
+}
+
 void becDudesInit(char const *pzKpf)
 {
     bActive = false;
+    Bstrncpyz(szKpf, pzKpf ? pzKpf : "", sizeof(szKpf));
     OSD_RegisterFunction("becspawn", "becspawn <name or number> [distance] [health]: one of Blood Extra Crispy's enemies appears in front of you", osdcmd_becspawn);
     OSD_RegisterFunction("becinfo", "becinfo: what Blood Extra Crispy's enemies are doing", osdcmd_becinfo);
     OSD_RegisterFunction("beckill", "beckill <bullet|explode|burn|spirit|tesla|fall> [head|belly]: the nearest enemy dies that way", osdcmd_beckill);

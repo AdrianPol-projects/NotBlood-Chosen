@@ -57,6 +57,8 @@ static_assert((int)kDudeBecMax <= (int)kDudeMax, "kDudeMax needs room for Blood 
 
 // the mod's enemies are there (its definitions were read when the game started)
 bool becDudesActive(void);
+// the mod's 3D models (voxels) for its tiles, once the game's definitions are loaded
+void becVoxelsInit(void);
 void becDudesInit(char const *pzKpf);
 
 inline bool becIsDude(int nType) { return nType >= kDudeBecBase && nType < kDudeBecMax; }
