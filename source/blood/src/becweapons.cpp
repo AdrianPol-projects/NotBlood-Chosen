@@ -118,6 +118,7 @@ struct WSTATE
     int32_t nSkulls;    // of the Vile Anathema's skulls flying from his shoulder
     int32_t nPurify;    // the revolvers: frames left of Purify, and of their waits (Purify, the Purge)
     int32_t nPurifyWait, nPurgeWait;
+    int8_t bPitchfork;  // the pitchfork chosen with key 1 (otherwise the revolvers come up in its place)
 };
 
 enum { kPhaseNone, kPhaseRaise, kPhaseIdle, kPhaseFire, kPhaseLower };
@@ -1216,7 +1217,8 @@ int ammoOf(PLAYER *pPlayer, int nWeapon)
 
 bool usable(PLAYER *pPlayer, int nWeapon)
 {
-    return has(&gWState[pPlayer->nPlayer], nWeapon) && ammoOf(pPlayer, nWeapon) > 0;
+    // the revolvers are never empty: they reload
+    return has(&gWState[pPlayer->nPlayer], nWeapon) && (ammoOf(pPlayer, nWeapon) > 0 || nWeapon == kBecRevolvers);
 }
 
 void raise(PLAYER *pPlayer, int nWeapon)
@@ -1224,6 +1226,7 @@ void raise(PLAYER *pPlayer, int nWeapon)
     WSTATE *pState = &gWState[pPlayer->nPlayer];
     pState->nActive = nWeapon;
     pState->nPending = -1;
+    pState->bPitchfork = 0;
     pState->nNext = 0;
     memset(pState->nVar, 0, sizeof(pState->nVar));
     CTX c = ctxFor(pPlayer);
@@ -1239,8 +1242,7 @@ int slotNext(PLAYER *pPlayer, int nSlot, int nFromBec, bool bFromBlood)
 {
     // the list: 0 = Blood's weapon of that number, 1.. = the mod's (index + 1)
     int list[kBecWeaponMax + 1], nCount = 0;
-    bool const bNoPitchfork = nSlot == kWeaponPitchfork && has(&gWState[pPlayer->nPlayer], kBecRevolvers);
-    if (nSlot < kWeaponMax && WeaponIsEquipable(pPlayer, nSlot, true) && !bNoPitchfork)
+    if (nSlot < kWeaponMax && WeaponIsEquipable(pPlayer, nSlot, true))
         list[nCount++] = 0;
     for (int i = 0; i < kBecWeaponMax; i++)
         if (gWeapons[i].nSlot == nSlot && usable(pPlayer, i))
@@ -1546,6 +1548,7 @@ void becWeaponsPlayerStart(PLAYER *pPlayer)
     pState->nNext = 0;
     pState->nFrost = pState->nSkulls = 0;
     pState->nPurify = 0;
+    pState->bPitchfork = 0;  // the revolvers come up first
 }
 
 bool becWeaponProcess(PLAYER *pPlayer)
@@ -1561,7 +1564,9 @@ bool becWeaponProcess(PLAYER *pPlayer)
     }
 
     // Blood's pitchfork coming up or in hand: Caleb's revolvers instead (they're the mod's pitchfork)
-    if (has(pState, kBecRevolvers) && pState->nActive < 0 && pState->nPending < 0 && pState->nNext == 0
+    if (pPlayer->curWeapon > kWeaponPitchfork)  // (raise() clears it too)
+        pState->bPitchfork = 0;
+    if (has(pState, kBecRevolvers) && pState->nActive < 0 && pState->nPending < 0 && pState->nNext == 0 && !pState->bPitchfork
         && (pPlayer->input.newWeapon == kWeaponPitchfork || (pPlayer->curWeapon == kWeaponPitchfork && pPlayer->input.newWeapon == 0)))
     {
         pPlayer->input.newWeapon = kWeaponNone;
@@ -1597,6 +1602,7 @@ bool becWeaponProcess(PLAYER *pPlayer)
             c.lower();
             pState->nNext = nNew;
             pPlayer->input.newWeapon = kWeaponNone;
+            pState->bPitchfork = nNew == kWeaponPitchfork;  // key 1 again: Blood's pitchfork, wanted
         }
         else if (pState->nActive >= 0)
             pPlayer->input.newWeapon = kWeaponNone;
@@ -1665,7 +1671,9 @@ bool becWeaponProcess(PLAYER *pPlayer)
     }
     if (pState->nPhase == kPhaseIdle)
     {
-        if (c.ammo() <= 0)  // empty: Blood's next weapon
+        if (c.ammo() <= 0 && c.nWeapon == kBecRevolvers)  // the revolvers reload instead
+            revolverReload(c);
+        else if (c.ammo() <= 0)  // empty: Blood's next weapon
         {
             c.lower();
             pState->nNext = pPlayer->lastWeapon > 0 ? (int)pPlayer->lastWeapon : (int)kWeaponPitchfork;
