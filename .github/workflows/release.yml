@@ -32,7 +32,7 @@ env:
   SDL_VERSION: 2.32.10
 
 jobs:
-  # Linux builds that run on any distribution from about 2020 on: built on Debian 11 (glibc 2.31) with SDL2
+  # Linux builds that run on any distribution from about 2022 on: built on Ubuntu 22.04 (glibc 2.35) with SDL2
   # linked in (it loads X11, Wayland, ALSA, PulseAudio/PipeWire and OpenGL itself when the game starts) and
   # without the GTK startup window, so nothing but the C library and its basics has to be installed.
   build-linux:
@@ -48,7 +48,7 @@ jobs:
             runner: ubuntu-24.04-arm
             target: linux-arm64
     runs-on: ${{ matrix.runner }}
-    container: debian:bullseye
+    container: ubuntu:22.04
     steps:
       - name: Install prerequisites
         run: |
