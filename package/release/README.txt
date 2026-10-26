@@ -14,7 +14,7 @@ SETUP
    TILES000.ART to TILES017.ART (from One Unit Whole Blood: CD, GOG or Steam).
 2. Start the game:
    Windows:  notblood.exe
-   Linux:    ./notblood   (needs SDL2: sudo apt install libsdl2-2.0-0)
+   Linux:    ./notblood   (x86_64 or arm64 download; nothing else to install)
    macOS:    see "macOS" below
 
 

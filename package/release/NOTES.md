@@ -9,7 +9,8 @@ You need your own Blood files (One Unit Whole Blood: CD, GOG or Steam). The game
 | File | For |
 | --- | --- |
 | `NotBlood-Chosen-1.2-win64.zip` | Windows 10/11 (64-bit) |
-| `NotBlood-Chosen-1.2-linux-x64.zip` | Linux x86_64 (needs SDL2) |
+| `NotBlood-Chosen-1.2-linux-x64.zip` | Linux on PCs (x86_64): any distribution from about 2022 on (Ubuntu 22.04, Mint 21, Debian 12, Fedora 36, Arch, SteamOS or newer), nothing to install |
+| `NotBlood-Chosen-1.2-linux-arm64.zip` | Linux on ARM (arm64/aarch64): Raspberry Pi 4/5 with a 64-bit system, ARM laptops and handhelds, same distributions |
 | `NotBlood-Chosen-1.2-macos.zip` | macOS 11 or newer, Apple Silicon and Intel |
 | `NotBlood-Chosen-1.2-android.apk` | Android 5 or newer (phones, tablets, Chromebooks) |
 | `NotBlood-Chosen-1.2-ios.ipa` | iPad/iPhone with iOS 15 or newer (unsigned: sideload it with Signulous, Sideloadly or AltStore) |
@@ -26,7 +27,7 @@ Everybody in a network game needs **1.2**. Older versions can't join a 1.2 game,
 **Windows / Linux**
 1. Unzip into a folder of its own, for example `NotBlood`.
 2. Copy your Blood files next to the game: `BLOOD.INI`, `BLOOD.RFF`, `GUI.RFF`, `SOUNDS.RFF`, `SURFACE.DAT`, `TABLES.DAT`, `VOXEL.DAT` and `TILES000.ART` to `TILES017.ART`.
-3. Start `notblood.exe` (Windows) or `./notblood` (Linux; if SDL2 is missing: `sudo apt install libsdl2-2.0-0`).
+3. Start `notblood.exe` (Windows) or `./notblood` (Linux; nothing else to install, it works under X11 and Wayland).
 
 **macOS**
 1. Unzip and put the `NotBlood` folder anywhere in your home folder, for example in Documents. You don't need an administrator.

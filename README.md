@@ -1,6 +1,6 @@
 # NotBlood Chosen
 
-[NotBlood](https://github.com/clipmove/NotBlood) (a Blood source port) with **bots**, new match types, co-op saves, internet play without port forwarding, a live game dashboard, a MODS menu and a LAN game finder, for **Windows, Linux, macOS, Android and iPad**. Every player in a network game needs the same version; all platforms of one version play together.
+[NotBlood](https://github.com/clipmove/NotBlood) (a Blood source port) with **bots**, new match types, co-op saves, internet play without port forwarding, a live game dashboard, a MODS menu and a LAN game finder, for **Windows, Linux (PC and ARM), macOS, Android and iPad**. Every player in a network game needs the same version; all platforms of one version play together.
 
 **Downloads**
 * Windows, Linux, macOS, Android: [NotBlood-Chosen releases](https://github.com/AdrianPol-projects/NotBlood-Chosen/releases)
