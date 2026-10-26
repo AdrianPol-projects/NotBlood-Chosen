@@ -58,6 +58,8 @@ jobs:
             libwayland-dev wayland-protocols libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev libdrm-dev libgbm-dev \
             libasound2-dev libpulse-dev libdbus-1-dev libudev-dev
       - uses: actions/checkout@v4
+      - name: Let git read the checkout (the build puts its revision in the game)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Build SDL2 (static)
         run: |
           curl -fsSL -o sdl.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-${SDL_VERSION}.tar.gz"
