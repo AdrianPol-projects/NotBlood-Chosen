@@ -73,9 +73,9 @@ jobs:
         run: make -j$(nproc) blood HAVE_FLAC=0 USE_LIBVPX=0 LTO=0 HAVE_GTK2=0 SDL_STATIC=1 SDLCONFIG="$PWD/sdl/bin/sdl2-config"
       - name: Check dependencies
         run: |
-          file ./notblood || true
+          # libasound (ALSA, for MIDI music) is part of every desktop Linux
           readelf -d ./notblood | grep NEEDED
-          if readelf -d ./notblood | grep NEEDED | grep -v -E 'lib(c|m|dl|pthread|rt|stdc\+\+|gcc_s)\.so|ld-linux'; then
+          if readelf -d ./notblood | grep NEEDED | grep -v -E 'lib(c|m|dl|pthread|rt|stdc\+\+|gcc_s|asound)\.so|ld-linux'; then
             echo "binary depends on a library that may not be installed everywhere"
             exit 1
           fi
