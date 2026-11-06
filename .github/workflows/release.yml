@@ -114,7 +114,7 @@ jobs:
   build-macos:
     name: macOS (Apple Silicon + Intel)
     if: github.repository == 'AdrianPol-projects/NotBlood-Chosen' && (github.event_name != 'workflow_dispatch' || inputs.only == 'all' || inputs.only == 'macos')
-    runs-on: macos-15
+    runs-on: macos-latest  # named images get retired (macos-14, then 15 sat in the queue)
     env:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
     steps:
