@@ -5225,7 +5225,14 @@ RORHACK:
 #ifdef USE_OPENGL
             else
             {
-                if (videoGetRenderMode() == REND_POLYMOST && gDeliriumBlur && glAccum) // no accumulation buffer on GL ES (iOS/gl4es)
+#if defined EDUKE32_IOS || defined __ANDROID__
+                // no accumulation buffer on GL ES: gl4es hands out a do-nothing stand-in for glAccum
+                // (variadic, so in the browser calling it was a function signature mismatch that
+                // stopped the game as soon as somebody ate a delirium shroom)
+                if (0)
+#else
+                if (videoGetRenderMode() == REND_POLYMOST && gDeliriumBlur && glAccum)
+#endif
                 {
                     if (!bDeliriumOld)
                     {
@@ -5753,6 +5760,20 @@ void viewPrintFPS(void)
                 printext256(windowxy2.x-(chars<<(3-x)), windowxy1.y+30+1+FPS_YOFFSET, FPS_COLOR(g_netClientPeer->lastRoundTripTime > 200), -1, tempbuf, x);
             }
 #endif
+        }
+
+        // net_stats (ONLINE > NET STATS): how the connection is doing, under the frame rate counter
+        if (gNetStats && gNetMode != NETWORK_NONE && numplayers > 1)
+        {
+            int const nRoundTrip = netRoundTrip(NULL);
+            int chars;
+            if (nRoundTrip >= 0)
+                chars = Bsprintf(tempbuf, "ping %d ms, buffer %d ms, %d fps", nRoundTrip, gBufferJitter * 1000 / kTicRate * kTicsPerFrame, g_frameRate);
+            else
+                chars = Bsprintf(tempbuf, "buffer %d ms, %d fps", gBufferJitter * 1000 / kTicRate * kTicsPerFrame, g_frameRate);
+            int const y = windowxy1.y + 2 + FPS_YOFFSET + (gShowFps > 2 ? 60 : gShowFps > 1 ? 30 : gShowFps ? 10 : 0);
+            printext256(windowxy2.x-(chars<<(3-x))+1, y+1, 0, -1, tempbuf, x);
+            printext256(windowxy2.x-(chars<<(3-x)), y, FPS_COLOR(nRoundTrip > 200 || g_frameRate < LOW_FPS), -1, tempbuf, x);
         }
 
         if (cumulativeFrameDelay >= 1000.0)

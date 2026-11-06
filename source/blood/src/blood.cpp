@@ -2428,7 +2428,10 @@ RESTART:
                                 if (gNetFifoHead[i] == gNetFifoTail)
                                     break;
                             if (i >= 0)
+                            {
+                                gNetDebugStalls++;
                                 break;
+                            }
                             faketimerhandler();
                             ProcessFrame();
                         }
@@ -2444,6 +2447,8 @@ RESTART:
                 g_gameUpdateAvgTime = ((GAMEUPDATEAVGTIMENUMSAMPLES-1.f)*g_gameUpdateAvgTime+g_gameUpdateTime)/((float) GAMEUPDATEAVGTIMENUMSAMPLES);
             }
             bDraw = engineFPSLimit() != 0;
+            gNetDebugFrames += bDraw;
+            netDebugTick();
             if (gQuitRequest && gQuitGame)
                 videoClearScreen(0);
             else

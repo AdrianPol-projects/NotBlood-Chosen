@@ -92,6 +92,8 @@ Everybody in a network game needs **1.2**. Older versions can't join a 1.2 game,
 - Team bloodbath without flags, and last team standing.
 - MODE now sits right under GAME in GAME SETTINGS.
 - No default online server.
+- NET STATS in MULTIPLAYER > ONLINE: ping, input buffer and frame rate during online and LAN games (`net_stats`).
+- In a browser: a delirium shroom no longer stops the game, the SERVER field shows the page's own server and is kept, sound is less delayed on fast tablets, and the next start shows why the game stopped last time.
 - Android: the black sky, explosions turning the world black, settings not being kept and slow drawing are fixed.
 - macOS: faster drawing on Apple GPUs.
 

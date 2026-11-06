@@ -66,6 +66,8 @@ int gSendCheckTail = 0;
 int gCheckTail = 0;
 int gInitialNetPlayers = 0;
 int gBufferJitter = 1;
+int gNetDebug, gNetDebugStalls, gNetDebugFrames;
+int gNetStats;
 int gPlayerTyping[8];
 int gPlayerReady[8];
 bool bNoResend = true;
@@ -907,6 +909,47 @@ void netMasterUpdate(void)
             netSendPacket(p, packet, pPacket-packet);
         gNetFifoMasterTail++;
     } while (1);
+}
+
+// the slowest connection's ENet round trip in ms (a joining player has only the one to the host), -1 if none
+int netRoundTrip(int *pVariance)
+{
+    ENetPeer *pWorst = NULL;
+    if (gNetMode == NETWORK_CLIENT)
+        pWorst = gNetENetPeer;
+    else if (gNetMode == NETWORK_SERVER)
+    {
+        for (int p = connecthead; p >= 0; p = connectpoint2[p])
+            if (gNetPlayerPeer[p] && (!pWorst || gNetPlayerPeer[p]->roundTripTime > pWorst->roundTripTime))
+                pWorst = gNetPlayerPeer[p];
+    }
+    if (!pWorst)
+        return -1;
+    if (pVariance)
+        *pVariance = pWorst->roundTripTimeVariance;
+    return pWorst->roundTripTime;
+}
+
+// net_debug 1: once a second the frames drawn, ENet round trip, how far each player's input is behind
+// and how often the game had to wait for someone's input
+void netDebugTick(void)
+{
+    static uint32_t nLast;
+    uint32_t const now = timerGetTicks();
+    if (!gNetDebug || numplayers < 2 || now - nLast < 1000)
+        return;
+    char buf[256];
+    int n = Bsnprintf(buf, sizeof(buf), "net: %d fps, jitter %d, stalls %d, lag", gNetDebugFrames * 1000 / ClipLow(now - nLast, 1), gBufferJitter, gNetDebugStalls);
+    for (int p = connecthead; p >= 0 && n < 200; p = connectpoint2[p])
+        if (p != myconnectindex)
+            n += Bsnprintf(buf + n, sizeof(buf) - n, " %d:%d", p, gNetFifoHead[myconnectindex] - 1 - gNetFifoHead[p]);
+    int nVariance = 0;
+    int const nRoundTrip = netRoundTrip(&nVariance);
+    if (nRoundTrip >= 0)
+        n += Bsnprintf(buf + n, sizeof(buf) - n, ", rtt %d +- %d ms", nRoundTrip, nVariance);
+    OSD_Printf("%s\n", buf);
+    nLast = now;
+    gNetDebugFrames = gNetDebugStalls = 0;
 }
 
 void netGetInput(void)

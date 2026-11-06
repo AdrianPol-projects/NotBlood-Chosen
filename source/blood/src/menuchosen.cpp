@@ -55,6 +55,7 @@ static void OnlineJoinByName(CGameMenuItemChain *);
 static void OnlineJoinListed(CGameMenuItemChain *);
 static void SetupOnlineLobbies(CGameMenuItemChain *);
 static void UpdateOnlineStatus(CGameMenuItem *);
+static void SetOnlineNetStats(CGameMenuItemZBool *);
 
 static char zOnlineStatus[64];
 static char zOnlineDashboard[80];
@@ -67,7 +68,8 @@ CGameMenuItemSlider itemOnlinePlayers("PLAYERS:", 3, 46, 72, 228, 2, 2, kMaxPlay
 CGameMenuItemChain itemOnlineHost("HOST A LOBBY", 3, 0, 90, 320, 1, NULL, -1, OnlineHost, 0);
 CGameMenuItemChain itemOnlineFind("FIND LOBBIES", 3, 0, 102, 320, 1, &menuOnlineLobbies, -1, SetupOnlineLobbies, 0);
 CGameMenuItemChain itemOnlineJoin("JOIN LOBBY BY NAME", 3, 0, 114, 320, 1, NULL, -1, OnlineJoinByName, 0);
-CGameMenuItemZBool itemOnlineLanStats("SHOW MY LAN GAMES ON THE DASHBOARD:", 3, 46, 132, 228, false, NULL, NULL, NULL);
+CGameMenuItemZBool itemOnlineNetStats("NET STATS:", 3, 46, 126, 228, false, SetOnlineNetStats, NULL, NULL);
+CGameMenuItemZBool itemOnlineLanStats("SHOW MY LAN GAMES ON THE DASHBOARD:", 3, 46, 136, 228, false, NULL, NULL, NULL);
 CGameMenuItemText itemOnlineStatus(zOnlineStatus, 3, 160, 150, 1);
 CGameMenuItemText itemOnlineDashboard(zOnlineDashboard, 3, 160, 165, 1);
 
@@ -99,9 +101,20 @@ static void SetOnlineStatus(const char *pzText)
     Bstrupr(zOnlineStatus);
 }
 
+static void SetOnlineNetStats(CGameMenuItemZBool *pItem)
+{
+    gNetStats = pItem->at20;
+}
+
 static void UpdateOnlineStatus(CGameMenuItem *pItem)
 {
     UNREFERENCED_PARAMETER(pItem);
+    itemOnlineNetStats.at20 = gNetStats;
+#ifdef NOTBLOOD_WEB
+    // empty means the server this page came from: show which one (and keep it in the settings)
+    if (!gOnlineServer[0] && !itemOnlineServer.at30)
+        relayPageServer(gOnlineServer, sizeof(gOnlineServer));
+#endif
     gOnlineReportLan = itemOnlineLanStats.at20;
     if (gOnlineServer[0])
         Bsnprintf(zOnlineDashboard, sizeof(zOnlineDashboard), "LIVE STATS: %s IN A WEB BROWSER", gOnlineServer);
@@ -1123,6 +1136,7 @@ void SetupChosenMenus(void)
     menuOnline.Add(&itemOnlineHost, true);
     menuOnline.Add(&itemOnlineFind, false);
     menuOnline.Add(&itemOnlineJoin, false);
+    menuOnline.Add(&itemOnlineNetStats, false);
 #ifndef NOTBLOOD_WEB // no LAN games in a browser
     menuOnline.Add(&itemOnlineLanStats, false);
 #endif
@@ -1133,6 +1147,7 @@ void SetupChosenMenus(void)
     itemOnlineServer.tooltip_pzTextUpper = "Address of the online server";
     itemOnlineKey.tooltip_pzTextUpper = "The secret key of the server";
     itemOnlineLobby.tooltip_pzTextUpper = "Name of the lobby to host or join";
+    itemOnlineNetStats.tooltip_pzTextUpper = "Ping, input buffer and frame rate during the game";
 
     menuOnlineLobbies.Add(&itemOnlineLobbiesTitle, false);
     for (int i = 0; i < kMaxListedLobbies; i++)
