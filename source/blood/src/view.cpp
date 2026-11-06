@@ -1982,6 +1982,8 @@ void viewDrawAimedPlayerName(void)
         if (!IsPlayerSprite(pSprite))
             return;
         char nPlayer = pSprite->type-kDudePlayer1;
+        if (modesHideName(&gPlayer[nPlayer])) // hide and seek: a hider's name would give it away
+            return;
         if (powerupCheck(&gPlayer[nPlayer], kPwUpDoppleganger) && !IsTargetTeammate(gView, gPlayer[nPlayer].pSprite)) // if doppleganger powerup is active, set player id as viewer
             nPlayer = gView->pSprite->type-kDudePlayer1;
         char* szName = gProfile[nPlayer].name;
@@ -4076,6 +4078,8 @@ void viewProcessSprites(int32_t cX, int32_t cY, int32_t cZ, int32_t cA, int32_t 
 
             if (IsPlayerSprite(pTSprite)) {
                 PLAYER *pPlayer = &gPlayer[pTSprite->type-kDudePlayer1];
+                if (modesDrawPlayer(pTSprite, pPlayer)) // hide and seek: looks like a decoration (and nothing else)
+                    break;
                 const char bIsTeammate = IsTargetTeammate(gView, pPlayer->pSprite);
                 const char bIsDoppleganger = (gGameOptions.nGameType == kGameTypeTeams) && powerupCheck(pPlayer, kPwUpDoppleganger);
                 const char bIsTeammateOrDoppleganger = bIsTeammate || bIsDoppleganger;

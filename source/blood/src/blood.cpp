@@ -2386,7 +2386,10 @@ RESTART:
     {
         gGameMenuMgr.Push(&menuMain, -1);
         if (gGameOptions.nGameType != kGameTypeSinglePlayer)
+        {
             gGameMenuMgr.Push(&menuNetStart, 1);
+            modesSendHostOnly(); // the host: whether only it starts games (the others then wait for it)
+        }
         else if (gSetup.firstlaunch)
             gGameMenuMgr.Push(&menuFirstLaunch, -1);
     }
