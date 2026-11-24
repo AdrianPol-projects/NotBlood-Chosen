@@ -16,7 +16,7 @@ name: Release builds
   workflow_dispatch:
     inputs:
       only:
-        description: 'Platforms to build: all; beta (all, into a draft release "v<version>-beta" only you see); only macos, android or web (then only that download of the release is replaced); android-test (an APK artifact, nothing published); linux-test (the Linux builds as artifacts, nothing published)'
+        description: 'Platforms to build: all; beta (all, into the pre-release "v<version>-beta": public, but never "latest"); only macos, android or web (then only that download of the release is replaced); android-test (an APK artifact, nothing published); linux-test (the Linux builds as artifacts, nothing published)'
         type: choice
         options: [all, beta, macos, android, web, android-test, linux-test]
         default: all
@@ -359,21 +359,23 @@ jobs:
           fi
           TAG="v$VERSION"
           if [ "$ONLY" = beta ]; then
-            # A draft release: only people who can push to the repository see it, it isn't "latest"
-            # (servers keep serving the real release at /play/) and its tag is made only when it's
-            # published. Each beta run replaces the draft's files.
+            # A public pre-release that is never "latest" (servers keep serving the real release at
+            # /play/, and the Releases page keeps the real one on top). Each beta run replaces its files.
             TAG="v$VERSION-beta"
             TITLE="NotBlood Chosen $VERSION beta (build ${{ github.run_number }}, ${GITHUB_SHA::7})"
             files=$(ls NotBlood-Chosen-*.zip NotBlood-Chosen-*.apk NotBlood-Chosen-*.ipa)
-            draft=$(gh api "repos/${GITHUB_REPOSITORY}/releases" -q ".[] | select(.draft and .tag_name == \"$TAG\") | .id" | head -n1)
-            if [ -n "$draft" ]; then
-              for a in $(gh api "repos/${GITHUB_REPOSITORY}/releases/$draft/assets" -q '.[].id'); do
+            beta=$(gh api "repos/${GITHUB_REPOSITORY}/releases" -q ".[] | select(.tag_name == \"$TAG\") | .id" | head -n1)
+            if [ -n "$beta" ]; then
+              for a in $(gh api "repos/${GITHUB_REPOSITORY}/releases/$beta/assets" -q '.[].id'); do
                 gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/$a"
               done
-              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/$draft" -f name="$TITLE" -f target_commitish="$GITHUB_SHA" -F body=@package/release/NOTES.md >/dev/null
+              # the tag follows the new build
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 || true
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/$beta" -f name="$TITLE" -f target_commitish="$GITHUB_SHA" \
+                -F draft=false -F prerelease=true -f make_latest=false -F body=@package/release/NOTES.md >/dev/null
               gh release upload "$TAG" $files --clobber
             else
-              gh release create "$TAG" $files --draft --prerelease --latest=false --target "$GITHUB_SHA" --title "$TITLE" --notes-file package/release/NOTES.md
+              gh release create "$TAG" $files --prerelease --latest=false --target "$GITHUB_SHA" --title "$TITLE" --notes-file package/release/NOTES.md
             fi
             exit 0
           fi

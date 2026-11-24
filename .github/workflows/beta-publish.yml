@@ -1,0 +1,27 @@
+---
+name: Make the beta public
+
+# Turns the draft release "v<version>-beta" into a public pre-release (never "latest"), without
+# building anything again. release.yml's "beta" builds publish it that way by themselves.
+
+'on':
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish the beta draft as a pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/#define CHOSEN_VERSION "\(.*\)"/\1/p' source/blood/src/chosen.h)
+          TAG="v$version-beta"
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/releases" -q ".[] | select(.tag_name == \"$TAG\") | .id" | head -n1)
+          [ -n "$id" ] || { echo "No release $TAG"; exit 1; }
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/$id" -F draft=false -F prerelease=true -f make_latest=false \
+            -q '"\(.html_url) draft=\(.draft) prerelease=\(.prerelease)"'
