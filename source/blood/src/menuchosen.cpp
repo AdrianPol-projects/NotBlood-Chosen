@@ -61,16 +61,17 @@ static char zOnlineStatus[64];
 static char zOnlineDashboard[80];
 
 CGameMenuItemTitle itemOnlineTitle("ONLINE", 1, 160, 20, 2038);
-CGameMenuItemZEdit itemOnlineServer("SERVER:", 3, 46, 42, 228, gOnlineServer, sizeof(gOnlineServer), 0, NULL, 0);
-CGameMenuItemZEdit itemOnlineKey("SERVER KEY:", 3, 46, 52, 228, gOnlineKey, sizeof(gOnlineKey), 0, NULL, 0);
-CGameMenuItemZEdit itemOnlineLobby("LOBBY NAME:", 3, 46, 62, 228, gOnlineLobby, sizeof(gOnlineLobby), 0, NULL, 0);
-CGameMenuItemSlider itemOnlinePlayers("PLAYERS:", 3, 46, 72, 228, 2, 2, kMaxPlayers, 1, NULL, -1, -1, kMenuSliderValue);
-CGameMenuItemChain itemOnlineHost("HOST A LOBBY", 3, 0, 90, 320, 1, NULL, -1, OnlineHost, 0);
-CGameMenuItemChain itemOnlineFind("FIND LOBBIES", 3, 0, 102, 320, 1, &menuOnlineLobbies, -1, SetupOnlineLobbies, 0);
-CGameMenuItemChain itemOnlineJoin("JOIN LOBBY BY NAME", 3, 0, 114, 320, 1, NULL, -1, OnlineJoinByName, 0);
-CGameMenuItemZBool itemOnlineNetStats("NET STATS:", 3, 46, 126, 228, false, SetOnlineNetStats, NULL, NULL);
-CGameMenuItemZBool itemOnlineLanStats("SHOW MY LAN GAMES ON THE DASHBOARD:", 3, 46, 136, 228, false, NULL, NULL, NULL);
-CGameMenuItemText itemOnlineStatus(zOnlineStatus, 3, 160, 150, 1);
+CGameMenuItemZEdit itemOnlineServer("SERVER:", 3, 46, 38, 228, gOnlineServer, sizeof(gOnlineServer), 0, NULL, 0);
+CGameMenuItemZEdit itemOnlineKey("SERVER KEY:", 3, 46, 48, 228, gOnlineKey, sizeof(gOnlineKey), 0, NULL, 0);
+CGameMenuItemZEdit itemOnlineLobby("LOBBY NAME:", 3, 46, 58, 228, gOnlineLobby, sizeof(gOnlineLobby), 0, NULL, 0);
+CGameMenuItemZEdit itemOnlinePassword("LOBBY PASSWORD:", 3, 46, 68, 228, gOnlineLobbyPassword, sizeof(gOnlineLobbyPassword), 0, NULL, 0);
+CGameMenuItemSlider itemOnlinePlayers("PLAYERS:", 3, 46, 78, 228, 2, 2, kMaxPlayers, 1, NULL, -1, -1, kMenuSliderValue);
+CGameMenuItemChain itemOnlineHost("HOST A LOBBY", 3, 0, 92, 320, 1, NULL, -1, OnlineHost, 0);
+CGameMenuItemChain itemOnlineFind("FIND LOBBIES", 3, 0, 104, 320, 1, &menuOnlineLobbies, -1, SetupOnlineLobbies, 0);
+CGameMenuItemChain itemOnlineJoin("JOIN LOBBY BY NAME", 3, 0, 116, 320, 1, NULL, -1, OnlineJoinByName, 0);
+CGameMenuItemZBool itemOnlineNetStats("NET STATS:", 3, 46, 128, 228, false, SetOnlineNetStats, NULL, NULL);
+CGameMenuItemZBool itemOnlineLanStats("SHOW MY LAN GAMES ON THE DASHBOARD:", 3, 46, 138, 228, false, NULL, NULL, NULL);
+CGameMenuItemText itemOnlineStatus(zOnlineStatus, 3, 160, 152, 1);
 CGameMenuItemText itemOnlineDashboard(zOnlineDashboard, 3, 160, 165, 1);
 
 #define kMaxListedLobbies 8
@@ -118,6 +119,8 @@ static void UpdateOnlineStatus(CGameMenuItem *pItem)
     gOnlineReportLan = itemOnlineLanStats.at20;
     if (gOnlineServer[0])
         Bsnprintf(zOnlineDashboard, sizeof(zOnlineDashboard), "LIVE STATS: %s IN A WEB BROWSER", gOnlineServer);
+    else if (onlineServer()[0])
+        Bsnprintf(zOnlineDashboard, sizeof(zOnlineDashboard), "EMPTY SERVER: THE PUBLIC ONE, %s", onlineServer());
     else
         zOnlineDashboard[0] = 0;
     Bstrupr(zOnlineDashboard);
@@ -1202,6 +1205,7 @@ void SetupChosenMenus(void)
     menuOnline.Add(&itemOnlineServer, false);
     menuOnline.Add(&itemOnlineKey, false);
     menuOnline.Add(&itemOnlineLobby, false);
+    menuOnline.Add(&itemOnlinePassword, false);
     menuOnline.Add(&itemOnlinePlayers, false);
     menuOnline.Add(&itemOnlineHost, true);
     menuOnline.Add(&itemOnlineFind, false);
@@ -1217,6 +1221,10 @@ void SetupChosenMenus(void)
     itemOnlineServer.tooltip_pzTextUpper = "Address of the online server";
     itemOnlineKey.tooltip_pzTextUpper = "The secret key of the server";
     itemOnlineLobby.tooltip_pzTextUpper = "Name of the lobby to host or join";
+    itemOnlinePassword.tooltip_pzTextUpper = "Host with a password: a private lobby";
+    itemOnlinePassword.tooltip_pzTextLower = "Join one: type its password first";
+    itemOnlineServer.tooltip_pzTextLower = "Empty: the public server (if this build has one)";
+    itemOnlineKey.tooltip_pzTextLower = "Not needed on a public server";
     itemOnlineNetStats.tooltip_pzTextUpper = "Ping, input buffer and frame rate during the game";
 
     menuOnlineLobbies.Add(&itemOnlineLobbiesTitle, false);

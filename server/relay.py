@@ -15,9 +15,16 @@ walls) which the dashboard at / shows in a browser.
 
 Everything needs the server key: game and browser prove they know it by answering a random
 challenge with HMAC-SHA256(key, challenge), so the key itself never crosses the network.
+With PUBLIC=1 games need no key (a public server anybody can play on); lobbies can still be
+private, with a password of their own. The dashboard keeps asking for the key unless
+PUBLIC_DASHBOARD=1 as well.
+
+Lobbies also carry chat, and the host's own map: a host playing a user map hands the file to the
+relay, which checks it (mapcheck.py) and gives it to the players who don't have it.
 """
 
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -32,9 +39,13 @@ from pathlib import Path
 
 from aiohttp import WSMsgType, web
 
+from mapcheck import MapError, check_map
+
 PROTOCOL = 1
 
 KEY = os.environ.get("BLOOD_KEY", "")
+PUBLIC = os.environ.get("PUBLIC", "0") == "1"                      # games need no key
+PUBLIC_DASHBOARD = os.environ.get("PUBLIC_DASHBOARD", "0") == "1"  # neither does the dashboard
 PORT = int(os.environ.get("PORT", "8080"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -45,6 +56,12 @@ MAX_LOBBIES = 50
 MAX_GAME_FRAME = 64 * 1024
 MAX_STATS = 256 * 1024
 MAX_MAP = 4 * 1024 * 1024
+MAX_MAP_FILE = 2 * 1024 * 1024      # a user map handed on to the players (Blood's biggest are ~0.5 MB)
+MAX_MAP_FILES_TOTAL = 48 * 1024 * 1024
+MAP_WAIT = 20                       # a player asking for the map before the host's upload arrived waits this long
+CHAT_MAX = 120
+CHAT_KEEP = 30
+CHAT_PER_10S = 8
 AUTH_TIMEOUT = 15
 HISTORY_KEEP = 100
 DASH_INTERVAL = 0.2
@@ -60,6 +77,8 @@ TRUST_PROXY = os.environ.get("TRUST_PROXY", "0") == "1"
 log = logging.getLogger("relay")
 
 NAME_RE = re.compile(r"^[A-Za-z0-9 _.\-]{1,24}$")
+MAP_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,60}\.[Mm][Aa][Pp]$")
+SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 WALL_CHARS = str.maketrans("", "", "0123456789,- ")
 
 
@@ -136,6 +155,10 @@ class Lobby:
         self.levels = []
         self.player_names = set()
         self.net_log = {}  # player name -> connection summary of players who left (for the history)
+        self.password = ""  # sha256 of the lobby password (hex), "" for an open lobby
+        self.bots = 0
+        self.chat = deque(maxlen=CHAT_KEEP)  # (time, name, text)
+        self.map_file = None  # (file name, sha256, bytes) of the host's user map
 
     def conns(self):
         return ([self.host] if self.host else []) + list(self.clients.values())
@@ -152,6 +175,10 @@ class Lobby:
             "kind": self.kind,
             "host": self.host_name,
             "players": [self.host_name] + [c.player_name for c in self.clients.values()],
+            "bots": self.bots,
+            "private": bool(self.password),
+            "user_map": self.map_file[0] if self.map_file else None,
+            "chat": [list(c) for c in self.chat],
             "max": self.max_players,
             "state": self.state,
             "mod": self.mod,
@@ -185,7 +212,11 @@ class Relay:
         except Exception as e:
             log.warning("could not save history: %s", e)
 
+    def map_files_size(self):
+        return sum(len(l.map_file[2]) for l in self.lobbies.values() if l.map_file)
+
     def close_lobby(self, lobby):
+        lobby.map_file = None
         if self.lobbies.get(lobby.name.lower()) is lobby:
             del self.lobbies[lobby.name.lower()]
         if lobby.started:
@@ -247,6 +278,7 @@ class Conn:
         self.rtt_n = 0
         self.rtt_max = 0.0
         self.last_pong = time.monotonic()
+        self.chat_times = deque(maxlen=CHAT_PER_10S)
 
     def push(self, item):
         if not self.closing:
@@ -347,10 +379,11 @@ async def ping_loop(conn):
             return
 
 
-async def authenticate(ws, ip):
-    """Challenge/response with the server key. Returns True when the peer knows the key."""
+async def authenticate(ws, ip, public=False):
+    """Challenge/response with the server key. Returns the rest of the answer when the peer knows
+    the key (or the server is public: then any answer will do), None when not."""
     nonce = secrets.token_hex(16)
-    await ws.send_str("challenge\t" + nonce)
+    await ws.send_str("challenge\t" + nonce + ("\tpublic" if public else ""))
     try:
         msg = await ws.receive(timeout=AUTH_TIMEOUT)
     except asyncio.TimeoutError:
@@ -360,6 +393,8 @@ async def authenticate(ws, ip):
     fields = msg.data.split("\t")
     if len(fields) < 2 or fields[0] != "auth":
         return None
+    if public:
+        return fields[2:]
     want = hmac.new(KEY.encode(), nonce.encode(), hashlib.sha256).hexdigest()
     if not KEY or not hmac.compare_digest(want, fields[1].strip().lower()):
         guard.fail(ip)
@@ -378,7 +413,7 @@ async def game_ws(request):
     conn = Conn(ws, ip)
     pinger = None
     try:
-        extra = await authenticate(ws, ip)
+        extra = await authenticate(ws, ip, PUBLIC)
         if extra is None:
             return ws
         proto = extra[0] if extra else ""
@@ -471,8 +506,10 @@ async def on_game_text(conn, text):
         for l in relay.lobbies.values():
             if l.kind != "online":
                 continue
+            # players are people only; bots are counted on their own (older games read the first 7 fields)
             lines.append("\t".join(str(x) for x in (
-                l.name, l.host_name, 1 + len(l.clients), l.max_players, l.state, l.mod, l.version)))
+                l.name, l.host_name, 1 + len(l.clients), l.max_players, l.state, l.mod, l.version,
+                l.bots, 1 if l.password else 0, l.map_file[0] if l.map_file else "")))
         conn.push("\n".join(lines))
 
     elif cmd in ("host", "report") and not lobby:
@@ -494,12 +531,17 @@ async def on_game_text(conn, text):
         if len(relay.lobbies) >= MAX_LOBBIES:
             await conn.text("error", "Too many lobbies on this server")
             return True
+        password = f[6].strip().lower() if len(f) > 6 and cmd == "host" else ""
+        if password and not SHA_RE.match(password):
+            await conn.text("error", "Bad request")
+            return True
         lobby = Lobby(name, "online" if cmd == "host" else "lan", conn, max_players, player or "Host", mod, version)
         lobby.player_names.add(lobby.host_name)
+        lobby.password = password
         relay.lobbies[name.lower()] = lobby
         conn.lobby, conn.is_host, conn.player_name, conn.lobby_name = lobby, True, lobby.host_name, lobby.name
-        log.info("%s %s lobby %r (%d players, mod %r, %s) from %s", lobby.host_name,
-                 "hosts" if cmd == "host" else "reports", name, max_players, mod, version, conn.ip)
+        log.info("%s %s %slobby %r (%d players, mod %r, %s) from %s", lobby.host_name,
+                 "hosts" if cmd == "host" else "reports", "private " if password else "", name, max_players, mod, version, conn.ip)
         await conn.text("hosted", name)
 
     elif cmd == "join" and not lobby:
@@ -524,6 +566,15 @@ async def on_game_text(conn, text):
         if 1 + len(lobby.clients) >= lobby.max_players:
             await conn.text("error", "That lobby is full")
             return True
+        if lobby.password:
+            given = f[5].strip().lower() if len(f) > 5 else ""
+            if not given:
+                await conn.text("error", "This lobby is private - enter its password")
+                return True
+            if not hmac.compare_digest(given, lobby.password):
+                guard.fail(conn.ip)
+                await conn.text("error", "Wrong lobby password")
+                return True
         while lobby.next_id in lobby.clients or lobby.next_id == 0:
             lobby.next_id = lobby.next_id % 255 + 1
         conn.peer_id = lobby.next_id
@@ -570,6 +621,33 @@ async def on_game_text(conn, text):
                 if d.watching == lobby.name:
                     asyncio.create_task(d.send_map(lobby))
 
+    elif cmd == "bots" and lobby and conn.is_host and len(f) >= 2:
+        try:
+            lobby.bots = max(0, min(7, int(f[1])))
+        except ValueError:
+            pass
+
+    elif cmd == "chat" and lobby and len(f) >= 2:
+        text = "".join(ch for ch in f[1] if ch >= " ")[:CHAT_MAX].strip()
+        now = time.monotonic()
+        if not text:
+            return True
+        if len(conn.chat_times) == CHAT_PER_10S and now - conn.chat_times[0] < 10:
+            await conn.text("chat", "", "(slow down - wait a moment)")
+            return True
+        conn.chat_times.append(now)
+        lobby.chat.append((round(time.time()), conn.player_name, text))
+        for c in lobby.conns():
+            await c.text("chat", conn.player_name, text)
+
+    elif cmd == "mapfile" and lobby and lobby.kind == "online" and len(f) >= 4:
+        # mapfile <file name> <sha256> <base64>: the user map of the game about to start
+        await store_map_file(conn, lobby, f[1], f[2].lower(), f[3])
+
+    elif cmd == "getmap" and lobby and lobby.kind == "online" and len(f) >= 2:
+        # getmap <file name> [<sha256 of the player's own copy>]
+        asyncio.create_task(send_map_file(conn, lobby, f[1], f[2].lower() if len(f) > 2 else ""))
+
     elif cmd == "ping":
         await conn.text("pong", *f[1:2])
 
@@ -577,6 +655,54 @@ async def on_game_text(conn, text):
         return False
 
     return True
+
+
+async def store_map_file(conn, lobby, name, sha, data64):
+    if not MAP_NAME_RE.match(name) or not SHA_RE.match(sha) or len(data64) > (MAX_MAP_FILE * 4) // 3 + 8:
+        await conn.text("mapfile_error", name, "This map can't be shared (name or size)")
+        return
+    if lobby.map_file and lobby.map_file[0].lower() == name.lower() and lobby.map_file[1] == sha:
+        await conn.text("mapfile_ok", name)
+        return
+    try:
+        data = base64.b64decode(data64, validate=True)
+    except ValueError:
+        await conn.text("mapfile_error", name, "Bad request")
+        return
+    if hashlib.sha256(data).hexdigest() != sha:
+        await conn.text("mapfile_error", name, "The map arrived damaged")
+        return
+    old = len(lobby.map_file[2]) if lobby.map_file else 0
+    if relay.map_files_size() - old + len(data) > MAX_MAP_FILES_TOTAL:
+        await conn.text("mapfile_error", name, "The server has no room for more maps right now")
+        return
+    try:
+        # off the event loop: other games' packets keep flowing while a big map is checked
+        summary = await asyncio.get_running_loop().run_in_executor(None, check_map, data)
+    except MapError as e:
+        log.info("%s's map %s refused: %s", conn.player_name, name, e)
+        await conn.text("mapfile_error", name, "The map is damaged: %s" % e)
+        return
+    if conn.lobby is not lobby:
+        return
+    lobby.map_file = (name, sha, data)
+    log.info("%s shares map %s in lobby %r (%d bytes, %s)", conn.player_name, name, lobby.name, len(data), summary)
+    await conn.text("mapfile_ok", name)
+
+
+async def send_map_file(conn, lobby, name, have_sha):
+    deadline = time.monotonic() + MAP_WAIT
+    while not (lobby.map_file and lobby.map_file[0].lower() == name.lower()):
+        if time.monotonic() > deadline or conn.lobby is not lobby:
+            await conn.text("map_none", name)
+            return
+        await asyncio.sleep(0.25)
+    fname, sha, data = lobby.map_file
+    if have_sha == sha:
+        await conn.text("map_same", fname)
+        return
+    log.info("sending map %s to %s (lobby %r)", fname, conn.player_name, lobby.name)
+    await conn.text("map_data", fname, sha, base64.b64encode(data).decode())
 
 
 class Dash:
@@ -623,7 +749,7 @@ async def dash_ws(request):
     await ws.prepare(request)
     dash = Dash(ws)
     try:
-        if await authenticate(ws, ip) is None:
+        if await authenticate(ws, ip, PUBLIC_DASHBOARD) is None:
             return ws
         await dash.send({"op": "ok", "history": relay.history[-30:]})
         relay.dashboards.add(dash)
@@ -688,7 +814,7 @@ async def index(request):
 
 
 async def health(request):
-    return web.json_response({"ok": True, "lobbies": len(relay.lobbies), "protocol": PROTOCOL})
+    return web.json_response({"ok": True, "lobbies": len(relay.lobbies), "protocol": PROTOCOL, "public": PUBLIC})
 
 
 # ---- the web version of the game (/play) -----------------------------------------------------------
@@ -878,6 +1004,8 @@ def make_app():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    if not KEY:
-        log.warning("BLOOD_KEY is not set - nobody can connect")
+    if PUBLIC:
+        log.info("public server: games need no key%s", "" if PUBLIC_DASHBOARD else " (the dashboard does)")
+    if not KEY and not (PUBLIC and PUBLIC_DASHBOARD):
+        log.warning("BLOOD_KEY is not set - %s", "the dashboard can't be opened" if PUBLIC else "nobody can connect")
     web.run_app(make_app(), port=PORT, access_log=None)

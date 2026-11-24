@@ -1680,6 +1680,44 @@ const int nXSectorSize = 60;
 const int nXSpriteSize = 56;
 const int nXWallSize = 24;
 
+// NotBlood Chosen: every index in the loaded map points into the map (a damaged or hostile map
+// would otherwise make the engine read and write outside its arrays)
+static bool dbCheckMapStructure(const char *pPath)
+{
+    const char *pzWhat = NULL;
+    int nWhich = 0;
+    for (int i = 0; i < numsectors && !pzWhat; i++)
+    {
+        sectortype const *pSector = &sector[i];
+        if (pSector->wallptr < 0 || pSector->wallnum < 0 || pSector->wallptr + pSector->wallnum > numwalls)
+            pzWhat = "sector walls", nWhich = i;
+        else if ((unsigned)pSector->floorpicnum >= MAXTILES || (unsigned)pSector->ceilingpicnum >= MAXTILES)
+            pzWhat = "sector tile", nWhich = i;
+    }
+    for (int i = 0; i < numwalls && !pzWhat; i++)
+    {
+        walltype const *pWall = &wall[i];
+        if (pWall->point2 < 0 || pWall->point2 >= numwalls || pWall->nextwall < -1 || pWall->nextwall >= numwalls
+            || pWall->nextsector < -1 || pWall->nextsector >= numsectors)
+            pzWhat = "wall links", nWhich = i;
+        else if ((unsigned)pWall->picnum >= MAXTILES || (unsigned)pWall->overpicnum >= MAXTILES)
+            pzWhat = "wall tile", nWhich = i;
+    }
+    for (int i = 0; i < kMaxSprites && !pzWhat; i++)
+    {
+        if (sprite[i].statnum >= kMaxStatus)
+            continue;
+        if (sprite[i].sectnum < 0 || sprite[i].sectnum >= numsectors)
+            pzWhat = "sprite sector", nWhich = i;
+        else if ((unsigned)sprite[i].picnum >= MAXTILES)
+            pzWhat = "sprite tile", nWhich = i;
+    }
+    if (!pzWhat)
+        return true;
+    LOG_F(ERROR, "Map file %s is damaged (%s, number %d)", pPath, pzWhat, nWhich);
+    return false;
+}
+
 int dbLoadMap(const char *pPath, int *pX, int *pY, int *pZ, short *pAngle, short *pSector, unsigned int *pCRC) {
     char name2[BMAX_PATH]; int16_t tpskyoff[256];
 
@@ -1835,6 +1873,17 @@ int dbLoadMap(const char *pPath, int *pX, int *pY, int *pZ, short *pAngle, short
     gMapRev = mapHeader.at1b;
     numsectors = mapHeader.at1f;
     numwalls = mapHeader.at21;
+    // NotBlood Chosen: maps can come from other players (online lobbies download the host's map),
+    // so the counts are checked before anything is read into the fixed size arrays
+    if (numsectors <= 0 || numsectors > kMaxSectors || numwalls <= 0 || numwalls > kMaxWalls || mapHeader.at23 > kMaxSprites
+        || pSky->lognumtiles < 0 || pSky->lognumtiles > 8)
+    {
+        LOG_F(ERROR, "Map file %s is damaged (%d sectors, %d walls, %d sprites, sky %d)", pPath, (int)mapHeader.at1f, (int)mapHeader.at21,
+            (int)mapHeader.at23, (int)pSky->lognumtiles);
+        numsectors = numwalls = 0;
+        gSysRes.Unlock(pNode);
+        return -1;
+    }
     dbInit();
     if (gGameOptions.nRandomizerMode && !VanillaMode())
     {
@@ -1849,6 +1898,14 @@ int dbLoadMap(const char *pPath, int *pX, int *pY, int *pZ, short *pAngle, short
         byte_19AE44.at44 = B_LITTLE32(byte_19AE44.at44);
         byte_19AE44.at48 = B_LITTLE32(byte_19AE44.at48);
 #endif
+        if (byte_19AE44.at40 < 0 || byte_19AE44.at40 > nXSpriteSize || byte_19AE44.at44 < 0 || byte_19AE44.at44 > nXWallSize
+            || byte_19AE44.at48 < 0 || byte_19AE44.at48 > nXSectorSize) // NotBlood Chosen: see above
+        {
+            LOG_F(ERROR, "Map file %s is damaged (extra data sizes)", pPath);
+            numsectors = numwalls = 0;
+            gSysRes.Unlock(pNode);
+            return -1;
+        }
     }
     else
     {
@@ -2221,6 +2278,8 @@ int dbLoadMap(const char *pPath, int *pX, int *pY, int *pZ, short *pAngle, short
     if (pCRC)
         *pCRC = nCRC;
     gSysRes.Unlock(pNode);
+    if (!dbCheckMapStructure(pPath))
+        return -1;
     PropagateMarkerReferences();
     if (byte_1A76C8)
     {

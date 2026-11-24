@@ -1424,6 +1424,7 @@ int32_t registerosdcommands(void)
         { "mp_hostonly","only the host of a network game starts new games (the other players wait)", (void *)&gHostOnlyPref, CVAR_BOOL, 0, 1 },
         { "net_debug","log network timing once a second (frames, round trip, input lag, stalls)", (void *)&gNetDebug, CVAR_INT|CVAR_NOSAVE, 0, 1 },
         { "net_online_lobby","lobby name for online games", (void *)gOnlineLobby, CVAR_STRING, 0, sizeof(gOnlineLobby) },
+        { "net_online_password","password of a private lobby (to host or join one)", (void *)gOnlineLobbyPassword, CVAR_STRING, 0, sizeof(gOnlineLobbyPassword) },
         { "coop_matchorder","co-op saves: players not in the save get leftover loadouts instead of the pitchfork", (void *)&gCoopMatchOrder, CVAR_BOOL, 0, 1 },
         { "coop_autosave_leave","co-op saves: save the game (mid-level) when a player leaves", (void *)&gCoopAutosaveLeave, CVAR_BOOL, 0, 1 },
         { "net_online_lanstats","show LAN games you host on the online server's dashboard", (void *)&gOnlineReportLan, CVAR_BOOL, 0, 1 },

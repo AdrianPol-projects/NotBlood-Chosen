@@ -707,6 +707,8 @@ void netBroadcastNewGame(void)
 {
     if (numplayers < 2)
         return;
+    if (gPacketStartGame.userMap) // online: the others get the map from the relay if they need it
+        onlineShareMap(gPacketStartGame.userMapName);
     gPacketStartGame.version = kNetVersion;
     char *pPacket = packet;
     PutPacketByte(pPacket, 252);
@@ -1246,6 +1248,7 @@ void netInitialize(bool bConsole)
         {
             lanAdvertisePoll();
             handleevents();
+            onlineLobbyWait(bConsole);
             if (quitevent)
             {
                 netServerDisconnect();
@@ -1435,6 +1438,7 @@ void netInitialize(bool bConsole)
         while (bWaitServer)
         {
             handleevents();
+            onlineLobbyWait(bConsole);
             if (quitevent)
             {
                 netClientDisconnect();

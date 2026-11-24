@@ -185,6 +185,12 @@ std::string hmacSha256Hex(const std::string &key, const std::string &msg)
     return hex;
 }
 
+// answers about shared maps go to their own queue: they're big and only the map download reads them
+bool isMapReply(const std::string &cmd)
+{
+    return cmd.compare(0, 4, "map_") == 0 || cmd.compare(0, 8, "mapfile_") == 0;
+}
+
 std::string base64(const uint8_t *p, size_t n)
 {
     static const char tab[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -249,6 +255,7 @@ struct Relay
     std::string error;
     std::deque<std::string> outText;  // main thread -> server
     std::deque<std::string> inText;   // server -> main thread
+    std::deque<std::string> inMap;    // server -> main thread: answers about shared maps (big)
     std::string server, key, version;
 
     // quitting during an online game: a still running std::thread would abort the program
@@ -776,7 +783,12 @@ void relayThread(void)
                 g_relay.clientPort = port;
             }
             std::lock_guard<std::mutex> l(g_relay.lock);
-            if (g_relay.inText.size() < 256)
+            if (isMapReply(cmd))
+            {
+                if (g_relay.inMap.size() < 8)
+                    g_relay.inMap.push_back(msg);
+            }
+            else if (g_relay.inText.size() < 256)
                 g_relay.inText.push_back(msg);
         }
         if (bClosed)
@@ -869,6 +881,16 @@ bool relayReadText(char *pBuffer, int nSize)
         return false;
     snprintf(pBuffer, nSize, "%s", g_relay.inText.front().c_str());
     g_relay.inText.pop_front();
+    return true;
+}
+
+bool relayReadMapReply(std::string &msg)
+{
+    std::lock_guard<std::mutex> l(g_relay.lock);
+    if (g_relay.inMap.empty())
+        return false;
+    msg.swap(g_relay.inMap.front());
+    g_relay.inMap.pop_front();
     return true;
 }
 
@@ -1115,7 +1137,7 @@ struct WebRelay
     int status = kRelayIdle;
     bool bOpened = false, bAuthed = false;
     std::string server, key, version, error;
-    std::deque<std::string> outText, inText;
+    std::deque<std::string> outText, inText, inMap;
     std::map<int, int> peers;  // host: remote player id -> socket towards the ENet server
     int client = -1;           // joining player: the socket the local ENet client talks to
     uint16_t clientPeer = 0;   // ... and the ENet client's port
@@ -1339,7 +1361,12 @@ EM_BOOL webOnMessage(int, const EmscriptenWebSocketMessageEvent *e, void *)
         else if (s >= 0)
             vnet_close(s);
     }
-    if (g_web.inText.size() < 256)
+    if (isMapReply(cmd))
+    {
+        if (g_web.inMap.size() < 8)
+            g_web.inMap.push_back(msg);
+    }
+    else if (g_web.inText.size() < 256)
         g_web.inText.push_back(msg);
     return EM_TRUE;
 }
@@ -1428,6 +1455,15 @@ bool relayReadText(char *pBuffer, int nSize)
     return true;
 }
 
+bool relayReadMapReply(std::string &msg)
+{
+    if (g_web.inMap.empty())
+        return false;
+    msg.swap(g_web.inMap.front());
+    g_web.inMap.pop_front();
+    return true;
+}
+
 void relaySetHostGamePort(int nPort)
 {
     g_web.hostGamePort = nPort;
@@ -1466,3 +1502,55 @@ int lanScanPoll(LANGAME *pGames, int nMax)
 void lanScanStop(void) {}
 
 #endif // __EMSCRIPTEN__
+
+// ---- helpers for shared maps -------------------------------------------------------------------
+
+std::string relaySha256Hex(const void *pData, size_t nSize)
+{
+    Sha256 sha;
+    sha.update(pData, nSize);
+    uint8_t digest[32];
+    sha.final(digest);
+    std::string hex;
+    for (uint8_t b : digest)
+    {
+        char t[3];
+        snprintf(t, sizeof(t), "%02x", b);
+        hex += t;
+    }
+    return hex;
+}
+
+std::string relayBase64(const void *pData, size_t nSize)
+{
+    return base64((const uint8_t *)pData, nSize);
+}
+
+bool relayUnbase64(const std::string &in, std::string &out)
+{
+    out.clear();
+    out.reserve(in.size() / 4 * 3);
+    uint32_t v = 0;
+    int nBits = 0, nPad = 0;
+    for (char c : in)
+    {
+        int d;
+        if (c >= 'A' && c <= 'Z') d = c - 'A';
+        else if (c >= 'a' && c <= 'z') d = c - 'a' + 26;
+        else if (c >= '0' && c <= '9') d = c - '0' + 52;
+        else if (c == '+') d = 62;
+        else if (c == '/') d = 63;
+        else if (c == '=') { nPad++; continue; }
+        else return false;
+        if (nPad)
+            return false;
+        v = v << 6 | d;
+        nBits += 6;
+        if (nBits >= 8)
+        {
+            nBits -= 8;
+            out += (char)(v >> nBits & 0xff);
+        }
+    }
+    return nPad <= 2;
+}

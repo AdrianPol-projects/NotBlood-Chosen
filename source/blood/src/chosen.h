@@ -20,4 +20,10 @@ See the GNU General Public License for more details.
 #pragma once
 
 #define CHOSEN_NAME "NotBlood Chosen"
-#define CHOSEN_VERSION "1.3"
+#define CHOSEN_VERSION "1.4"
+
+// the public server ONLINE uses while no server is entered ("" for none): put the address of a
+// relay running with PUBLIC=1 here (SERVER.md), e.g. "blood.example.com"
+#ifndef CHOSEN_PUBLIC_SERVER
+#define CHOSEN_PUBLIC_SERVER ""
+#endif

@@ -27,6 +27,8 @@ See the GNU General Public License for more details.
 
 #pragma once
 
+#include <string>
+
 enum
 {
     kRelayIdle = 0,
@@ -49,6 +51,12 @@ const char *relayError(void);
 void relaySendText(const char *pzText);
 // next text message from the server not handled by the tunnel itself; false when there is none
 bool relayReadText(char *pBuffer, int nSize);
+
+// next answer about a shared map ("map_data", "map_same", "map_none", "mapfile_ok", "mapfile_error")
+bool relayReadMapReply(std::string &msg);
+std::string relaySha256Hex(const void *pData, size_t nSize);
+std::string relayBase64(const void *pData, size_t nSize);
+bool relayUnbase64(const std::string &in, std::string &out);
 
 // host: the local ENet server port remote players are passed to
 void relaySetHostGamePort(int nPort);

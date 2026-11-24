@@ -15,13 +15,16 @@ See the GNU General Public License for more details.
 //-------------------------------------------------------------------------
 
 #include <string>
+#include <vector>
 
 #include "compat.h"
+#include "baselayer.h"
 #include "build.h"
 #include "mmulti.h"
 #include "timer.h"
 #include "common_game.h"
 #include "blood.h"
+#include "bot.h"
 #include "chosen.h"
 #include "config.h"
 #include "demo.h"
@@ -34,11 +37,13 @@ See the GNU General Public License for more details.
 #include "network.h"
 #include "online.h"
 #include "player.h"
+#include "resource.h"
 #include "view.h"
 
 char gOnlineServer[64];
 char gOnlineKey[48];
 char gOnlineLobby[25];
+char gOnlineLobbyPassword[25];
 int gOnlineReportLan;
 int gOnlineMode;
 
@@ -51,6 +56,13 @@ static uint32_t nNextStats;
 static bool bConsoleWait;
 static std::string mapSentFor;
 static int nLastLevelTime;
+static int nBotsSent = -1;
+
+// lobby chat: the last lines, and what this player is typing on the waiting screens
+#define kChatLines 6
+static std::string chatLines[kChatLines];
+static int nChatLines;
+static std::string chatInput;
 
 const char *onlineVersion(void)
 {
@@ -123,17 +135,26 @@ template<typename F> static bool onlineWait(const char *pzText, int nTimeoutMs, 
         }
         if (!bConsoleWait)
         {
-            viewLoadingScreen(gMenuPicnum, "Online", gOnlineServer, pzText);
+            viewLoadingScreen(gMenuPicnum, "Online", onlineServer(), pzText);
             videoNextPage();
         }
     }
     return true;
 }
 
-static bool onlineConnect(void)
+const char *onlineServer(void)
 {
 #ifndef NOTBLOOD_WEB // in a browser no address means the server the page came from
     if (!gOnlineServer[0])
+        return CHOSEN_PUBLIC_SERVER;
+#endif
+    return gOnlineServer;
+}
+
+static bool onlineConnect(void)
+{
+#ifndef NOTBLOOD_WEB
+    if (!onlineServer()[0])
     {
         setStatus("Enter the server address first");
         return false;
@@ -141,9 +162,9 @@ static bool onlineConnect(void)
 #endif
     if (relayStatus() == kRelayOnline)
         return true;
-    relayConnect(gOnlineServer, gOnlineKey, onlineVersion());
+    relayConnect(onlineServer(), gOnlineKey, onlineVersion());
     char buffer[128];
-    Bsnprintf(buffer, sizeof(buffer), "Connecting to %s", gOnlineServer[0] ? gOnlineServer : "the server");
+    Bsnprintf(buffer, sizeof(buffer), "Connecting to %s", onlineServer()[0] ? onlineServer() : "the server");
     if (!onlineWait(buffer, 15000, []() { return relayStatus() == kRelayOnline; }))
     {
         relayClose();
@@ -179,14 +200,34 @@ static void lobbyNameFor(char *pzName, int nSize)
     Bstrncpyz(pzName, s.c_str(), nSize);
 }
 
+// what the server compares for private lobbies: the password itself never leaves the machine
+static std::string passwordHash(void)
+{
+    std::string pw = cleanField(gOnlineLobbyPassword);
+    if (pw.empty())
+        return "";
+    for (char &c : pw)
+        c = tolower((unsigned char)c); // typed on a phone or a PC: case doesn't matter
+    pw = "notblood-lobby:" + pw;
+    return relaySha256Hex(pw.data(), pw.size());
+}
+
+static void chatReset(void)
+{
+    nChatLines = 0;
+    chatInput.clear();
+}
+
 bool onlineHostLobby(int nPlayers, bool bConsole)
 {
     bConsoleWait = bConsole;
     if (!onlineConnect())
         return false;
+    chatReset();
+    nBotsSent = -1;
     lobbyNameFor(zLobbyName, sizeof(zLobbyName));
     std::string cmd = std::string("host\t") + zLobbyName + "\t" + std::to_string(nPlayers) + "\t" + cleanField(playerName()) +
-        "\t" + cleanField(modCurrentName()) + "\t" + onlineVersion();
+        "\t" + cleanField(modCurrentName()) + "\t" + onlineVersion() + "\t" + passwordHash();
     relaySendText(cmd.c_str());
     char reply[512];
     if (!onlineReply("Creating the lobby", reply, sizeof(reply), "hosted", NULL))
@@ -205,7 +246,7 @@ bool onlineHostLobby(int nPlayers, bool bConsole)
     relaySetHostGamePort(gNetPort);
     gOnlineMode = kOnlineHost;
     char buffer[128];
-    Bsnprintf(buffer, sizeof(buffer), "Lobby \"%s\" is open", zLobbyName);
+    Bsnprintf(buffer, sizeof(buffer), gOnlineLobbyPassword[0] ? "Private lobby \"%s\" is open" : "Lobby \"%s\" is open", zLobbyName);
     setStatus(buffer);
     return true;
 }
@@ -220,8 +261,9 @@ bool onlineJoinLobby(const char *pzLobby, bool bConsole)
     }
     if (!onlineConnect())
         return false;
+    chatReset();
     std::string cmd = std::string("join\t") + cleanField(pzLobby) + "\t" + cleanField(playerName()) + "\t" +
-        cleanField(modCurrentName()) + "\t" + onlineVersion();
+        cleanField(modCurrentName()) + "\t" + onlineVersion() + "\t" + passwordHash();
     relaySendText(cmd.c_str());
     char reply[512];
     if (!onlineReply("Joining the lobby", reply, sizeof(reply), "joined", NULL))
@@ -269,12 +311,17 @@ int onlineListLobbies(char (*pzNames)[25], char (*pzInfo)[64], int nMax)
         p++;
         const char *pEnd = strchr(p, '\n');
         std::string line(p, pEnd ? pEnd - p : strlen(p));
-        // name host players max state mod version
+        // name host players max state mod version [bots private map]: players are people, bots apart
         std::string state = msgField(line.c_str(), 4);
         Bstrncpyz(pzNames[nCount], msgField(line.c_str(), 0).c_str(), 25);
         std::string mod = msgField(line.c_str(), 5);
-        Bsnprintf(pzInfo[nCount], 64, "%s  %s/%s%s%s%s", msgField(line.c_str(), 1).c_str(), msgField(line.c_str(), 2).c_str(),
-            msgField(line.c_str(), 3).c_str(), state == "waiting" ? "" : "  PLAYING", mod.empty() ? "" : "  MOD: ", mod.c_str());
+        int nBots = atoi(msgField(line.c_str(), 7).c_str());
+        bool bPrivate = msgField(line.c_str(), 8) == "1";
+        std::string map = msgField(line.c_str(), 9);
+        std::string bots = nBots > 0 ? "  +" + std::to_string(nBots) + (nBots == 1 ? " BOT" : " BOTS") : "";
+        Bsnprintf(pzInfo[nCount], 64, "%s%s  %s/%s%s%s%s%s%s", bPrivate ? "LOCKED  " : "", msgField(line.c_str(), 1).c_str(),
+            msgField(line.c_str(), 2).c_str(), msgField(line.c_str(), 3).c_str(), bots.c_str(), state == "waiting" ? "" : "  PLAYING",
+            mod.empty() ? "" : "  MOD: ", mod.c_str(), map.empty() ? "" : ("  " + map).c_str());
         nCount++;
         p = pEnd;
     }
@@ -318,6 +365,91 @@ void onlineGameEnded(void)
     gOnlineMode = kOnlineNone;
     bReportSent = false;
     mapSentFor.clear();
+    nBotsSent = -1;
+    chatReset();
+}
+
+// ---- lobby chat -------------------------------------------------------------------------------
+
+static void chatAdd(const std::string &line)
+{
+    if (nChatLines == kChatLines)
+    {
+        for (int i = 1; i < kChatLines; i++)
+            chatLines[i-1] = chatLines[i];
+        nChatLines--;
+    }
+    chatLines[nChatLines++] = line;
+}
+
+static void onlineSay(const std::string &text)
+{
+    std::string t = cleanField(text.c_str());
+    if (t.empty() || relayStatus() != kRelayOnline)
+        return;
+    relaySendText(("chat\t" + t.substr(0, 120)).c_str());
+}
+
+// a relay message for the lobby (chat, players coming and going); true when it was one
+static bool lobbyMessage(const char *pzMsg)
+{
+    std::string cmd = msgField(pzMsg, 0);
+    if (cmd == "chat")
+    {
+        std::string name = msgField(pzMsg, 1), text = msgField(pzMsg, 2);
+        std::string line = name.empty() ? text : name + ": " + text;
+        chatAdd(line);
+        if (gGameStarted)
+            viewSetMessage(line.c_str());
+        return true;
+    }
+    if (cmd == "peer_join" && !gGameStarted)
+    {
+        chatAdd(msgField(pzMsg, 2) + " joined the lobby");
+        return true;
+    }
+    return false;
+}
+
+void onlineLobbyWait(bool bConsole)
+{
+    if ((gOnlineMode != kOnlineHost && gOnlineMode != kOnlineClient) || bConsole)
+        return;
+    char msg[512];
+    bool bChanged = false;
+    while (relayReadText(msg, sizeof(msg)))
+        bChanged |= lobbyMessage(msg);
+    // typing: letters go to the chat line, Enter sends it
+    while (char ch = keyGetChar())
+    {
+        if (ch == '\r' || ch == '\n')
+        {
+            onlineSay(chatInput);
+            chatInput.clear();
+        }
+        else if (ch == '\b' || ch == 127)
+        {
+            if (!chatInput.empty())
+                chatInput.pop_back();
+        }
+        else if ((unsigned char)ch >= 32 && ch != '\t' && chatInput.size() < 60)
+            chatInput += ch;
+        else
+            continue;
+        bChanged = true;
+    }
+    static uint32_t nLastDraw;
+    uint32_t nNow = timerGetTicks();
+    if (!bChanged && nNow - nLastDraw < 500) // the caret blinks
+        return;
+    nLastDraw = nNow;
+    viewLoadingScreenUpdate(NULL, -1);
+    int y = 200 - 12 - 9 * nChatLines;
+    for (int i = 0; i < nChatLines; i++, y += 9)
+        viewDrawText(3, chatLines[i].substr(0, 48).c_str(), 12, y, -128, 0, 0, true);
+    std::string prompt = "SAY: " + chatInput + ((nNow / 500) & 1 ? "_" : " ");
+    viewDrawText(3, prompt.substr(0, 52).c_str(), 12, 200 - 11, -128, 2, 0, true);
+    videoNextPage();
 }
 
 void onlineGameStarted(void)
@@ -524,6 +656,8 @@ void onlineFrame(void)
     while (relayReadText(msg, sizeof(msg)))
     {
         std::string cmd = msgField(msg, 0);
+        if (lobbyMessage(msg))
+            continue;
         if (cmd == "peer_join" && gGameStarted)
         {
             char buffer[64];
@@ -556,6 +690,11 @@ void onlineFrame(void)
         bReportSent = true;  // "hosted" or "error" follows
         return;
     }
+    if (gOnlineMode == kOnlineHost && nBotsSent != gBotNetCount && gNetMode == NETWORK_SERVER)
+    {
+        nBotsSent = gBotNetCount;  // the lobby list counts them apart from the people
+        relaySendText(("bots\t" + std::to_string(gBotNetCount)).c_str());
+    }
     if (gOnlineMode == kOnlineClient || !gGameStarted || gDemo.bPlaying)
         return;
 
@@ -581,4 +720,163 @@ void onlineFrame(void)
     buildStats(stats);
     stats.insert(0, "stats\t");
     relaySendText(stats.c_str());
+}
+
+// ---- the host's user map for players who don't have it -----------------------------------------
+//
+// Whoever starts a game on a user map hands the file to the relay just before the start packet
+// goes out (netBroadcastNewGame()). The relay checks it (server/mapcheck.py) and the others get it
+// when their game starts the level (StartLevel()), unless their own copy is the same file. The
+// game's loader checks every map again (dbLoadMap()), so a damaged one can't do harm.
+
+#define kMaxSharedMap (2 * 1024 * 1024)
+
+static std::string mapSharedByMe;  // the file this machine handed over for the current game
+
+// the bytes the loader would read for this map, like dbLoadMap() finds them
+static bool readMapData(const char *pzMap, std::string &data)
+{
+    int const nOldMode = pathsearchmode;
+    pathsearchmode = 1;
+    char name[BMAX_PATH];
+    Bstrncpyz(name, pzMap, sizeof(name));
+    Bstrupr(name);
+    DICTNODE *pNode = *gSysRes.Probe(name, "MAP");
+    if (pNode && (pNode->flags & DICT_EXTERNAL))
+        gSysRes.RemoveNode(pNode);
+    pNode = gSysRes.Lookup(pzMap, "MAP");
+    if (!pNode)
+    {
+        Bstrncpyz(name, pzMap, sizeof(name));
+        ChangeExtension(name, "");
+        pNode = gSysRes.Lookup(name, "MAP");
+    }
+    bool bOk = false;
+    if (pNode && pNode->size > 0 && pNode->size <= kMaxSharedMap)
+    {
+        const char *pData = (const char *)gSysRes.Lock(pNode);
+        if (pData)
+        {
+            data.assign(pData, pNode->size);
+            bOk = true;
+        }
+        gSysRes.Unlock(pNode);
+    }
+    pathsearchmode = nOldMode;
+    return bOk;
+}
+
+// "e1m1x", "maps/My Map.map" -> "MAP.MAP"-style name the relay accepts
+static std::string sharedMapName(const char *pzMap)
+{
+    const char *pBase = pzMap;
+    for (const char *p = pzMap; *p; p++)
+        if (*p == '/' || *p == '\\')
+            pBase = p + 1;
+    std::string name;
+    for (const char *p = pBase; *p && name.size() < 56; p++)
+    {
+        if (isalnum((unsigned char)*p) || *p == '_' || *p == '-')
+            name += (char)toupper((unsigned char)*p);
+        else if (*p == '.')
+        {
+            if (!Bstrcasecmp(p, ".map"))
+                break;
+            name += '.';
+        }
+        else if (*p == ' ')
+            name += '_';
+    }
+    if (name.empty())
+        name = "USERMAP";
+    return name + ".MAP";
+}
+
+void onlineShareMap(const char *pzMap)
+{
+    mapSharedByMe.clear();
+    if ((gOnlineMode != kOnlineHost && gOnlineMode != kOnlineClient) || relayStatus() != kRelayOnline || !pzMap || !pzMap[0])
+        return;
+    std::string data;
+    if (!readMapData(pzMap, data))
+    {
+        LOG_F(WARNING, "Online: can't read user map %s to share it", pzMap);
+        return;
+    }
+    std::string name = sharedMapName(pzMap);
+    std::string cmd = "mapfile\t" + name + "\t" + relaySha256Hex(data.data(), data.size()) + "\t" + relayBase64(data.data(), data.size());
+    relaySendText(cmd.c_str());
+    mapSharedByMe = name;
+    LOG_F(INFO, "Online: sharing user map %s (%d bytes)", name.c_str(), (int)data.size());
+}
+
+bool onlineFetchMap(const char *pzMap, char *pzLoad, int nSize)
+{
+    if ((gOnlineMode != kOnlineHost && gOnlineMode != kOnlineClient) || relayStatus() != kRelayOnline || !pzMap || !pzMap[0])
+        return false;
+    std::string name = sharedMapName(pzMap);
+    if (!Bstrcasecmp(name.c_str(), mapSharedByMe.c_str()))
+        return false;  // this machine started the game with it
+    std::string mine, mineSha;
+    if (readMapData(pzMap, mine))
+        mineSha = relaySha256Hex(mine.data(), mine.size());
+    relaySendText(("getmap\t" + name + "\t" + mineSha).c_str());
+
+    std::string reply;
+    char text[96];
+    Bsnprintf(text, sizeof(text), "Getting the map %s", name.c_str());
+    bool bConsoleOld = bConsoleWait;
+    bConsoleWait = false;
+    bool bGot = onlineWait(text, 60000, [&]() {
+        std::string m;
+        while (relayReadMapReply(m))
+        {
+            if (!Bstrcasecmp(msgField(m.c_str(), 1).c_str(), name.c_str()) && msgField(m.c_str(), 0).compare(0, 4, "map_") == 0)
+            {
+                reply.swap(m);
+                return true;
+            }
+        }
+        return false;
+    });
+    bConsoleWait = bConsoleOld;
+    if (!bGot)
+    {
+        LOG_F(WARNING, "Online: no answer about map %s (%s)", name.c_str(), onlineStatusText());
+        return false;
+    }
+    std::string cmd = msgField(reply.c_str(), 0);
+    if (cmd != "map_data")
+    {
+        LOG_F(INFO, "Online: map %s: %s", name.c_str(), cmd == "map_same" ? "you have the same file" : "the host didn't share it");
+        return false;
+    }
+    // map_data <name> <sha256> <base64>; field() stops at a newline, base64 has none
+    size_t nAt = 0;
+    for (int i = 0; i < 3 && nAt != std::string::npos; i++)
+        nAt = reply.find('\t', nAt + (i ? 1 : 0));
+    std::string data;
+    std::string sha = msgField(reply.c_str(), 2);
+    if (nAt == std::string::npos || !relayUnbase64(reply.substr(nAt + 1), data) || data.size() < 64 || data.size() > kMaxSharedMap
+        || relaySha256Hex(data.data(), data.size()) != sha || memcmp(data.data(), "BLM\x1a", 4))
+    {
+        LOG_F(ERROR, "Online: the map %s arrived damaged", name.c_str());
+        return false;
+    }
+    char dir[BMAX_PATH], path[BMAX_PATH];
+    G_ModDirSnprintfLite(dir, sizeof(dir), "downloads");
+    Bmkdir(dir, S_IRWXU);
+    Bsnprintf(path, sizeof(path), "%s/%s", dir, name.c_str());
+    FILE *fp = fopen(path, "wb");
+    if (!fp || fwrite(data.data(), 1, data.size(), fp) != data.size())
+    {
+        if (fp)
+            fclose(fp);
+        LOG_F(ERROR, "Online: can't save the map to %s", path);
+        return false;
+    }
+    fclose(fp);
+    LOG_F(INFO, "Online: got the map %s (%d bytes) -> %s", name.c_str(), (int)data.size(), path);
+    Bstrncpyz(pzLoad, path, nSize);
+    return true;
 }

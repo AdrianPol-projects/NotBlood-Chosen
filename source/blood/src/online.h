@@ -30,9 +30,12 @@ enum
 extern char gOnlineServer[64];
 extern char gOnlineKey[48];
 extern char gOnlineLobby[25];
+extern char gOnlineLobbyPassword[25]; // private lobbies: hosting with one makes the lobby private
 extern int gOnlineReportLan;  // show hosted LAN games on the dashboard
 extern int gOnlineMode;
 
+// the server to use: the one entered, else the public one this build was made with (may be "")
+const char *onlineServer(void);
 // the version string players have to match ("NotBlood Chosen 1.0")
 const char *onlineVersion(void);
 
@@ -53,3 +56,10 @@ void onlineGameStarted(void);
 bool onlineConnectionLost(void);
 // text for the host's "waiting for players" screen
 const char *onlineWaitText(void);
+// the waiting for players screens: lobby chat (typing, Enter sends) and the players coming in
+void onlineLobbyWait(bool bConsole);
+// whoever starts a game on a user map: hand it to the relay for the others (before the start packet)
+void onlineShareMap(const char *pzMap);
+// the others, when the level starts: get the map if their copy is missing or differs; true and the
+// path to load when it was downloaded
+bool onlineFetchMap(const char *pzMap, char *pzLoad, int nSize);
