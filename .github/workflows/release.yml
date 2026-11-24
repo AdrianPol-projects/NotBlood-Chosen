@@ -16,10 +16,10 @@ name: Release builds
   workflow_dispatch:
     inputs:
       only:
-        description: 'Platforms to build: all; beta (all, into the pre-release "v<version>-beta": public, but never "latest"); beta-publish (builds nothing, makes a draft v<version>-beta public); only macos, android or web (then only that download of the release is replaced); android-test (an APK artifact, nothing published); linux-test (the Linux builds as artifacts, nothing published)'
+        description: 'Platforms to build: android-beta (only the Android APK of the pre-release "v<version>-beta" is replaced); all; beta (all, into the pre-release "v<version>-beta": public, but never "latest"); beta-publish (builds nothing, makes a draft v<version>-beta public); only macos, android or web (then only that download of the release is replaced); android-test (an APK artifact, nothing published); linux-test (the Linux builds as artifacts, nothing published)'
         type: choice
-        options: [all, beta, beta-publish, macos, android, web, android-test, linux-test]
-        default: all
+        options: [android-beta, all, beta, beta-publish, macos, android, web, android-test, linux-test]
+        default: android-beta
 
 permissions:
   contents: write
@@ -313,7 +313,7 @@ jobs:
     name: Publish
     needs: [build-linux, build-windows, build-macos, build-android, build-ios, build-web]
     # skipped jobs (a macOS-, Android- or web-only run) are fine, failed ones are not
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && inputs.only != 'android-test' && inputs.only != 'linux-test' && (needs.build-macos.result == 'success' || inputs.only == 'android' || inputs.only == 'web') }}
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && inputs.only != 'android-test' && inputs.only != 'linux-test' && (needs.build-macos.result == 'success' || inputs.only == 'android' || inputs.only == 'android-beta' || inputs.only == 'web') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -322,7 +322,7 @@ jobs:
           path: artifacts
       - name: Package
         env:
-          ONLY: ${{ (inputs.only == 'beta' && 'all') || inputs.only || 'all' }}
+          ONLY: ${{ (inputs.only == 'beta' && 'all') || (inputs.only == 'android-beta' && 'android') || inputs.only || 'all' }}
         run: |
           version=$(sed -n 's/#define CHOSEN_VERSION "\(.*\)"/\1/p' source/blood/src/chosen.h)
           echo "VERSION=$version" >> "$GITHUB_ENV"
@@ -376,6 +376,20 @@ jobs:
             exit 0
           fi
           TAG="v$VERSION"
+          if [ "$ONLY" = android-beta ]; then
+            # only the APK of the beta pre-release; the other downloads stay from the last full beta
+            TAG="v$VERSION-beta"
+            file=$(ls NotBlood-Chosen-*-android.apk)
+            gh release view "$TAG" >/dev/null
+            for a in $(gh release view "$TAG" --json assets -q '.assets[].name' | grep -- '-android\.apk$'); do
+              gh release delete-asset "$TAG" "$a" -y
+            done
+            gh release upload "$TAG" "$file" --clobber
+            gh release view "$TAG" --json body -q .body | grep -v '^_The Android download was updated' > notes.md || true
+            echo "_The Android download was updated on its own in build ${{ github.run_number }} (commit ${GITHUB_SHA::7}); the other downloads are older._" >> notes.md
+            gh release edit "$TAG" --notes-file notes.md
+            exit 0
+          fi
           if [ "$ONLY" = beta ]; then
             # A public pre-release that is never "latest" (servers keep serving the real release at
             # /play/, and the Releases page keeps the real one on top). Each beta run replaces its files.
