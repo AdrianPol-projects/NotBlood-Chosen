@@ -51,6 +51,10 @@ The relay downloads the web build by itself:
 
 Pages and installing as an app need **https**. A Cloudflare tunnel or Caddy with a real domain gives you that; plain `http://` on a home network works for playing in a tab. See [platform/Web/README.md](platform/Web/README.md) for how the port works.
 
+## The map editor at /mapmaker
+
+`http://<server>/mapmaker` is Blood Map Maker, a map editor that works in any browser, phones included ([tools/mapeditor](tools/mapeditor/README.md)). It needs no key: it's only a page, the maps stay on the player's device.
+
 ## What you need
 
 - A machine that stays on: Linux, macOS, Windows with WSL, or a Raspberry Pi.

@@ -1,0 +1,978 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#120606">
+<title>Blood Map Maker</title>
+<style>
+:root {
+  --bg: #0d0707; --panel: #1a0f0f; --panel2: #241414; --line: #3a2222; --text: #eee2dc; --dim: #a8968f;
+  --accent: #d8402f; --accent2: #f0a24a; --ok: #6fbf73; --warn: #e6b450; --err: #ef5b4b;
+  --grid: #1b1111; --grid2: #2a1818;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+button, select, input { font: inherit; color: inherit; }
+button { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; min-height: 40px; cursor: pointer; }
+button:active { background: #3a1d1a; }
+button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.small { min-height: 34px; padding: 4px 10px; font-size: 14px; }
+select, input[type=text], input[type=number] { background: #0f0909; border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; min-height: 38px; width: 100%; }
+#app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+header { display: flex; gap: 8px; align-items: center; padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); background: var(--panel); border-bottom: 1px solid var(--line); }
+header .title { font-weight: 700; color: var(--accent2); white-space: nowrap; }
+header input { flex: 1; min-width: 0; text-transform: uppercase; }
+#wrap { position: relative; flex: 1; min-height: 0; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+#hint { position: absolute; left: 10px; right: 10px; top: 8px; pointer-events: none; color: var(--dim); font-size: 13px; text-shadow: 0 1px 2px #000; }
+#badge { position: absolute; right: 10px; top: 8px; }
+#tools { display: flex; gap: 6px; padding: 8px; overflow-x: auto; background: var(--panel); border-top: 1px solid var(--line); }
+#tools button { flex: 0 0 auto; }
+#sheet { background: var(--panel); border-top: 1px solid var(--line); max-height: 46vh; overflow-y: auto; padding: 10px 12px; padding-bottom: max(10px, env(safe-area-inset-bottom)); display: none; }
+#sheet.open { display: block; }
+.row { display: grid; grid-template-columns: 9.5em 1fr; gap: 8px; align-items: center; margin: 6px 0; }
+.row label { color: var(--dim); font-size: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+h3 { margin: 2px 0 6px; font-size: 16px; color: var(--accent2); }
+.problems div { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.problems .error { color: var(--err); } .problems .warning { color: var(--warn); }
+#toast { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); background: #000d; border: 1px solid var(--line); padding: 8px 14px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; text-align: center; }
+#toast.show { opacity: 1; }
+#menu { position: fixed; right: 8px; top: 56px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px; display: none; flex-direction: column; gap: 6px; z-index: 5; min-width: 220px; }
+#menu.open { display: flex; }
+#help { position: fixed; inset: 0; background: #000c; display: none; z-index: 10; overflow-y: auto; }
+#help.open { display: block; }
+#help .box { max-width: 640px; margin: 20px auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+#help li { margin: 4px 0; }
+small { color: var(--dim); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <span class="title">Blood Map Maker</span>
+    <input id="name" type="text" maxlength="8" spellcheck="false" aria-label="Map file name">
+    <button id="menuBtn" class="small" aria-label="Menu">☰</button>
+  </header>
+  <div id="wrap">
+    <canvas id="cv"></canvas>
+    <div id="hint"></div>
+    <button id="badge" class="small">Check</button>
+  </div>
+  <div id="sheet"></div>
+  <div id="tools">
+    <button data-tool="pan">Move</button>
+    <button data-tool="rect">▭ Room</button>
+    <button data-tool="poly">✎ Shape</button>
+    <button data-tool="select">Select</button>
+    <button data-tool="thing">+ Thing</button>
+    <button data-tool="erase">Delete</button>
+    <button id="undoBtn">Undo</button>
+    <button id="fitBtn">Fit</button>
+  </div>
+</div>
+<div id="menu">
+  <button id="exportBtn" class="on">Save .MAP for the game</button>
+  <button id="newBtn">New map</button>
+  <button id="saveBtn">Save project (.json)</button>
+  <button id="openBtn">Open project (.json)</button>
+  <label class="row" style="margin:0"><span>Grid</span>
+    <select id="gridSel"><option>64</option><option>128</option><option selected>256</option><option>512</option><option>1024</option></select></label>
+  <button id="helpBtn">Help</button>
+  <input id="fileIn" type="file" accept=".json,application/json" hidden>
+</div>
+<div id="help"><div class="box">
+  <h3>Blood Map Maker</h3>
+  <p>Makes simple levels for NotBlood Chosen (and other Blood ports that read Blood's .MAP files): rooms, heights, sky, player starts, weapons and items.</p>
+  <ol>
+    <li><b>▭ Room</b>: tap two corners. <b>✎ Shape</b>: tap the corners one by one, then tap the first corner again (or <i>Finish</i>).</li>
+    <li>Draw rooms <b>touching</b> each other to join them: where their edges meet you can walk through. Rooms can't overlap.</li>
+    <li><b>Select</b> a room to set its floor height, ceiling height, textures, light and sky. A small floor difference is a step, a big one needs a jump.</li>
+    <li><b>+ Thing</b>: pick what to place (starts, weapons, ammo, health, armor, power-ups, keys) and tap in a room. Select a start to turn it.</li>
+    <li>A map needs a <b>single player start</b>. Bloodbath uses the <b>bloodbath starts</b> (put 8, one per player); co-op uses one single player start per player.</li>
+    <li>☰ → <b>Save .MAP for the game</b>. Put the file in the game folder (Android: the <i>NotBlood</i> folder of the main storage) and pick it under <i>&lt; USER MAP &gt;</i> when you choose an episode, or MULTIPLAYER → USER MAP. In online games the others get the map from the server by themselves.</li>
+  </ol>
+  <p><small>Textures are tile numbers from Blood's TILES*.ART (the lists show the ones Blood's levels use most). Moving with two fingers works in every tool; pinch to zoom. Your map is kept in this browser while you work; save the project file to keep it for good.</small></p>
+  <div class="btns"><button id="helpClose" class="on">Got it</button></div>
+</div></div>
+<div id="toast"></div>
+<script>
+// NotBlood Chosen map editor: the map model, its checks and the Blood .MAP writer.
+// Works in a browser (window.MapCore) and in Node (require), so the tests can run it too.
+//
+// A map is a list of rooms (simple polygons on a grid, each becomes a Blood sector) and things
+// (player starts, weapons, ammo, items). Rooms that touch along an edge become one open space:
+// on export every edge is split where other rooms' corners lie on it, and the matching halves
+// are joined (nextwall/nextsector), like a Build editor joins sectors. The file is written the
+// way the game itself saves maps (dbSaveMap() in source/blood/src/db.cpp): version 7, encrypted.
+(function (root) {
+  'use strict';
+
+  // ---- what can be placed -------------------------------------------------------------------
+  // type: Blood sprite type; pic, xr/yr, cstat: as in Blood's own maps; dz: height over the floor
+  const THINGS = [
+    { group: 'Starts', type: 1, name: 'Single player / co-op start', pic: 2522, xr: 64, yr: 64, cstat: 128, stat: 0, start: true },
+    { group: 'Starts', type: 2, name: 'Bloodbath start', pic: 2522, xr: 64, yr: 64, cstat: 128, stat: 0, start: true },
+    { group: 'Weapons', type: 43, name: 'Flare gun', pic: 524 },
+    { group: 'Weapons', type: 41, name: 'Sawed-off shotgun', pic: 559 },
+    { group: 'Weapons', type: 42, name: 'Tommy gun', pic: 558 },
+    { group: 'Weapons', type: 46, name: 'Napalm launcher', pic: 526 },
+    { group: 'Weapons', type: 49, name: 'TNT', pic: 589, xr: 48, yr: 48, cstat: 384 },
+    { group: 'Weapons', type: 48, name: 'Spray can', pic: 618, xr: 40, yr: 40, cstat: 384 },
+    { group: 'Weapons', type: 45, name: 'Tesla cannon', pic: 539 },
+    { group: 'Weapons', type: 50, name: 'Life leech', pic: 800 },
+    { group: 'Weapons', type: 44, name: 'Voodoo doll', pic: 525 },
+    { group: 'Ammo', type: 76, name: 'Flares', pic: 816 },
+    { group: 'Ammo', type: 67, name: 'Shotgun shells (few)', pic: 619 },
+    { group: 'Ammo', type: 68, name: 'Shotgun shells (box)', pic: 812 },
+    { group: 'Ammo', type: 69, name: 'Tommy gun bullets (few)', pic: 813 },
+    { group: 'Ammo', type: 72, name: 'Tommy gun drum', pic: 817 },
+    { group: 'Ammo', type: 79, name: 'Gasoline can', pic: 801 },
+    { group: 'Ammo', type: 62, name: 'TNT bundle', pic: 589, cstat: 384 },
+    { group: 'Ammo', type: 63, name: 'TNT box', pic: 809, cstat: 384 },
+    { group: 'Ammo', type: 64, name: 'Proximity bombs', pic: 811, xr: 40, yr: 40 },
+    { group: 'Ammo', type: 65, name: 'Remote bombs', pic: 810, xr: 40, yr: 40 },
+    { group: 'Ammo', type: 60, name: 'Spray can (ammo)', pic: 618, xr: 40, yr: 40, cstat: 384 },
+    { group: 'Ammo', type: 73, name: 'Tesla charge', pic: 548, xr: 24, yr: 24 },
+    { group: 'Ammo', type: 66, name: 'Trapped soul', pic: 820, xr: 24, yr: 24 },
+    { group: 'Health', type: 109, name: 'Life essence', pic: 2169, xr: 40, yr: 40, dz: 160 },
+    { group: 'Health', type: 110, name: 'Life seed', pic: 2433, xr: 40, yr: 40 },
+    { group: 'Health', type: 107, name: "Doctor's bag", pic: 519 },
+    { group: 'Health', type: 108, name: 'Medicine pouch', pic: 822, xr: 40, yr: 40 },
+    { group: 'Armor', type: 140, name: 'Basic armor', pic: 2628, xr: 64, yr: 64, dz: 3840 },
+    { group: 'Armor', type: 141, name: 'Body armor', pic: 2586, xr: 64, yr: 64, dz: 3840 },
+    { group: 'Armor', type: 142, name: 'Fire armor', pic: 2578, xr: 64, yr: 64, dz: 3840 },
+    { group: 'Armor', type: 143, name: 'Spirit armor', pic: 2602, xr: 64, yr: 64, dz: 3840 },
+    { group: 'Armor', type: 144, name: 'Super armor', pic: 2594, xr: 64, yr: 64, dz: 3840 },
+    { group: 'Power-ups', type: 117, name: 'Guns akimbo', pic: 829, xr: 40, yr: 40 },
+    { group: 'Power-ups', type: 113, name: 'Invisibility', pic: 896, xr: 40, yr: 40 },
+    { group: 'Power-ups', type: 114, name: 'Death mask', pic: 825, xr: 40, yr: 40 },
+    { group: 'Power-ups', type: 124, name: 'Reflective shots', pic: 2428, xr: 40, yr: 40 },
+    { group: 'Power-ups', type: 115, name: 'Jump boots', pic: 827, xr: 40, yr: 40 },
+    { group: 'Power-ups', type: 125, name: 'Beast vision', pic: 839, xr: 40, yr: 40 },
+    { group: 'Power-ups', type: 118, name: 'Diving suit', pic: 830, xr: 80, yr: 64 },
+    { group: 'Power-ups', type: 121, name: 'Crystal ball', pic: 760, xr: 40, yr: 40 },
+    { group: 'Keys', type: 100, name: 'Skull key', pic: 2552, xr: 32, yr: 32 },
+    { group: 'Keys', type: 101, name: 'Eye key', pic: 2553, xr: 32, yr: 32 },
+    { group: 'Keys', type: 102, name: 'Fire key', pic: 2554, xr: 32, yr: 32 },
+    { group: 'Keys', type: 103, name: 'Dagger key', pic: 2555, xr: 32, yr: 32 },
+    { group: 'Keys', type: 104, name: 'Spider key', pic: 2556, xr: 32, yr: 32 },
+    { group: 'Keys', type: 105, name: 'Moon key', pic: 2557, xr: 32, yr: 32 },
+  ];
+  const THING_BY_TYPE = {};
+  for (const t of THINGS) THING_BY_TYPE[t.type] = t;
+
+  // tiles Blood's own levels use most (numbers in Blood's TILES*.ART)
+  const COMMON_TILES = {
+    wall: [449, 556, 458, 568, 273, 448, 80, 20, 255],
+    floor: [270, 287, 253, 448, 568, 255, 438, 274],
+    ceiling: [568, 449, 255, 448, 556],
+    sky: [3678, 2500],
+  };
+
+  const Z_PER_UNIT = 16; // Build: 1 unit across = 16 units up and down
+  const LIMITS = { sectors: 4096, walls: 16384, sprites: 16384, tiles: 30720, coord: 0x7ffff };
+
+  function newRoom(pts) {
+    return {
+      pts: pts.map((p) => [p[0] | 0, p[1] | 0]),
+      floor: 0,          // height of the floor, in map units (up is more)
+      height: 2048,      // floor to ceiling, in map units
+      floorPic: 270, ceilPic: 568, wallPic: 449,
+      sky: false,        // open sky instead of a ceiling
+      light: 0,          // 0 normal, up to 30 darker; negative brighter (Blood's shade)
+    };
+  }
+
+  function newProject() {
+    return { version: 1, name: 'MYMAP', rooms: [], things: [], visibility: 0, skyPic: 3678 };
+  }
+
+  // ---- geometry -------------------------------------------------------------------------------
+
+  // shoelace sum: > 0 for a loop that goes clockwise on screen (y down), Build's order for a sector
+  function area2(pts) {
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], q = pts[(i + 1) % pts.length];
+      a += p[0] * q[1] - q[0] * p[1];
+    }
+    return a;
+  }
+
+  function cross(o, a, b) {
+    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  }
+
+  // the inside of segment ab and cd cross at a single point (touching ends or overlapping doesn't count)
+  function properCross(a, b, c, d) {
+    const d1 = cross(c, d, a), d2 = cross(c, d, b), d3 = cross(a, b, c), d4 = cross(a, b, d);
+    return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+  }
+
+  function onSegment(p, a, b) { // p on segment ab, ends included
+    return cross(a, b, p) === 0 && Math.min(a[0], b[0]) <= p[0] && p[0] <= Math.max(a[0], b[0])
+      && Math.min(a[1], b[1]) <= p[1] && p[1] <= Math.max(a[1], b[1]);
+  }
+
+  // 1 inside, 0 on the edge, -1 outside
+  function pointInPoly(p, pts) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const a = pts[i], b = pts[j];
+      if (onSegment(p, a, b)) return 0;
+      if ((a[1] > p[1]) !== (b[1] > p[1])) {
+        const x = a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]);
+        if (p[0] < x) inside = !inside;
+      }
+    }
+    return inside ? 1 : -1;
+  }
+
+  function samePoint(a, b) { return a[0] === b[0] && a[1] === b[1]; }
+
+  // tidy a drawn outline: drop repeated and straight-through corners, clockwise order
+  function cleanPoly(pts) {
+    let out = [];
+    for (const p of pts) if (!out.length || !samePoint(out[out.length - 1], p)) out.push([p[0], p[1]]);
+    if (out.length > 1 && samePoint(out[0], out[out.length - 1])) out.pop();
+    let changed = true;
+    while (changed && out.length >= 3) {
+      changed = false;
+      for (let i = 0; i < out.length; i++) {
+        const a = out[(i + out.length - 1) % out.length], b = out[i], c = out[(i + 1) % out.length];
+        if (cross(a, b, c) === 0 && (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1]) >= 0) {
+          out.splice(i, 1);
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (out.length >= 3 && area2(out) < 0) out.reverse();
+    return out;
+  }
+
+  // why this outline can't be a room next to the others ("" when it can)
+  function roomProblem(pts, rooms, skipIndex) {
+    if (pts.length < 3 || area2(pts) === 0) return 'A room needs at least 3 corners and some area';
+    for (const p of pts)
+      if (Math.abs(p[0]) > LIMITS.coord || Math.abs(p[1]) > LIMITS.coord) return 'Too far from the middle of the map';
+    const n = pts.length;
+    for (let i = 0; i < n; i++)
+      for (let j = i + 1; j < n; j++) {
+        if (j === i + 1 || (i === 0 && j === n - 1)) continue;
+        const a = pts[i], b = pts[(i + 1) % n], c = pts[j], d = pts[(j + 1) % n];
+        if (properCross(a, b, c, d) || onSegment(c, a, b) || onSegment(a, c, d)) return 'The outline crosses itself';
+      }
+    for (let r = 0; r < rooms.length; r++) {
+      if (r === skipIndex) continue;
+      const q = rooms[r].pts;
+      for (let i = 0; i < n; i++)
+        for (let j = 0; j < q.length; j++)
+          if (properCross(pts[i], pts[(i + 1) % n], q[j], q[(j + 1) % q.length])) return 'It overlaps another room';
+      // a corner inside the other, or the middle of an edge (both outlines can be on the same lines)
+      const probes = [];
+      for (let i = 0; i < n; i++) {
+        const a = pts[i], b = pts[(i + 1) % n];
+        probes.push(a, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
+      }
+      if (probes.some((p) => pointInPoly(p, q) > 0)) return 'It overlaps another room';
+      const back = [];
+      for (let j = 0; j < q.length; j++) {
+        const a = q[j], b = q[(j + 1) % q.length];
+        back.push(a, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
+      }
+      if (back.some((p) => pointInPoly(p, pts) > 0)) return 'It overlaps another room';
+      // the same outline twice: everything on the edges, a point inside both
+      const c = centroidInside(pts);
+      if (c && pointInPoly(c, q) > 0) return 'It overlaps another room';
+    }
+    return '';
+  }
+
+  // some point strictly inside the polygon
+  function centroidInside(pts) {
+    const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const a = pts[i], b = pts[(i + 1) % n], c = pts[(i + 2) % n];
+      if (cross(a, b, c) <= 0) continue;
+      const p = [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3];
+      if (pointInPoly(p, pts) > 0) return p;
+    }
+    let sx = 0, sy = 0;
+    for (const p of pts) { sx += p[0]; sy += p[1]; }
+    const p = [sx / n, sy / n];
+    return pointInPoly(p, pts) > 0 ? p : null;
+  }
+
+  function roomAt(p, rooms) {
+    for (let r = rooms.length - 1; r >= 0; r--) if (pointInPoly(p, rooms[r].pts) > 0) return r;
+    return -1;
+  }
+
+  // ---- checks before writing --------------------------------------------------------------------
+
+  // [{level: 'error'|'warning', text}]
+  function checkProject(prj) {
+    const out = [];
+    const err = (t) => out.push({ level: 'error', text: t });
+    const warn = (t) => out.push({ level: 'warning', text: t });
+    if (!prj.rooms.length) err('Draw at least one room.');
+    prj.rooms.forEach((r, i) => {
+      const why = roomProblem(r.pts, prj.rooms, i);
+      if (why) err('Room ' + (i + 1) + ': ' + why.toLowerCase() + '.');
+      if (r.height < 64) err('Room ' + (i + 1) + ' is too low (at least 64 high).');
+    });
+    let sp = 0, dm = 0;
+    prj.things.forEach((t, i) => {
+      if (!THING_BY_TYPE[t.type]) err('Thing ' + (i + 1) + ' has an unknown type.');
+      if (roomAt([t.x, t.y], prj.rooms) < 0) err((THING_BY_TYPE[t.type] || { name: 'Thing' }).name + ' ' + (i + 1) + ' is not inside a room.');
+      if (t.type === 1) sp++;
+      if (t.type === 2) dm++;
+    });
+    if (!sp) err('Put a single player start (Starts) in a room: the game starts there.');
+    if (dm < 2) warn('Bloodbath needs bloodbath starts: put at least 2, better 8 (one per player).');
+    if (sp > 1 && sp < 8) warn('Co-op uses one single player start per player (1st for player 1, 2nd for player 2, ...).');
+    const n = buildMap(prj, true);
+    if (n.sectors > LIMITS.sectors || n.walls > LIMITS.walls || n.sprites > LIMITS.sprites) err('The map is too big for the game.');
+    return out;
+  }
+
+  // ---- the .MAP file ---------------------------------------------------------------------------
+
+  const HEADER_NEW = 0x7474614d;
+
+  class Out {
+    constructor() { this.buf = new Uint8Array(1 << 16); this.n = 0; }
+    grow(k) {
+      if (this.n + k <= this.buf.length) return;
+      let size = this.buf.length * 2;
+      while (size < this.n + k) size *= 2;
+      const b = new Uint8Array(size);
+      b.set(this.buf.subarray(0, this.n));
+      this.buf = b;
+    }
+    bytes(arr) { this.grow(arr.length); this.buf.set(arr, this.n); this.n += arr.length; }
+    result() { return this.buf.slice(0, this.n); }
+  }
+
+  // a little-endian record built field by field
+  class Rec {
+    constructor(size) { this.b = new Uint8Array(size); this.v = new DataView(this.b.buffer); this.o = 0; }
+    i8(x) { this.v.setInt8(this.o, x); this.o += 1; return this; }
+    u8(x) { this.v.setUint8(this.o, x); this.o += 1; return this; }
+    i16(x) { this.v.setInt16(this.o, x, true); this.o += 2; return this; }
+    u16(x) { this.v.setUint16(this.o, x, true); this.o += 2; return this; }
+    i32(x) { this.v.setInt32(this.o, x, true); this.o += 4; return this; }
+    u32(x) { this.v.setUint32(this.o, x >>> 0, true); this.o += 4; return this; }
+    done() { if (this.o !== this.b.length) throw new Error('record size ' + this.o + ' != ' + this.b.length); return this.b; }
+  }
+
+  function crypt(bytes, key) {
+    const out = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ ((key + i) & 0xff);
+    return out;
+  }
+
+  // Blood's packed x-structures: fields written lowest bit first (BitWriter in common_game.h)
+  function bitPack(size, fields) {
+    const b = new Uint8Array(size);
+    let pos = 0;
+    for (const [value, bits] of fields) {
+      for (let i = 0; i < bits; i++, pos++) {
+        if (Math.floor(value / Math.pow(2, i)) % 2) b[pos >> 3] |= 1 << (pos & 7);
+      }
+    }
+    return b;
+  }
+
+  function xsprite(nSprite, data1) {
+    // up to data1 as dbSaveMap() writes them; everything after it stays 0
+    return bitPack(56, [
+      [nSprite, 14], [0, 1], [0, 17], [0, 10], [0, 10], [0, 8], [0, 1], [0, 1], [0, 2], [0, 12], [0, 12], [0, 1], [0, 1],
+      [0, 2], [0, 2], [0, 1], [0, 1], [0, 8], [0, 1], [0, 1], [0, 1], [0, 3], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1],
+      [0, 1], [0, 2], [0, 5], [0, 1], [0, 1], [0, 1], [0, 1], [data1 & 0xffff, 16],
+    ]);
+  }
+
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes, n) {
+    let c = 0xffffffff;
+    for (let i = 0; i < n; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+
+  // sectors, walls and sprites as plain objects; with countOnly just their numbers
+  function buildMap(prj, countOnly) {
+    const rooms = prj.rooms;
+    const allPts = [];
+    for (const r of rooms) for (const p of r.pts) allPts.push(p);
+    const sectors = [], walls = [];
+    rooms.forEach((r, s) => {
+      // every corner of another room on an edge splits it there
+      const loop = [];
+      const n = r.pts.length;
+      for (let i = 0; i < n; i++) {
+        const a = r.pts[i], b = r.pts[(i + 1) % n];
+        loop.push(a);
+        const mids = [];
+        for (const p of allPts) {
+          if (samePoint(p, a) || samePoint(p, b) || !onSegment(p, a, b)) continue;
+          const t = Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? (p[0] - a[0]) / (b[0] - a[0]) : (p[1] - a[1]) / (b[1] - a[1]);
+          if (!mids.some((m) => samePoint(m.p, p))) mids.push({ p, t });
+        }
+        mids.sort((x, y) => x.t - y.t);
+        for (const m of mids) loop.push(m.p);
+      }
+      const first = walls.length;
+      for (let i = 0; i < loop.length; i++) walls.push({ x: loop[i][0], y: loop[i][1], point2: first + (i + 1) % loop.length, sector: s, nextwall: -1, nextsector: -1 });
+      sectors.push({ wallptr: first, wallnum: loop.length, room: r });
+    });
+    if (countOnly) return { sectors: sectors.length, walls: walls.length, sprites: prj.things.length };
+    // join matching edges of neighbouring rooms
+    const key = (w) => w.x + ',' + w.y + ',' + walls[w.point2].x + ',' + walls[w.point2].y;
+    const byEdge = new Map();
+    walls.forEach((w, i) => byEdge.set(key(w), i));
+    walls.forEach((w, i) => {
+      const o = walls[w.point2];
+      const j = byEdge.get(o.x + ',' + o.y + ',' + w.x + ',' + w.y);
+      if (j !== undefined && walls[j].sector !== w.sector) {
+        w.nextwall = j;
+        w.nextsector = walls[j].sector;
+      }
+    });
+    const sprites = prj.things.map((t, i) => {
+      const info = THING_BY_TYPE[t.type];
+      const s = roomAt([t.x, t.y], rooms);
+      const r = rooms[s];
+      return { t, info, sector: s, z: -(r.floor * Z_PER_UNIT) - (info.dz || 0) };
+    });
+    return { sectors, walls, sprites };
+  }
+
+  // the .MAP bytes (Uint8Array); throws an Error saying what's wrong when it can't
+  function exportMap(prj) {
+    const problems = checkProject(prj).filter((p) => p.level === 'error');
+    if (problems.length) throw new Error(problems.map((p) => p.text).join('\n'));
+    const { sectors, walls, sprites } = buildMap(prj, false);
+    const rev = 1;
+    const out = new Out();
+    out.bytes([0x42, 0x4c, 0x4d, 0x1a, 0x00, 0x07]); // "BLM\x1a", version 0x700
+    // where the game puts a player when the map has no start (the first single player start)
+    const start = sprites.find((s) => s.t.type === 1) || sprites[0];
+    const head = new Rec(37)
+      .i32(start ? start.t.x : 0).i32(start ? start.t.y : 0).i32(start ? start.z : 0)
+      .i16(start ? (start.t.ang || 0) & 2047 : 0).i16(start ? start.sector : 0)
+      .i16(4)                           // sky: 16 tiles wide
+      .i32(prj.visibility | 0)
+      .u32(HEADER_NEW)                  // "song id": marks an encrypted v7 map
+      .u8(2)                            // parallax type
+      .i32(rev)
+      .i16(sectors.length).i16(walls.length).i16(sprites.length).done();
+    out.bytes(crypt(head, HEADER_NEW));
+    const head2 = new Uint8Array(128);
+    const name = 'NotBlood Chosen map editor';
+    for (let i = 0; i < name.length; i++) head2[i] = name.charCodeAt(i);
+    const hv = new DataView(head2.buffer);
+    hv.setInt32(0x40, 56, true); // x-sprite size
+    hv.setInt32(0x44, 24, true); // x-wall size
+    hv.setInt32(0x48, 60, true); // x-sector size
+    out.bytes(crypt(head2, walls.length));
+    const sky = new Rec(32);
+    for (let i = 0; i < 16; i++) sky.i16(i);
+    out.bytes(crypt(sky.done(), 32));
+
+    sectors.forEach((s) => {
+      const r = s.room;
+      const floorz = -(r.floor * Z_PER_UNIT), ceilz = floorz - r.height * Z_PER_UNIT;
+      const shade = Math.max(-128, Math.min(127, r.light | 0));
+      const rec = new Rec(40)
+        .i16(s.wallptr).i16(s.wallnum).i32(ceilz).i32(floorz)
+        .u16(r.sky ? 1 : 0).u16(0)                          // ceiling and floor stat (1: parallax sky)
+        .i16(r.sky ? prj.skyPic : r.ceilPic).i16(0).i8(shade).u8(0).u8(0).u8(0)
+        .i16(r.floorPic).i16(0).i8(shade).u8(0).u8(0).u8(0)
+        .u8(0).u8(0)                                        // visibility, fogpal
+        .i16(0).i16(0).i16(-1);                             // type, hitag, extra (none)
+      out.bytes(crypt(rec.done(), rev * 40));
+    });
+    walls.forEach((w) => {
+      const r = sectors[w.sector].room;
+      const o = walls[w.point2];
+      const len = Math.hypot(o.x - w.x, o.y - w.y);
+      const rec = new Rec(32)
+        .i32(w.x).i32(w.y).i16(w.point2).i16(w.nextwall).i16(w.nextsector)
+        .u16(0)                                             // cstat
+        .i16(r.wallPic).i16(r.wallPic)                      // picnum, overpicnum
+        .i8(Math.max(-128, Math.min(127, r.light | 0))).u8(0)
+        .u8(Math.max(1, Math.min(255, Math.round(len / 128)))).u8(8) // x and y repeat
+        .u8(0).u8(0)                                        // panning
+        .i16(0).i16(0).i16(-1);                             // type, hitag, extra (none)
+      out.bytes(crypt(rec.done(), (rev * 40) | HEADER_NEW));
+    });
+    const startNumber = { 1: 0, 2: 0 };
+    sprites.forEach((s, i) => {
+      const t = s.t, info = s.info;
+      let pic = info.pic, data1 = 0;
+      if (info.start) {
+        data1 = startNumber[t.type]++ & 7; // which player starts here
+        pic = 2522 + data1;
+      }
+      const rec = new Rec(44)
+        .i32(t.x).i32(t.y).i32(s.z)
+        .u16(info.cstat != null ? info.cstat : 128).i16(pic).i8(info.start ? 0 : -8).u8(0)
+        .u8(32).u8(0)                                       // clipdist, blend
+        .u8(info.xr || 48).u8(info.yr || 48).i8(0).i8(0)
+        .i16(s.sector).i16(info.stat != null ? info.stat : 3).i16((t.ang || 0) & 2047)
+        .i16(-1).i16(0).i16(0).i16(0)                       // owner, velocities
+        .i16(t.type).i16(0).i16(i + 1);                     // type, flags, extra
+      out.bytes(crypt(rec.done(), (rev * 44) | HEADER_NEW));
+      out.bytes(xsprite(i, data1));
+    });
+    const body = out.result();
+    const crc = crc32(body, body.length);
+    const full = new Uint8Array(body.length + 4);
+    full.set(body);
+    new DataView(full.buffer).setUint32(body.length, crc, true);
+    return full;
+  }
+
+  // file name the game accepts: letters, digits, _ and -, at most 8 characters like Blood's own
+  function mapFileName(name) {
+    const s = String(name || '').toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8);
+    return (s || 'MYMAP') + '.MAP';
+  }
+
+  const VERSION = '0.1';
+
+  const api = {
+    VERSION, THINGS, THING_BY_TYPE, COMMON_TILES, Z_PER_UNIT, LIMITS,
+    newRoom, newProject, cleanPoly, roomProblem, pointInPoly, roomAt, area2, centroidInside,
+    checkProject, buildMap, exportMap, mapFileName, crc32,
+  };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.MapCore = api;
+})(typeof window !== 'undefined' ? window : this);
+
+</script>
+<script>
+(function () {
+  'use strict';
+  const M = window.MapCore;
+  const $ = (id) => document.getElementById(id);
+  const cv = $('cv'), ctx = cv.getContext('2d');
+  const STORE = 'bloodmapmaker.project';
+
+  let prj = load() || M.newProject();
+  let tool = 'rect', grid = 256;
+  let view = { x: 0, y: 0, scale: 0.08 }; // map units -> css px
+  let sel = null; // {kind:'room'|'thing', i}
+  let drawPts = []; // corners of the room being drawn
+  let thingType = 1;
+  let undo = [];
+  let problems = [];
+
+  function load() { try { const s = localStorage.getItem(STORE); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+  function store() { try { localStorage.setItem(STORE, JSON.stringify(prj)); } catch (e) {} }
+  function snapshot() { undo.push(JSON.stringify(prj)); if (undo.length > 60) undo.shift(); }
+  function changed() { store(); problems = M.checkProject(prj); updateBadge(); draw(); }
+  function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 2600); }
+
+  // ---- view ------------------------------------------------------------------------------------
+  function resize() {
+    const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw();
+  }
+  const W = () => cv.getBoundingClientRect().width, H = () => cv.getBoundingClientRect().height;
+  const toScreen = (p) => [(p[0] - view.x) * view.scale + W() / 2, (p[1] - view.y) * view.scale + H() / 2];
+  const toMap = (sx, sy) => [(sx - W() / 2) / view.scale + view.x, (sy - H() / 2) / view.scale + view.y];
+  const snap = (p) => [Math.round(p[0] / grid) * grid, Math.round(p[1] / grid) * grid];
+  function fit() {
+    const pts = []; prj.rooms.forEach((r) => pts.push(...r.pts));
+    if (!pts.length) { view = { x: 2048, y: 2048, scale: Math.min(W(), H()) / 9000 }; draw(); return; }
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+    for (const p of pts) { x1 = Math.min(x1, p[0]); y1 = Math.min(y1, p[1]); x2 = Math.max(x2, p[0]); y2 = Math.max(y2, p[1]); }
+    view.x = (x1 + x2) / 2; view.y = (y1 + y2) / 2;
+    view.scale = Math.min(W() / (x2 - x1 + 2048), H() / (y2 - y1 + 2048));
+    draw();
+  }
+
+  function roomColor(r, alpha) {
+    const h = Math.max(-1, Math.min(1, r.floor / 512));
+    const hue = 20 - h * 40, light = 22 + h * 10;
+    return 'hsla(' + hue + ',55%,' + light + '%,' + alpha + ')';
+  }
+  const THING_MARK = { Starts: '#6fbf73', Weapons: '#f0a24a', Ammo: '#d9c36a', Health: '#ef5b4b', Armor: '#6fa8dc', 'Power-ups': '#c27ba0', Keys: '#ffffff' };
+
+  function draw() {
+    const w = W(), h = H();
+    ctx.fillStyle = '#0d0707'; ctx.fillRect(0, 0, w, h);
+    // grid
+    let g = grid; while (g * view.scale < 10) g *= 2;
+    const [mx1, my1] = toMap(0, 0), [mx2, my2] = toMap(w, h);
+    ctx.lineWidth = 1;
+    for (let x = Math.floor(mx1 / g) * g; x <= mx2; x += g) {
+      const sx = toScreen([x, 0])[0];
+      ctx.strokeStyle = x % (g * 8) === 0 ? '#2a1818' : '#1b1111';
+      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke();
+    }
+    for (let y = Math.floor(my1 / g) * g; y <= my2; y += g) {
+      const sy = toScreen([0, y])[1];
+      ctx.strokeStyle = y % (g * 8) === 0 ? '#2a1818' : '#1b1111';
+      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
+    }
+    // rooms
+    const shared = sharedEdges();
+    prj.rooms.forEach((r, i) => {
+      ctx.beginPath();
+      r.pts.forEach((p, k) => { const s = toScreen(p); k ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); });
+      ctx.closePath();
+      ctx.fillStyle = r.sky ? 'hsla(210,35%,22%,.85)' : roomColor(r, 0.85);
+      ctx.fill();
+      const isSel = sel && sel.kind === 'room' && sel.i === i;
+      ctx.lineWidth = isSel ? 3 : 1.5;
+      ctx.strokeStyle = isSel ? '#f0a24a' : '#c9a49a';
+      ctx.stroke();
+      const c = M.centroidInside(r.pts);
+      if (c && view.scale > 0.03) {
+        const s = toScreen(c);
+        ctx.fillStyle = '#eee2dcb0'; ctx.font = '12px system-ui'; ctx.textAlign = 'center';
+        ctx.fillText((i + 1) + (r.sky ? ' sky' : '') + (r.floor ? ' ▲' + r.floor : ''), s[0], s[1]);
+      }
+    });
+    // openings between rooms
+    ctx.lineWidth = 3; ctx.strokeStyle = '#6fbf73'; ctx.setLineDash([6, 5]);
+    for (const [a, b] of shared) { const s = toScreen(a), t = toScreen(b); ctx.beginPath(); ctx.moveTo(s[0], s[1]); ctx.lineTo(t[0], t[1]); ctx.stroke(); }
+    ctx.setLineDash([]);
+    // things
+    const counts = { 1: 0, 2: 0 };
+    prj.things.forEach((t, i) => {
+      const info = M.THING_BY_TYPE[t.type] || { group: '?', name: '?' };
+      const s = toScreen([t.x, t.y]);
+      const isSel = sel && sel.kind === 'thing' && sel.i === i;
+      const r = Math.max(7, Math.min(14, 96 * view.scale));
+      ctx.beginPath(); ctx.arc(s[0], s[1], r, 0, Math.PI * 2);
+      ctx.fillStyle = THING_MARK[info.group] || '#999'; ctx.fill();
+      ctx.lineWidth = isSel ? 3 : 1; ctx.strokeStyle = isSel ? '#fff' : '#000'; ctx.stroke();
+      let label = info.group[0];
+      if (info.start) { counts[t.type]++; label = (t.type === 1 ? 'S' : 'B') + counts[t.type]; }
+      ctx.fillStyle = '#000'; ctx.font = 'bold ' + Math.round(r * 0.95) + 'px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, s[0], s[1] + 0.5); ctx.textBaseline = 'alphabetic';
+      if (info.start) {
+        const a = ((t.ang || 0) / 2048) * Math.PI * 2;
+        ctx.strokeStyle = '#6fbf73'; ctx.lineWidth = 2; ctx.beginPath();
+        ctx.moveTo(s[0] + Math.cos(a) * r, s[1] + Math.sin(a) * r); ctx.lineTo(s[0] + Math.cos(a) * r * 2.2, s[1] + Math.sin(a) * r * 2.2); ctx.stroke();
+      }
+    });
+    // what is being drawn
+    if (drawPts.length) {
+      ctx.strokeStyle = '#f0a24a'; ctx.fillStyle = '#f0a24a'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      drawPts.forEach((p, k) => { const s = toScreen(p); k ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); });
+      if (tool === 'rect' && cursor) { const a = drawPts[0], b = cursor; const pts = [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]], [a[0], a[1]]]; ctx.beginPath(); pts.forEach((p, k) => { const s = toScreen(p); k ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); }); }
+      else if (cursor) { const s = toScreen(cursor); ctx.lineTo(s[0], s[1]); }
+      ctx.stroke();
+      drawPts.forEach((p) => { const s = toScreen(p); ctx.beginPath(); ctx.arc(s[0], s[1], 5, 0, Math.PI * 2); ctx.fill(); });
+    }
+    hint();
+  }
+
+  function sharedEdges() {
+    // the parts of edges two rooms have in common (what the export joins)
+    try {
+      const m = M.buildMap(prj, false);
+      const out = [];
+      m.walls.forEach((wl, i) => { if (wl.nextwall > i) { const o = m.walls[wl.point2]; out.push([[wl.x, wl.y], [o.x, o.y]]); } });
+      return out;
+    } catch (e) { return []; }
+  }
+
+  function hint() {
+    const t = {
+      pan: 'Drag to move, pinch to zoom.',
+      rect: drawPts.length ? 'Tap the opposite corner.' : 'Tap one corner of the new room.',
+      poly: drawPts.length ? 'Tap the next corner; tap the first one again to finish.' : 'Tap the first corner of the new room.',
+      select: 'Tap a room or a thing to change it.',
+      thing: 'Tap inside a room to put: ' + (M.THING_BY_TYPE[thingType] || {}).name + '.',
+      erase: 'Tap a thing or a room to delete it.',
+    }[tool];
+    $('hint').textContent = t || '';
+  }
+
+  function updateBadge() {
+    const e = problems.filter((p) => p.level === 'error').length, w = problems.length - e;
+    const b = $('badge');
+    b.textContent = e ? e + ' to fix' : w ? 'OK (' + w + ' tip' + (w > 1 ? 's' : '') + ')' : 'Ready ✓';
+    b.style.borderColor = e ? 'var(--err)' : w ? 'var(--warn)' : 'var(--ok)';
+  }
+
+  // ---- panels ----------------------------------------------------------------------------------
+  const sheet = $('sheet');
+  function closeSheet() { sheet.classList.remove('open'); sheet.innerHTML = ''; requestAnimationFrame(resize); }
+  function openSheet(html) { sheet.innerHTML = html; sheet.classList.add('open'); requestAnimationFrame(resize); }
+  function tileOptions(list, cur) {
+    const vals = list.includes(cur) ? list : [cur].concat(list);
+    return vals.map((v) => '<option' + (v === cur ? ' selected' : '') + '>' + v + '</option>').join('') + '<option value="other">other…</option>';
+  }
+
+  function roomPanel(i) {
+    const r = prj.rooms[i];
+    openSheet('<h3>Room ' + (i + 1) + '</h3>'
+      + '<div class="row"><label>Floor height</label><input id="pFloor" type="number" step="16" value="' + r.floor + '"></div>'
+      + '<div class="row"><label>Room height</label><input id="pHeight" type="number" step="64" min="64" value="' + r.height + '"></div>'
+      + '<div class="row"><label>Sky (no ceiling)</label><select id="pSky"><option value="0">No</option><option value="1"' + (r.sky ? ' selected' : '') + '>Yes</option></select></div>'
+      + '<div class="row"><label>Light</label><select id="pLight">' + [[-8, 'Bright'], [0, 'Normal'], [8, 'Dim'], [16, 'Dark'], [24, 'Very dark']].map(([v, n]) => '<option value="' + v + '"' + (r.light === v ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div>'
+      + '<div class="row"><label>Floor texture</label><select id="pFloorPic">' + tileOptions(M.COMMON_TILES.floor, r.floorPic) + '</select></div>'
+      + '<div class="row"><label>Ceiling texture</label><select id="pCeilPic">' + tileOptions(M.COMMON_TILES.ceiling, r.ceilPic) + '</select></div>'
+      + '<div class="row"><label>Wall texture</label><select id="pWallPic">' + tileOptions(M.COMMON_TILES.wall, r.wallPic) + '</select></div>'
+      + '<div class="btns"><button id="pCopy" class="small">Use for new rooms</button><button id="pDel" class="small">Delete room</button><button id="pClose" class="small on">Done</button></div>'
+      + '<p><small>Heights are in map units (a room is usually 1536–2560 high). Up is more.</small></p>');
+    const num = (id, f, min) => $(id).addEventListener('change', (e) => { snapshot(); r[f] = Math.max(min, parseInt(e.target.value, 10) || 0); changed(); });
+    num('pFloor', 'floor', -8192); num('pHeight', 'height', 64);
+    $('pSky').addEventListener('change', (e) => { snapshot(); r.sky = e.target.value === '1'; changed(); });
+    $('pLight').addEventListener('change', (e) => { snapshot(); r.light = parseInt(e.target.value, 10); changed(); });
+    const pic = (id, f) => $(id).addEventListener('change', (e) => {
+      let v = e.target.value;
+      if (v === 'other') { v = prompt('Tile number (0-30719)', r[f]); if (v === null) { roomPanel(i); return; } }
+      v = parseInt(v, 10);
+      if (!(v >= 0 && v < 30720)) { toast('Tile numbers go from 0 to 30719'); roomPanel(i); return; }
+      snapshot(); r[f] = v; changed(); roomPanel(i);
+    });
+    pic('pFloorPic', 'floorPic'); pic('pCeilPic', 'ceilPic'); pic('pWallPic', 'wallPic');
+    $('pCopy').onclick = () => { roomDefaults = { floor: r.floor, height: r.height, floorPic: r.floorPic, ceilPic: r.ceilPic, wallPic: r.wallPic, sky: r.sky, light: r.light }; toast('New rooms will look like this one'); };
+    $('pDel').onclick = () => { deleteRoom(i); closeSheet(); };
+    $('pClose').onclick = () => { sel = null; closeSheet(); draw(); };
+  }
+  let roomDefaults = {};
+
+  function thingPanel(i) {
+    const t = prj.things[i], info = M.THING_BY_TYPE[t.type];
+    openSheet('<h3>' + info.name + '</h3>'
+      + (info.start ? '<div class="row"><label>Facing</label><div class="btns" style="margin:0"><button id="tL" class="small">⟲ Turn</button><button id="tR" class="small">Turn ⟳</button></div></div>' : '')
+      + '<div class="btns"><button id="tDel" class="small">Delete</button><button id="tClose" class="small on">Done</button></div>'
+      + '<p><small>Tap elsewhere in Select to pick something else. To move it, delete it and place it again.</small></p>');
+    if (info.start) {
+      $('tL').onclick = () => { snapshot(); t.ang = ((t.ang || 0) - 256 + 2048) & 2047; changed(); };
+      $('tR').onclick = () => { snapshot(); t.ang = ((t.ang || 0) + 256) & 2047; changed(); };
+    }
+    $('tDel').onclick = () => { snapshot(); prj.things.splice(i, 1); sel = null; closeSheet(); changed(); };
+    $('tClose').onclick = () => { sel = null; closeSheet(); draw(); };
+  }
+
+  function thingChooser() {
+    const groups = {};
+    M.THINGS.forEach((t) => (groups[t.group] = groups[t.group] || []).push(t));
+    let html = '<h3>Place a thing</h3>';
+    for (const g in groups) html += '<div><small>' + g + '</small><div class="chips">' + groups[g].map((t) => '<button class="small' + (t.type === thingType ? ' on' : '') + '" data-type="' + t.type + '">' + t.name + '</button>').join('') + '</div></div>';
+    openSheet(html);
+    sheet.querySelectorAll('[data-type]').forEach((b) => b.onclick = () => { thingType = +b.dataset.type; thingChooser(); hint(); });
+  }
+
+  function polyPanel() {
+    openSheet('<h3>New room</h3><p><small>Tap the corners in order. ' + drawPts.length + ' so far.</small></p><div class="btns"><button id="dFinish" class="on small">Finish</button><button id="dBack" class="small">Remove last corner</button><button id="dCancel" class="small">Cancel</button></div>');
+    $('dFinish').onclick = finishPoly;
+    $('dBack').onclick = () => { drawPts.pop(); polyPanel(); draw(); };
+    $('dCancel').onclick = () => { drawPts = []; closeSheet(); draw(); };
+  }
+
+  function problemsPanel() {
+    problems = M.checkProject(prj);
+    openSheet('<h3>Check</h3><div class="problems">' + (problems.length ? problems.map((p) => '<div class="' + p.level + '">' + (p.level === 'error' ? '✗ ' : '• ') + esc(p.text) + '</div>').join('') : '<div style="color:var(--ok)">Everything looks right. ☰ → Save .MAP for the game.</div>') + '</div><div class="btns"><button id="cClose" class="small on">Close</button></div>');
+    $('cClose').onclick = closeSheet;
+  }
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // ---- editing ---------------------------------------------------------------------------------
+  function tryAddRoom(pts) {
+    pts = M.cleanPoly(pts);
+    const why = M.roomProblem(pts, prj.rooms, -1);
+    if (why) { toast(why); return false; }
+    snapshot();
+    prj.rooms.push(Object.assign(M.newRoom(pts), roomDefaults));
+    changed();
+    return true;
+  }
+  function finishPoly() {
+    if (drawPts.length < 3) { toast('A room needs at least 3 corners'); return; }
+    if (tryAddRoom(drawPts)) { drawPts = []; closeSheet(); }
+  }
+  function deleteRoom(i) {
+    snapshot();
+    const r = prj.rooms[i];
+    prj.things = prj.things.filter((t) => M.pointInPoly([t.x, t.y], r.pts) <= 0);
+    prj.rooms.splice(i, 1);
+    sel = null; changed();
+  }
+  function thingAt(p) {
+    const r = 20 / view.scale;
+    let best = -1, bd = r * r;
+    prj.things.forEach((t, i) => { const d = (t.x - p[0]) ** 2 + (t.y - p[1]) ** 2; if (d <= bd) { bd = d; best = i; } });
+    return best;
+  }
+
+  function tap(sx, sy) {
+    const p = toMap(sx, sy), g = snap(p);
+    if (tool === 'rect') {
+      if (!drawPts.length) { drawPts = [g]; cursor = g; }
+      else {
+        const a = drawPts[0];
+        if (a[0] === g[0] || a[1] === g[1]) { toast('Tap a corner that is not on the same line'); return; }
+        tryAddRoom([[a[0], a[1]], [g[0], a[1]], [g[0], g[1]], [a[0], g[1]]]);
+        drawPts = []; cursor = null;
+      }
+    } else if (tool === 'poly') {
+      if (drawPts.length >= 3 && g[0] === drawPts[0][0] && g[1] === drawPts[0][1]) { finishPoly(); }
+      else if (!drawPts.length || g[0] !== drawPts[drawPts.length - 1][0] || g[1] !== drawPts[drawPts.length - 1][1]) { drawPts.push(g); polyPanel(); }
+    } else if (tool === 'thing') {
+      const q = [Math.round(p[0] / 16) * 16, Math.round(p[1] / 16) * 16];
+      if (M.roomAt(q, prj.rooms) < 0) { toast('Put it inside a room'); return; }
+      snapshot();
+      const isStart = thingType === 1 || thingType === 2;
+      if (isStart && prj.things.filter((t) => t.type === thingType).length >= 8) { toast('8 of these is the most a map can use'); undo.pop(); return; }
+      prj.things.push({ type: thingType, x: q[0], y: q[1], ang: 0 });
+      changed();
+    } else if (tool === 'select' || tool === 'erase') {
+      const ti = thingAt(p);
+      if (ti >= 0) {
+        if (tool === 'erase') { snapshot(); prj.things.splice(ti, 1); changed(); }
+        else { sel = { kind: 'thing', i: ti }; thingPanel(ti); }
+      } else {
+        const ri = M.roomAt(p, prj.rooms);
+        if (ri < 0) { sel = null; if (tool === 'select') closeSheet(); }
+        else if (tool === 'erase') deleteRoom(ri);
+        else { sel = { kind: 'room', i: ri }; roomPanel(ri); }
+      }
+    }
+    draw();
+  }
+
+  function setTool(t) {
+    tool = t; drawPts = []; cursor = null; sel = null;
+    document.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === t));
+    if (t === 'thing') thingChooser(); else closeSheet();
+    draw();
+  }
+
+  // ---- touch and mouse ---------------------------------------------------------------------------
+  const pointers = new Map();
+  let gesture = null, cursor = null;
+  cv.addEventListener('pointerdown', (e) => {
+    cv.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY, x0: e.offsetX, y0: e.offsetY });
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      gesture = { kind: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, view: { ...view } };
+    } else if (pointers.size === 1) gesture = { kind: tool === 'pan' ? 'pan' : 'tap', moved: false, view: { ...view } };
+  });
+  cv.addEventListener('pointermove', (e) => {
+    const p = pointers.get(e.pointerId);
+    if (e.pointerType === 'mouse' && drawPts.length) { cursor = snap(toMap(e.offsetX, e.offsetY)); draw(); }
+    if (!p) return;
+    p.x = e.offsetX; p.y = e.offsetY;
+    if (gesture && gesture.kind === 'pinch' && pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y), cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+      const v = gesture.view;
+      const scale = Math.max(0.005, Math.min(2, v.scale * d / gesture.d));
+      // keep the map point under the fingers' middle in place
+      const mx = (gesture.cx - W() / 2) / v.scale + v.x, my = (gesture.cy - H() / 2) / v.scale + v.y;
+      view = { scale, x: mx - (cx - W() / 2) / scale, y: my - (cy - H() / 2) / scale };
+      draw();
+    } else if (gesture && pointers.size === 1) {
+      const dx = p.x - p.x0, dy = p.y - p.y0;
+      if (Math.hypot(dx, dy) > 10) gesture.moved = true;
+      if (gesture.kind === 'pan' || (gesture.moved && e.pointerType === 'mouse' && e.buttons & 4)) {
+        view.x = gesture.view.x - dx / view.scale; view.y = gesture.view.y - dy / view.scale; draw();
+      } else if (gesture.moved && tool !== 'pan') {
+        // one finger dragging in a drawing tool also moves the map
+        view.x = gesture.view.x - dx / view.scale; view.y = gesture.view.y - dy / view.scale; draw();
+      }
+    }
+  });
+  function up(e) {
+    const p = pointers.get(e.pointerId);
+    if (p && gesture && gesture.kind === 'tap' && !gesture.moved && pointers.size === 1) tap(p.x, p.y);
+    pointers.delete(e.pointerId);
+    if (!pointers.size) gesture = null;
+    else if (gesture && gesture.kind === 'pinch') gesture = { kind: 'done' };
+  }
+  cv.addEventListener('pointerup', up);
+  cv.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); gesture = null; });
+  cv.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const before = toMap(e.offsetX, e.offsetY);
+    view.scale = Math.max(0.005, Math.min(2, view.scale * Math.exp(-e.deltaY * 0.0015)));
+    const after = toMap(e.offsetX, e.offsetY);
+    view.x += before[0] - after[0]; view.y += before[1] - after[1];
+    draw();
+  }, { passive: false });
+
+  // ---- files -------------------------------------------------------------------------------------
+  function download(name, data, type) {
+    const blob = new Blob([data], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  $('exportBtn').onclick = () => {
+    $('menu').classList.remove('open');
+    let bytes;
+    try { bytes = M.exportMap(prj); } catch (e) { problemsPanel(); toast('Fix the problems first'); return; }
+    const name = M.mapFileName(prj.name);
+    download(name, bytes, 'application/octet-stream');
+    toast(name + ' saved (' + Math.round(bytes.length / 1024) + ' KB). Put it in the game folder.');
+  };
+  $('saveBtn').onclick = () => { $('menu').classList.remove('open'); download(M.mapFileName(prj.name).replace('.MAP', '') + '.json', JSON.stringify(prj, null, 1), 'application/json'); };
+  $('openBtn').onclick = () => { $('fileIn').click(); };
+  $('fileIn').onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = '';
+    $('menu').classList.remove('open');
+    if (!f) return;
+    try {
+      const p = JSON.parse(await f.text());
+      if (!p || !Array.isArray(p.rooms) || !Array.isArray(p.things)) throw new Error();
+      snapshot(); prj = Object.assign(M.newProject(), p); $('name').value = prj.name; changed(); fit();
+    } catch (err) { toast('That is not a map project file'); }
+  };
+  $('newBtn').onclick = () => {
+    $('menu').classList.remove('open');
+    if (prj.rooms.length && !confirm('Start a new map? (Undo brings this one back)')) return;
+    snapshot(); prj = M.newProject(); $('name').value = prj.name; sel = null; closeSheet(); changed(); fit();
+  };
+  $('gridSel').onchange = (e) => { grid = +e.target.value; draw(); };
+  $('menuBtn').onclick = () => $('menu').classList.toggle('open');
+  $('helpBtn').onclick = () => { $('menu').classList.remove('open'); $('help').classList.add('open'); };
+  $('helpClose').onclick = () => { $('help').classList.remove('open'); try { localStorage.setItem(STORE + '.help', '1'); } catch (e) {} };
+  $('badge').onclick = problemsPanel;
+  $('undoBtn').onclick = () => { if (!undo.length) { toast('Nothing to undo'); return; } prj = JSON.parse(undo.pop()); $('name').value = prj.name; sel = null; drawPts = []; closeSheet(); changed(); };
+  $('fitBtn').onclick = fit;
+  $('name').value = prj.name;
+  $('name').addEventListener('input', (e) => { prj.name = e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8); store(); });
+  $('name').addEventListener('change', (e) => { e.target.value = prj.name || 'MYMAP'; prj.name = e.target.value; store(); });
+  document.querySelectorAll('[data-tool]').forEach((b) => b.onclick = () => setTool(b.dataset.tool));
+  window.addEventListener('resize', resize);
+
+  // for tests and the curious: where a map point is on the screen right now
+  window.MapMaker = { toScreen: (x, y) => { const r = cv.getBoundingClientRect(), s = toScreen([x, y]); return [r.left + s[0], r.top + s[1]]; }, project: () => prj };
+  resize();
+  setTool('rect');
+  fit();
+  changed();
+  let seen = false; try { seen = !!localStorage.getItem(STORE + '.help'); } catch (e) {}
+  if (!seen) $('help').classList.add('open');
+})();
+</script>
+</body>
+</html>

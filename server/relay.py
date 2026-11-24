@@ -813,6 +813,11 @@ async def index(request):
     return web.Response(text=INDEX_HTML, content_type="text/html", headers={"Cache-Control": "no-cache"})
 
 
+async def mapmaker(request):
+    # the map editor (tools/mapeditor, made into one file by its build.py); no key needed, it's only a page
+    return web.FileResponse(STATIC_DIR / "mapmaker.html", headers={"Cache-Control": "no-cache"})
+
+
 async def health(request):
     return web.json_response({"ok": True, "lobbies": len(relay.lobbies), "protocol": PROTOCOL, "public": PUBLIC})
 
@@ -994,6 +999,7 @@ def make_app():
     app.router.add_get("/ws", game_ws)
     app.router.add_get("/dash", dash_ws)
     app.router.add_get("/healthz", health)
+    app.router.add_get("/mapmaker", mapmaker)
     app.router.add_static("/static/", STATIC_DIR, show_index=False)
     app.router.add_get("/play", play_redirect)
     app.router.add_get("/play/{path:.*}", play)

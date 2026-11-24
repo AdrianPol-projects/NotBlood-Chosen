@@ -13,12 +13,13 @@ name: Release builds
     paths-ignore:
       - '**.md'
       - 'server/**'
+      - 'tools/**'
   workflow_dispatch:
     inputs:
       only:
-        description: 'Platforms to build: android-beta (only the Android APK of the pre-release "v<version>-beta" is replaced); all; beta (all, into the pre-release "v<version>-beta": public, but never "latest"); beta-publish (builds nothing, makes a draft v<version>-beta public); only macos, android or web (then only that download of the release is replaced); android-test (an APK artifact, nothing published); linux-test (the Linux builds as artifacts, nothing published)'
+        description: 'Platforms to build: android-beta (only the Android APK of the pre-release "v<version>-beta" is replaced); mapeditor (the map editor, tools/mapeditor, as its own pre-release "mapeditor-v<version>"); all; beta (all, into the pre-release "v<version>-beta": public, but never "latest"); beta-publish (builds nothing, makes a draft v<version>-beta public); only macos, android or web (then only that download of the release is replaced); android-test (an APK artifact, nothing published); linux-test (the Linux builds as artifacts, nothing published)'
         type: choice
-        options: [android-beta, all, beta, beta-publish, macos, android, web, android-test, linux-test]
+        options: [android-beta, mapeditor, all, beta, beta-publish, macos, android, web, android-test, linux-test]
         default: android-beta
 
 permissions:
@@ -290,6 +291,33 @@ jobs:
           name: notblood-web
           path: build-web/NotBlood-Chosen-*-web.zip
           if-no-files-found: error
+
+  # the map editor (tools/mapeditor): one HTML file, tested, in its own release
+  mapeditor:
+    name: Map editor
+    if: github.event_name == 'workflow_dispatch' && inputs.only == 'mapeditor'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: |
+          mkdir -p /tmp/maps
+          node tools/mapeditor/test_mapcore.js /tmp/maps
+          python3 tools/mapeditor/check_structure.py /tmp/maps/*.MAP
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n "s/.*VERSION = '\(.*\)';/\1/p" tools/mapeditor/mapcore.js)
+          python3 tools/mapeditor/build.py BloodMapMaker.html
+          TAG="mapeditor-v$version"
+          TITLE="Blood Map Maker $version (map editor for NotBlood Chosen)"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" BloodMapMaker.html --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes-file tools/mapeditor/README.md
+          else
+            gh release create "$TAG" BloodMapMaker.html --prerelease --latest=false --target "$GITHUB_SHA" --title "$TITLE" --notes-file tools/mapeditor/README.md
+          fi
 
   # a draft beta from earlier builds made public, without building again
   beta-publish:
