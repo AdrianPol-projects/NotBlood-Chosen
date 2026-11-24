@@ -16,9 +16,9 @@ name: Release builds
   workflow_dispatch:
     inputs:
       only:
-        description: 'Platforms to build: all; beta (all, into the pre-release "v<version>-beta": public, but never "latest"); only macos, android or web (then only that download of the release is replaced); android-test (an APK artifact, nothing published); linux-test (the Linux builds as artifacts, nothing published)'
+        description: 'Platforms to build: all; beta (all, into the pre-release "v<version>-beta": public, but never "latest"); beta-publish (builds nothing, makes a draft v<version>-beta public); only macos, android or web (then only that download of the release is replaced); android-test (an APK artifact, nothing published); linux-test (the Linux builds as artifacts, nothing published)'
         type: choice
-        options: [all, beta, macos, android, web, android-test, linux-test]
+        options: [all, beta, beta-publish, macos, android, web, android-test, linux-test]
         default: all
 
 permissions:
@@ -290,6 +290,24 @@ jobs:
           name: notblood-web
           path: build-web/NotBlood-Chosen-*-web.zip
           if-no-files-found: error
+
+  # a draft beta from earlier builds made public, without building again
+  beta-publish:
+    name: Make the beta public
+    if: github.event_name == 'workflow_dispatch' && inputs.only == 'beta-publish'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish the beta draft as a pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/#define CHOSEN_VERSION "\(.*\)"/\1/p' source/blood/src/chosen.h)
+          TAG="v$version-beta"
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/releases" -q ".[] | select(.tag_name == \"$TAG\") | .id" | head -n1)
+          [ -n "$id" ] || { echo "No release $TAG"; exit 1; }
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/$id" -F draft=false -F prerelease=true -f make_latest=false \
+            -q '"\(.html_url) draft=\(.draft) prerelease=\(.prerelease)"'
 
   publish:
     name: Publish
