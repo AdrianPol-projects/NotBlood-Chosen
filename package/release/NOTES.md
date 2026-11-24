@@ -1,4 +1,4 @@
-# NotBlood Chosen 1.3
+# NotBlood Chosen 1.4
 
 **NotBlood Chosen** is [NotBlood](https://github.com/clipmove/NotBlood) (the Blood source port) with computer players (bots), new match types, co-op saves, internet play without port forwarding, a live game dashboard, a MODS menu and a LAN game finder. It runs on **Windows, Linux, macOS, Android and iPad/iPhone**, and all of them play together.
 
@@ -8,19 +8,19 @@ You need your own Blood files (One Unit Whole Blood: CD, GOG or Steam). The game
 
 | File | For |
 | --- | --- |
-| `NotBlood-Chosen-1.3-win64.zip` | Windows 10/11 (64-bit) |
-| `NotBlood-Chosen-1.3-linux-x64.zip` | Linux on PCs (x86_64): any distribution from about 2022 on (Ubuntu 22.04, Mint 21, Debian 12, Fedora 36, Arch, SteamOS or newer), nothing to install |
-| `NotBlood-Chosen-1.3-linux-arm64.zip` | Linux on ARM (arm64/aarch64): Raspberry Pi 4/5 with a 64-bit system, ARM laptops and handhelds, same distributions |
-| `NotBlood-Chosen-1.3-macos.zip` | macOS 11 or newer, Apple Silicon and Intel |
-| `NotBlood-Chosen-1.3-android.apk` | Android 5 or newer (phones, tablets, Chromebooks) |
-| `NotBlood-Chosen-1.3-ios.ipa` | iPad/iPhone with iOS 15 or newer (unsigned: sideload it with Signulous, Sideloadly or AltStore) |
-| `NotBlood-Chosen-1.3-web.zip` | the web version; every NotBlood server installs it by itself and serves it at `/play/` ([SERVER.md](https://github.com/AdrianPol-projects/NotBlood-Chosen/blob/main/SERVER.md)) |
+| `NotBlood-Chosen-1.4-win64.zip` | Windows 10/11 (64-bit) |
+| `NotBlood-Chosen-1.4-linux-x64.zip` | Linux on PCs (x86_64): any distribution from about 2022 on (Ubuntu 22.04, Mint 21, Debian 12, Fedora 36, Arch, SteamOS or newer), nothing to install |
+| `NotBlood-Chosen-1.4-linux-arm64.zip` | Linux on ARM (arm64/aarch64): Raspberry Pi 4/5 with a 64-bit system, ARM laptops and handhelds, same distributions |
+| `NotBlood-Chosen-1.4-macos.zip` | macOS 11 or newer, Apple Silicon and Intel |
+| `NotBlood-Chosen-1.4-android.apk` | Android 5 or newer (phones, tablets, Chromebooks) |
+| `NotBlood-Chosen-1.4-ios.ipa` | iPad/iPhone with iOS 15 or newer (unsigned: sideload it with Signulous, Sideloadly or AltStore) |
+| `NotBlood-Chosen-1.4-web.zip` | the web version; every NotBlood server installs it by itself and serves it at `/play/` ([SERVER.md](https://github.com/AdrianPol-projects/NotBlood-Chosen/blob/main/SERVER.md)) |
 
 **No install at all:** if you or a friend runs a NotBlood server, open its address followed by `/play/` in Safari, Chrome, Edge or Firefox. Pick your Blood files once, add it to the home screen and it works offline, with everything below except LAN games ([more](https://github.com/AdrianPol-projects/NotBlood-Chosen/blob/main/platform/Web/README.md)).
 
 The iPad/iPhone IPA is the same build that's in [NotBlood-iOS](https://github.com/AdrianPol-projects/NotBlood-iOS/releases/latest), which has iOS install notes.
 
-Everybody in a network game needs **1.3**. Older versions can't join a 1.3 game, and 1.3 can't join theirs.
+Everybody in a network game needs **1.4**. Older versions can't join a 1.4 game, and 1.4 can't join theirs.
 
 ## Setup
 
@@ -38,7 +38,7 @@ Everybody in a network game needs **1.3**. Older versions can't join a 1.3 game,
 **Android**
 1. Install the APK and start it once. Allow it "access to all files".
 2. Copy your Blood files into the `NotBlood` folder of the main storage (next to `Download`) and start the game again.
-3. 1.3 installs over NotBlood Chosen 1.0, 1.2 and over the bots test builds, and keeps your files and settings.
+3. 1.4 installs over NotBlood Chosen 1.0 to 1.3 and over the bots test builds, and keeps your files and settings.
 
 **iPad / iPhone**
 1. Sign and install the IPA with Signulous, Sideloadly or AltStore, and start it once.
@@ -76,7 +76,7 @@ Everybody in a network game needs **1.3**. Older versions can't join a 1.3 game,
 - Players get their saves by name. New players start with the pitchfork. When somebody leaves, the game saves itself.
 
 **Online and LAN**
-- Online lobbies through your own relay server ([how to run it: SERVER.md](https://github.com/AdrianPol-projects/NotBlood-Chosen/blob/main/SERVER.md)). They are protected by a key and need no port forwarding. There is no default server: enter your own server's address and key.
+- Online lobbies through a relay server ([how to run one: SERVER.md](https://github.com/AdrianPol-projects/NotBlood-Chosen/blob/main/SERVER.md)), with no port forwarding. A server is private (protected by a key) or public (anybody can play). Lobbies can be private with a password, have chat on the waiting screen, and share the host's user map with the players who don't have it.
 - A live dashboard in the browser: lobbies, players' health, armor, weapons and keys, a live level map and an event list.
 - FIND LAN GAMES. The host screen shows your address, and you get clear messages when versions or mods differ.
 
@@ -86,6 +86,17 @@ Everybody in a network game needs **1.3**. Older versions can't join a 1.3 game,
 - Touch controls, gyro aiming and render scale on Android and iPad. The touch buttons hide while a controller is connected.
 - A macOS app (Apple Silicon and Intel) that needs no administrator. Android keeps everything in the `NotBlood` folder.
 - Settings are saved whenever a menu closes. On Android there is a crash report in `notblood.log`.
+
+## New in 1.4
+- **NotBlood's final update** is in: lag compensation (MATCH RULES > LAG COMPENSATION, on by default), NotBlood's own juggernaut option (Bloodbath > QUAD JUGGERNAUT: whoever kills the juggernaut takes over and gets akimbo/quad damage), player hitscan projectiles and the new mutator options.
+- **Public servers:** a relay started with `PUBLIC=1` needs no key to play (its dashboard still does unless `PUBLIC_DASHBOARD=1`). Leave SERVER empty in MULTIPLAYER > ONLINE to use the public server built into the game, if your build has one.
+- **Private lobbies:** fill in LOBBY PASSWORD before HOST A LOBBY. The lobby list shows it as LOCKED; the others type the same password before joining (upper and lower case don't matter).
+- **Lobby chat:** type on the waiting for players screen and press Enter; everybody in the lobby sees it, and lines that arrive during the game show up as messages.
+- **Players and bots are counted apart** in the lobby list ("2/4 +3 BOTS"), so a lobby full of bots doesn't look like a busy game.
+- **User maps download by themselves** in online games: whoever starts a game on a user map hands it to the server, and players who don't have it (or have another file of that name) get it when the level starts, into `downloads/`. The server and the game both check every map before it's used.
+- **Safer map loading:** every map (downloaded or not) is checked before loading: sector, wall and sprite counts, sky size, the sizes of the extra data, and that every wall, sector and sprite points into the map. A damaged map gives an error instead of crashing the game.
+- **Bots play more like people:** a quick turn onto an enemy overshoots a little and settles; a hard hit makes them flinch (the aim jumps, they stop shooting a moment); an enemy that ducks out of sight and comes back is picked up again quicker; after a long quiet spell they react a bit slower.
+- 1.4 can't play with 1.3.
 
 ## New in 1.3
 - **Hide and seek** (Bloodbath > MODE): hiders look like a barrel, vase or crate from the map and only have the pitchfork; the seekers are blindfolded for the first 30 seconds. A found hider becomes a seeker. Hiders make a noise every 30 seconds.
@@ -141,6 +152,8 @@ Every mode works with only people, only bots, or both. The README in the downloa
 ## Known issues
 - **Blood's demo files close the game:** if the game folder has Blood's demo files (`*.DEM`, the gameplay behind the main menu), the game closes when a match with bots starts (seen on Windows). Remove the `.DEM` files from the game folder or start the game with `-nodemo`.
 - **Co-op saves:** they are off in games with bots.
+- **Joining a running game** isn't possible yet: a lobby takes players until the game starts.
+- **Multiplayer demos** aren't recorded yet (Blood's demo format doesn't keep NotBlood's and Chosen's game settings).
 - **Broadcast games:** bots can't be added to games started with `-broadcast`.
 - **Platform testing:** Linux and Windows are tested most. Cross-platform games and the iPad build are less tested, so please report problems with `notblood.log` from the game folder.
 

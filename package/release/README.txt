@@ -1,7 +1,7 @@
 NotBlood Chosen
 ===============
 
-Version 1.3. NotBlood (a Blood source port) with bots, new match types, co-op saves,
+Version 1.4. NotBlood (a Blood source port) with bots, new match types, co-op saves,
 online lobbies, a live game dashboard, a MODS menu and a LAN game finder. Every player in a
 network game needs the same version - PC, Mac, iPad and Android builds of one version play
 together. The bots are explained in detail in "README - Bots.txt".

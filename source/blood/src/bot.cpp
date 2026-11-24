@@ -267,6 +267,8 @@ struct BOT
     bool bStayAbove;                // the enemy is below: shoot down rather than follow (decided now and then)
     int nAboveDecideAt;
     int nDetourAng, nSavedX, nSavedY, nSavedZ, nSavedSect;
+    int nLostTarget, nLostAt;       // the enemy it just lost sight of: finding it again is quicker
+    int nIdleSince;                 // no enemy since then: after a long quiet spell it's slower to react
 };
 
 static BOT gBot[kMaxPlayers];
@@ -1599,6 +1601,8 @@ void botLevelStart(void)
         for (int j = 0; j < kMaxPlayers; j++)
             pBot->nEnemyHealth[j] = 100;
         pBot->nLastKill = pBot->nLastPain = pBot->nLastShot = pBot->nThirdPartyUntil = 0;
+        pBot->nLostTarget = -1;
+        pBot->nIdleSince = nNow;
     }
 }
 
@@ -3438,7 +3442,21 @@ void botGetInput(int nPlayer, GINPUT *pInput)
     if (((nNow + nPlayer) & 1) == 0 || (pBot->nTarget >= 0 && !SpriteAlive(pBot->nTarget)))
     {
         pBot->nTarget = BotPerceive(pBot, pPlayer);
-        if (pBot->nTarget >= 0 && pBot->nTarget != nOldTarget)
+        if (pBot->nTarget < 0 && nOldTarget >= 0)
+        {
+            pBot->nLostTarget = nOldTarget;
+            pBot->nLostAt = nNow;
+            pBot->nIdleSince = nNow;
+        }
+        // the same enemy back in view a moment later: it was ready for it (like a player who
+        // keeps the crosshair where it went), so no fresh reaction time and no new wobble
+        if (pBot->nTarget >= 0 && nOldTarget < 0 && pBot->nTarget == pBot->nLostTarget && nNow - pBot->nLostAt < 40)
+        {
+            pBot->nReactAt = nNow + (pBot->skill.nReaction + 2) / 4;
+            pBot->nTrackFrames /= 2;
+            pBot->nLostTarget = -1;
+        }
+        else if (pBot->nTarget >= 0 && pBot->nTarget != nOldTarget)
         {
             // a new enemy: it takes a moment to react, longer at the edge of its view
             spritetype *pEnemy = &sprite[pBot->nTarget];
@@ -3449,12 +3467,20 @@ void botGetInput(int nPlayer, GINPUT *pInput)
             nReact += nReact * nOff / 700;
             if (pBot->nState == kBotStateAmbush || pBot->nState == kBotStateCamp)
                 nReact /= 2; // was expecting it
+            if (nOldTarget < 0 && pBot->nIdleSince && nNow - pBot->nIdleSince > 30*20)
+                nReact += nReact * 3 / 10; // nothing happened for a while: its mind wandered
             nReact += GaussRand(pBot, nReact / 3);
             pBot->nReactAt = nNow + ClipLow(nReact, 1);
             pBot->nTargetSince = nNow;
             pBot->nTrackFrames = 0;
             pBot->nAimErrGoal = GaussRand(pBot, pBot->skill.nAimError * 2);
+            // a quick turn onto someone overshoots a little, then settles back, like a mouse flick
+            // (more for the easier bots)
+            const int nFlickDir = AngDiff(pSprite->ang, getangle(pEnemy->x - pSprite->x, pEnemy->y - pSprite->y));
+            static const int nOvershoot[kBotSkillMax] = { 18, 13, 9, 5 };
+            pBot->nAimErrGoal += nFlickDir * nOvershoot[ClipRange(pBot->nSkill, 0, kBotSkillMax-1)] / 100;
             pBot->nAimErr = pBot->nAimErrGoal;
+            pBot->nAimErrNext = nNow + 4 + BotRand(pBot, 6); // then it corrects
             pBot->nNextThink = nNow; // rethink now
         }
     }
@@ -3464,7 +3490,13 @@ void botGetInput(int nPlayer, GINPUT *pInput)
     // hurt by something it doesn't see: turn round towards whoever it'd guess
     const int nHealth = pPlayer->pXSprite->health;
     if (pBot->nLastHealth - nHealth >= (25<<4) || (nHealth < (35<<4) && nHealth < pBot->nLastHealth))
+    {
         pBot->nLastPain = nNow; // that hurt
+        // and it flinches: the aim jumps and it stops shooting for a moment
+        pBot->nAimErr += GaussRand(pBot, pBot->skill.nAimError);
+        pBot->nAimErrNext = nNow + 3 + BotRand(pBot, 5);
+        pBot->nFirePauseUntil = ClipLow(pBot->nFirePauseUntil, nNow + 2 + BotRand(pBot, 5));
+    }
     // the hits it sees its own shots make (a player sees the blood fly)
     for (int p = connecthead; p >= 0; p = connectpoint2[p])
     {

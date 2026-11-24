@@ -2,7 +2,7 @@
 
 NotBlood Chosen can play over the internet **without port forwarding** on the players' side. For that you run a small server, the **relay**, on any machine that's always on and reachable: a Raspberry Pi, a home server, a NAS with Docker, or a cheap VPS. The same server also hosts a **live dashboard** that shows the running games in a web browser, and **the game itself for web browsers** at `/play/`.
 
-There is no public default server. Everybody who plays enters your server's address and key in the game.
+A server is **private** (everybody enters its address and key in the game) or **public** (`PUBLIC=1`: anybody can play without a key, see [A public server](#a-public-server)). A game build can have a public server built in (`CHOSEN_PUBLIC_SERVER` in `source/blood/src/chosen.h`); then players who leave SERVER empty use that one.
 
 ## How it works
 
@@ -99,6 +99,23 @@ BLOOD_KEY=yourkey PORT=8099 DATA_DIR=./data python3 relay.py
 
 To keep it running, use a systemd service, `tmux`, or the Windows task scheduler.
 
+## A public server
+
+Add to `server.env`:
+```sh
+PUBLIC=1             # games need no key: anybody can host and join lobbies
+PUBLIC_DASHBOARD=0   # 1: the dashboard needs no key either (everybody can watch every game)
+```
+Keep `BLOOD_KEY` set: it's what opens the dashboard while `PUBLIC_DASHBOARD=0`.
+
+On a public server:
+- **Private lobbies:** a host who fills in LOBBY PASSWORD gets a lobby only players with the same password can join. The server only ever sees a hash of the password, and 10 wrong passwords lock an address out for 10 minutes, like wrong keys.
+- **Chat:** everybody in a lobby can chat on the waiting screen. At most 8 lines per 10 seconds per player.
+- **Shared maps:** the user map of a game is uploaded to the server when the game starts (at most 2 MB per map, 48 MB for all lobbies together) and checked by `mapcheck.py` before anybody gets it. It's forgotten when the lobby closes.
+- **Limits:** 200 connections, 24 per address, 50 lobbies (the constants at the top of `relay.py`). A Raspberry Pi 4 handles that easily; the game traffic is small (a few KB/s per player).
+
+`python3 mapcheck.py FILE.MAP` checks maps by hand.
+
 ## Connecting from the game
 
 MULTIPLAYER > ONLINE:
@@ -106,8 +123,9 @@ MULTIPLAYER > ONLINE:
 | Field | What to enter |
 | --- | --- |
 | SERVER | `192.168.1.20:8099` (home network), `my.domain.com` (proxy or tunnel on port 80) or `ws://host:port/ws`. Without a port the game uses 80. |
-| SERVER KEY | the `BLOOD_KEY` from `server.env` |
+| SERVER KEY | the `BLOOD_KEY` from `server.env` (anything on a public server) |
 | LOBBY NAME | any name for your game |
+| LOBBY PASSWORD | empty for an open lobby; the host's password makes it private, joining players type the same |
 | PLAYERS | how many people the lobby waits for |
 
 The host picks **HOST A LOBBY** and sets up the game as usual: map, mode, BOTS, teams. The others pick **FIND LOBBIES** or **JOIN LOBBY BY NAME**. The game remembers the server and key.
