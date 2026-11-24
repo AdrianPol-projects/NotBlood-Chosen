@@ -108,10 +108,13 @@ If you have the GOG version of the game, do the following:
    - Support wall sprites moving along with elevators
    - Fix bullet hole being placed across sky tile walls
    - Use Raze phase calculation for smoother elevator rides
-* Hitscan projectiles
+* Enemy Hitscan projectiles
    - Makes enemies that use hitscan bullets spawn physical sprite based bullets with travel time
    - Projectile speed is adjusted if bullet is underwater (50% speed penalty)
    - This mutator does not support custom modern map enemies
+* Player Hitscan projectiles
+   - Makes players that use hitscan weapons spawn physical sprite based bullets with travel time
+   - Projectile speed is adjusted if bullet is underwater (50% speed penalty)
 * Gore behavior (Extended)
    - Increase lifespan duration of blood particles
 * Gore behavior (Excessive)
@@ -189,14 +192,12 @@ If you have the GOG version of the game, do the following:
    - Enable/disable view interpolation for drawn weapon (0: disable, 1: position, 2: position/qav animation)
 * cl_colormsg
    - Enable/disable colored player names in messages
-* cl_gibnoclip
-   - Toggles gib clipping (always on in multiplayer)
-* cl_gibheadnoclip
-   - Toggles zombie head clipping (always on in multiplayer)
 * cl_healthblink
    - Enable/disable health blinking when under 15 health points
 * cl_killmsg
    - Enable/disable kill messages
+* cl_multitimealarm
+   - Enable/disable multi time limit alarm
 * cl_killobituaries
    - Enable/disable random obituary kill messages
 * cl_multikill
@@ -276,7 +277,7 @@ If you have the GOG version of the game, do the following:
 * hud_powerupdurationshowdivingsuit
    - Enable/disable diving suit as a power-up
 * hud_powerupdurationshowoxygen
-   - Enable/disable oxygen supply as a power-up
+   - Enable/disable oxygen supply as a power-up (0: off, 1: show as power-up, 2: show on hud bar)
 * hud_powerupdurationstyle
    - Set the display style for the remaining time for power-ups (0: nblood, 1: notblood)
 * hud_powerupdurationticks
@@ -316,7 +317,7 @@ If you have the GOG version of the game, do the following:
 * in_radialmenuthresholdy
    - Sets the radial menu y threshold (0-1024)
 * in_radialmenutoggle
-   - Sets the radial menu behavior (0: held, 1: toggle, 2: on next/prev weapon)
+   - Sets the radial menu behavior (0: held, 1: toggle, 2: on next/prev weapon, 3: disabled)
 * in_radialmenuposition
    - Sets the radial menu position
 * in_radialmenudim

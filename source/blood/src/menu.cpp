@@ -72,8 +72,10 @@ void SetWeaponsVer(CGameMenuItemZCycle*);
 void SetWeaponImpulseLimit(CGameMenuItemZBool*);
 void SetAmmoScale(CGameMenuItemZCycle*);
 void SetSectorBehavior(CGameMenuItemZBool*);
-void SetHitscanProjectiles(CGameMenuItemZCycle*);
-void SetGoreMode(CGameMenuItemZCycle*);
+void SetEnemyHitscanProjectiles(CGameMenuItemZCycle*);
+void SetPlayerHitscanProjectiles(CGameMenuItemZCycle*);
+void SetGoreBehavior(CGameMenuItemZCycle*);
+void SetGoreCollision(CGameMenuItemZCycle*);
 void SetPlayerSpeed(CGameMenuItemZCycle*);
 void SetPlayerWater(CGameMenuItemZCycle*);
 void SetRandomizerMode(CGameMenuItemZCycle*);
@@ -135,7 +137,7 @@ void SetWeaponSelectMode(CGameMenuItemZCycle *);
 void SetDetail(CGameMenuItemSlider *);
 void SetVoxels(CGameMenuItemZBool *);
 void SetFOV(CGameMenuItemSlider *);
-void SetOxygenSupply(CGameMenuItemZBool*);
+void SetOxygenSupply(CGameMenuItemZCycle*);
 void SetDivingSuit(CGameMenuItemZBool*);
 void UpdateVideoColorMenu(CGameMenuItemSliderFloat *);
 void UpdateVideoPaletteCycleMenu(CGameMenuItemZCycle *);
@@ -343,12 +345,20 @@ const char *pzHitscanProjectilesStrings[] = {
     "Slow",
     "Medium",
     "Fast",
+    "Very Fast",
+    "Ludicrous",
 };
 
-const char *pzGoreStrings[] = {
+const char *pzGoreBehaviorStrings[] = {
     "Original",
     "Extended",
     "Excessive",
+};
+
+const char *pzGoreCollisionStrings[] = {
+    "Default",
+    "Only Zombie Heads",
+    "No Collisions",
 };
 
 const char *pzRandomizerModeStrings[] = {
@@ -602,6 +612,7 @@ CGameMenuItemZBool itemNetStartBoolChaseView("CHASE VIEW:", 3, 66, 107, 180, fal
 CGameMenuItemZBool itemNetStartBoolHolstering("HOLSTERING:", 3, 66, 116, 180, false, NULL, NULL, NULL);
 CGameMenuItemZBool itemNetStartBoolSecondWind("SECOND WIND:", 3, 66, 125, 180, true, 0, NULL, NULL);
 CGameMenuItemZBool itemNetStartBoolSpectatorMode("SPECTATING:", 3, 66, 134, 180, false, 0, NULL, NULL);
+CGameMenuItemZBool itemNetStartBoolLagCompensation("LAG COMPENSATION:", 3, 66, 86, 180, true, 0, NULL, NULL); // shown in MATCH RULES
 CGameMenuItemChain itemNetStart8("SET ITEMS", 3, 0, 143, 256, 1, &menuBannedItems, -1, NULL, 0);
 CGameMenuItemChain itemNetStart8Load("LOAD ITEMS", 3, 0, 143, 384, 1, &menuMultiUserItems, 0, NULL, 0);
 CGameMenuItemChain itemNetStart9("SET MUTATORS", 3, 0, 153, 256, 1, &menuNetworkGameMutators, -1, NULL, 0);
@@ -628,6 +639,7 @@ CGameMenuItemZCycle itemNetGameCycleItemWeapon("ITEM/WEAPON SETTING:", 3, 66, 12
 CGameMenuItemZBool itemNetGameBoolTeamColors("TEAM COLORS:", 3, 66, 102, 180, true, 0, NULL, NULL);
 CGameMenuItemZBool itemNetGameBoolAutoTeams("AUTO TEAMS:", 3, 66, 118, 180, true, 0, NULL, NULL);
 CGameMenuItemZBool itemNetGameBoolTeamFlags("TEAM FLAGS:", 3, 66, 126, 180, true, 0, NULL, NULL);
+CGameMenuItemZBool itemNetGameBoolJuggernaut("QUAD JUGGERNAUT:", 3, 66, 126, 180, false, 0, NULL, NULL); // NotBlood's: who kills the juggernaut takes over
 CGameMenuItemChain itemNetGameSetTeams("SET TEAMS", 3, 66, 126, 180, 0, &menuTeams, -1, SetupTeamsMenu, 0);
 CGameMenuItemZCycle itemNetGameCycleSpawnLocation("SPAWN AREA:", 3, 66, 134, 180, 0, 0, zRespawnStrings, ARRAY_SSIZE(zRespawnStrings), 0);
 CGameMenuItemZCycle itemNetGameCycleShowWeaponsOverride("ENEMY WEAPONS:", 3, 66, 142, 180, 0, SetNetShowWeapon, zShowWeapon, ARRAY_SSIZE(zShowWeapon), 0);
@@ -676,8 +688,10 @@ CGameMenuItemZCycle itemNetMutatorWeaponsVer("WEAPON BEHAVIOR:", 3, 66, 92, 180,
 CGameMenuItemZBool itemNetMutatorBoolWeaponImpulseLimit("WEAPON IMPULSE LIMIT:", 3, 66, 112, 180, false, NULL, "LIMITED", "ORIGINAL");
 CGameMenuItemZCycle itemNetMutatorAmmoScale("AMMO PICKUP SCALE:", 3, 66, 102, 180, 0, NULL, pzAmmoScaleStrings, ARRAY_SSIZE(pzAmmoScaleStrings), 0);
 CGameMenuItemZBool itemNetMutatorSectorBehavior("SECTOR BEHAVIOR:", 3, 66, 112, 180, false, NULL, "NOTBLOOD", "ORIGINAL");
-CGameMenuItemZCycle itemNetMutatorHitscanProjectiles("HITSCAN PROJECTILES:", 3, 66, 122, 180, 0, NULL, pzHitscanProjectilesStrings, ARRAY_SSIZE(pzHitscanProjectilesStrings), 0);
-CGameMenuItemZCycle itemNetMutatorGoreBehavior("GORE BEHAVIOR:", 3, 66, 132, 180, 0, NULL, pzGoreStrings, ARRAY_SSIZE(pzGoreStrings), 0);
+CGameMenuItemZCycle itemNetMutatorEnemyHitscanProjectiles("ENEMY HITSCAN PROJECTILES:", 3, 66, 122, 180, 0, NULL, pzHitscanProjectilesStrings, ARRAY_SSIZE(pzHitscanProjectilesStrings), 0);
+CGameMenuItemZCycle itemNetMutatorPlayerHitscanProjectiles("PLAYER HITSCAN PROJECTILES:", 3, 66, 122, 180, 0, NULL, pzHitscanProjectilesStrings, ARRAY_SSIZE(pzHitscanProjectilesStrings), 0);
+CGameMenuItemZCycle itemNetMutatorGoreBehavior("GORE BEHAVIOR:", 3, 66, 132, 180, 0, NULL, pzGoreBehaviorStrings, ARRAY_SSIZE(pzGoreBehaviorStrings), 0);
+CGameMenuItemZCycle itemNetMutatorGoreCollision("GORE COLLISIONS:", 3, 66, 132, 180, 0, NULL, pzGoreCollisionStrings, ARRAY_SSIZE(pzGoreCollisionStrings), 0);
 CGameMenuItemZCycle itemNetMutatorPlayerSpeed("PLAYER SPEED:", 3, 66, 142, 180, 0, NULL, pzPlayerSpeeds, ARRAY_SSIZE(pzPlayerSpeeds), 0);
 CGameMenuItemZCycle itemNetMutatorPlayerWater("PLAYER OXYGEN SUPPLY:", 3, 66, 142, 180, 0, NULL, pzPlayerWater, ARRAY_SSIZE(pzPlayerWater), 0);
 CGameMenuItemZCycle itemNetMutatorRandomizerMode("RANDOMIZER MODE:", 3, 66, 152, 180, 0, NULL, pzRandomizerModeStrings, ARRAY_SSIZE(pzRandomizerModeStrings), 0);
@@ -804,6 +818,12 @@ const char *pzHudRatioStrings[] = {
     "21:9",
 };
 
+const char *pzPowerupOxygenMeter[] = {
+    "OFF",
+    "POWERUP",
+    "HUD BAR",
+};
+
 const char *pzWeaponHBobbingStrings[] = {
     "OFF",
     "ORIGINAL",
@@ -897,8 +917,10 @@ CGameMenuItemZCycle itemMutatorWeaponsVer("WEAPON BEHAVIOR:", 3, 66, 92, 180, 0,
 CGameMenuItemZBool itemMutatorBoolImpulseLimit("WEAPON IMPULSE LIMIT:", 3, 66, 112, 180, false, SetWeaponImpulseLimit, "LIMITED", "ORIGINAL");
 CGameMenuItemZCycle itemMutatorAmmoScale("AMMO PICKUP SCALE:", 3, 66, 102, 180, 0, SetAmmoScale, pzAmmoScaleStrings, ARRAY_SSIZE(pzAmmoScaleStrings), 0);
 CGameMenuItemZBool itemMutatorSectorBehavior("SECTOR BEHAVIOR:", 3, 66, 112, 180, false, SetSectorBehavior, "NOTBLOOD", "ORIGINAL");
-CGameMenuItemZCycle itemMutatorHitscanProjectiles("HITSCAN PROJECTILES:", 3, 66, 122, 180, 0, SetHitscanProjectiles, pzHitscanProjectilesStrings, ARRAY_SSIZE(pzHitscanProjectilesStrings), 0);
-CGameMenuItemZCycle itemMutatorGoreBehavior("GORE BEHAVIOR:", 3, 66, 132, 180, 0, SetGoreMode, pzGoreStrings, ARRAY_SSIZE(pzGoreStrings), 0);
+CGameMenuItemZCycle itemMutatorEnemyHitscanProjectiles("ENEMY HITSCAN PROJECTILES:", 3, 66, 122, 180, 0, SetEnemyHitscanProjectiles, pzHitscanProjectilesStrings, ARRAY_SSIZE(pzHitscanProjectilesStrings), 0);
+CGameMenuItemZCycle itemMutatorPlayerHitscanProjectiles("PLAYER HITSCAN PROJECTILES:", 3, 66, 122, 180, 0, SetPlayerHitscanProjectiles, pzHitscanProjectilesStrings, ARRAY_SSIZE(pzHitscanProjectilesStrings), 0);
+CGameMenuItemZCycle itemMutatorGoreBehavior("GORE BEHAVIOR:", 3, 66, 132, 180, 0, SetGoreBehavior, pzGoreBehaviorStrings, ARRAY_SSIZE(pzGoreBehaviorStrings), 0);
+CGameMenuItemZCycle itemMutatorGoreCollision("GORE COLLISIONS:", 3, 66, 132, 180, 0, SetGoreCollision, pzGoreCollisionStrings, ARRAY_SSIZE(pzGoreCollisionStrings), 0);
 CGameMenuItemZCycle itemMutatorPlayerSpeed("PLAYER SPEED:", 3, 66, 142, 180, 0, SetPlayerSpeed, pzPlayerSpeeds, ARRAY_SSIZE(pzPlayerSpeeds), 0);
 CGameMenuItemZCycle itemMutatorPlayerWater("PLAYER OXYGEN SUPPLY:", 3, 66, 142, 180, 0, SetPlayerWater, pzPlayerWater, ARRAY_SSIZE(pzPlayerWater), 0);
 CGameMenuItemZCycle itemMutatorRandomizerMode("RANDOMIZER MODE:", 3, 66, 152, 180, 0, SetRandomizerMode, pzRandomizerModeStrings, ARRAY_SSIZE(pzRandomizerModeStrings), 0);
@@ -936,8 +958,8 @@ CGameMenuItemTitle itemOptionsPowerupTitle("POWERUP DISPLAY", 1, 160, 20, 2038);
 CGameMenuItemZBool itemOptionsDisplayPowerupDuration("SHOW POWERUP DURATION:", 1, 18, 50, 280, 0, SetPowerupDuration, NULL, NULL);
 CGameMenuItemZCycle itemOptionsDisplayPowerupPosition("POWERUP POSITION:", 1, 18, 70, 280, 0, SetPowerupPosition, pzHudRatioStrings, ARRAY_SSIZE(pzHudRatioStrings), 0);
 CGameMenuItemZBool itemOptionsDisplayBoolPowerupStyle("POWERUP STYLE:", 1, 18, 90, 280, gPowerupStyle, SetPowerupStyle, "NOTBLOOD", "NBLOOD");
-CGameMenuItemZBool itemOptionsDisplayBoolShowOxygen("SHOW OXYGEN REMAINING:", 1, 18, 110, 280, gPowerupShowOxygenSupply, SetOxygenSupply, NULL, NULL);
-CGameMenuItemZBool itemOptionsDisplayBoolShowDivingSuit("SHOW DIVE SUIT USAGE:", 1, 18, 130, 280, gPowerupShowDivingSuit, SetDivingSuit, NULL, NULL);
+CGameMenuItemZBool itemOptionsDisplayBoolShowDivingSuit("SHOW DIVE SUIT USAGE:", 1, 18, 110, 280, gPowerupShowDivingSuit, SetDivingSuit, NULL, NULL);
+CGameMenuItemZCycle itemOptionsDisplayCycleShowOxygen("SHOW OXYGEN REMAINING:", 1, 18, 130, 280, 0, SetOxygenSupply, pzPowerupOxygenMeter, ARRAY_SSIZE(pzPowerupOxygenMeter), 0);
 
 const char *pzRendererStrings[] = {
     "CLASSIC",
@@ -1171,6 +1193,7 @@ void SetShowPlayerNames(CGameMenuItemZBool *);
 void SetShowWeapons(CGameMenuItemZCycle *);
 void UpdateTeamsScoreDisplay(CGameMenuItemZBool *pItem);
 void UpdatePlayerChatMessageSound(CGameMenuItemZBool *pItem);
+void UpdatePlayerMultiTimeLimitSound(CGameMenuItemZBool *pItem);
 void UpdatePlayerColorMessages(CGameMenuItemZBool *pItem);
 void UpdatePlayerKillObituaryMessages(CGameMenuItemZBool *pItem);
 void UpdatePlayerKillMessage(CGameMenuItemZBool *pItem);
@@ -1215,19 +1238,20 @@ const char *pzShowWeaponStrings[] = {
 };
 
 CGameMenuItemTitle itemOptionsPlayerTitle("PLAYER SETUP", 1, 160, 20, 2038);
-CGameMenuItemZEdit itemOptionsPlayerName("PLAYER NAME:", 3, 66, 35, 180, szPlayerName, MAXPLAYERNAME, 0, UpdatePlayerName, 0);
-CGameMenuItemZCycle itemOptionsPlayerSkill("HEALTH HANDICAP:", 3, 66, 45, 180, 0, UpdatePlayerSkill, pzPlayerSkillStrings, ARRAY_SIZE(pzPlayerSkillStrings), 0);
-CGameMenuItemZCycle itemOptionsPlayerTeamPreference("TEAM PREFERENCE:", 3, 66, 55, 180, 0, UpdatePlayerTeamPreference, pzPlayerTeamPreferenceStrings, ARRAY_SIZE(pzPlayerTeamPreferenceStrings), 0);
-CGameMenuItemZCycle itemOptionsPlayerColorPreference("COLOR PREFERENCE:", 3, 66, 65, 180, 0, UpdatePlayerColorPreference, pzPlayerColorPreferenceStrings, ARRAY_SIZE(pzPlayerColorPreferenceStrings), 0);
-CGameMenuItemZBool itemOptionsPlayerModel("PLAYER MODEL:", 3, 66, 75, 180, false, UpdatePlayerModel, "CULTIST", "CALEB");
+CGameMenuItemZEdit itemOptionsPlayerName("PLAYER NAME:", 3, 66, 40, 180, szPlayerName, MAXPLAYERNAME, 0, UpdatePlayerName, 0);
+CGameMenuItemZCycle itemOptionsPlayerSkill("HEALTH HANDICAP:", 3, 66, 48, 180, 0, UpdatePlayerSkill, pzPlayerSkillStrings, ARRAY_SIZE(pzPlayerSkillStrings), 0);
+CGameMenuItemZCycle itemOptionsPlayerTeamPreference("TEAM PREFERENCE:", 3, 66, 56, 180, 0, UpdatePlayerTeamPreference, pzPlayerTeamPreferenceStrings, ARRAY_SIZE(pzPlayerTeamPreferenceStrings), 0);
+CGameMenuItemZCycle itemOptionsPlayerColorPreference("COLOR PREFERENCE:", 3, 66, 64, 180, 0, UpdatePlayerColorPreference, pzPlayerColorPreferenceStrings, ARRAY_SIZE(pzPlayerColorPreferenceStrings), 0);
+CGameMenuItemZBool itemOptionsPlayerModel("PLAYER MODEL:", 3, 66, 72, 180, false, UpdatePlayerModel, "CULTIST", "CALEB");
 CGameMenuItemZBool itemOptionsPlayerBoolShowPlayerNames("SHOW PLAYER NAMES:", 3, 66, 90, 180, gShowPlayerNames, SetShowPlayerNames, NULL, NULL);
-CGameMenuItemZCycle itemOptionsPlayerShowWeapons("SHOW WEAPONS:", 3, 66, 100, 180, 0, SetShowWeapons, pzShowWeaponStrings, ARRAY_SSIZE(pzShowWeaponStrings), 0);
-CGameMenuItemZBool itemOptionsPlayerTeamsScoreStyle("TEAMS SCORE STYLE:", 3, 66, 110, 180, true, UpdateTeamsScoreDisplay, "NBLOOD", "ORIGINAL");
-CGameMenuItemZBool itemOptionsPlayerChatSound("MESSAGE BEEP:", 3, 66, 120, 180, true, UpdatePlayerChatMessageSound, NULL, NULL);
+CGameMenuItemZCycle itemOptionsPlayerShowWeapons("SHOW WEAPONS:", 3, 66, 98, 180, 0, SetShowWeapons, pzShowWeaponStrings, ARRAY_SSIZE(pzShowWeaponStrings), 0);
+CGameMenuItemZBool itemOptionsPlayerTeamsScoreStyle("TEAMS SCORE STYLE:", 3, 66, 106, 180, true, UpdateTeamsScoreDisplay, "NBLOOD", "ORIGINAL");
+CGameMenuItemZBool itemOptionsPlayerChatSound("MESSAGE BEEP:", 3, 66, 114, 180, true, UpdatePlayerChatMessageSound, NULL, NULL);
+CGameMenuItemZBool itemOptionsMultiTimeLimitAlarm("TIME LIMIT ALARM:", 3, 66, 122, 180, true, UpdatePlayerMultiTimeLimitSound, NULL, NULL);
 CGameMenuItemZBool itemOptionsPlayerColorMsg("COLORED MESSAGES:", 3, 66, 130, 180, true, UpdatePlayerColorMessages, NULL, NULL);
-CGameMenuItemZBool itemOptionsPlayerObituaryMsg("USE OBITUARY MESSAGES:", 3, 66, 140, 180, true, UpdatePlayerKillObituaryMessages, NULL, NULL);
-CGameMenuItemZBool itemOptionsPlayerKillMsg("SHOW KILLS ON HUD:", 3, 66, 150, 180, true, UpdatePlayerKillMessage, NULL, NULL);
-CGameMenuItemZCycle itemOptionsPlayerMultiKill("MULTI KILL MESSAGES:", 3, 66, 160, 180, 0, UpdatePlayerMultiKill, pzPlayerMultiKillStrings, ARRAY_SIZE(pzPlayerMultiKillStrings), 0);
+CGameMenuItemZBool itemOptionsPlayerObituaryMsg("USE OBITUARY MESSAGES:", 3, 66, 138, 180, true, UpdatePlayerKillObituaryMessages, NULL, NULL);
+CGameMenuItemZBool itemOptionsPlayerKillMsg("SHOW KILLS ON HUD:", 3, 66, 146, 180, true, UpdatePlayerKillMessage, NULL, NULL);
+CGameMenuItemZCycle itemOptionsPlayerMultiKill("MULTI KILL MESSAGES:", 3, 66, 154, 180, 0, UpdatePlayerMultiKill, pzPlayerMultiKillStrings, ARRAY_SIZE(pzPlayerMultiKillStrings), 0);
 
 #define JOYSTICKITEMSPERPAGE 16 // this must be an even value, as double tap inputs rely on odd index position
 #define MAXJOYSTICKBUTTONPAGES (max(1, (MAXJOYBUTTONSANDHATS*2 / JOYSTICKITEMSPERPAGE))) // we double all buttons/hats so each input can be bind for double tap
@@ -1263,9 +1287,10 @@ const char *pzTurnAccelerationStrings[] = {
 
 const char *zRadialMenuToggle[] =
 {
-    "Button Held",
-    "Button Toggle",
+    "Radial Bind Held",
+    "Radial Bind Toggle",
     "Weapon Switch",
+    "Disabled",
 };
 
 const char *pzRadileMenuSoundStrings[] =
@@ -1333,7 +1358,7 @@ CGameMenuItemSliderFloat itemOptionsControlMouseXSensitivity("HORIZ SENS:", 3, 6
 CGameMenuItemSliderFloat itemOptionsControlMouseYSensitivity("VERT SENS:", 3, 66, 120, 180, &CONTROL_MouseAxesSensitivity[1], 0.f, 100.f, 1.f, SetMouseYSensitivity, -1, -1, kMenuSliderValue);
 
 CGameMenuItemTitle itemOptionsControlRadialTitle("RADIAL SETUP", 1, 160, 20, 2038);
-CGameMenuItemZCycle itemOptionsControlRadialToggle("USAGE BEHAVIOR:", 3, 66, 40, 180, 0, SetRadialMenuToggle, zRadialMenuToggle, ARRAY_SIZE(zRadialMenuToggle), 0);
+CGameMenuItemZCycle itemOptionsControlRadialToggle("SHOW RADIAL:", 3, 66, 40, 180, 0, SetRadialMenuToggle, zRadialMenuToggle, ARRAY_SIZE(zRadialMenuToggle), 0);
 CGameMenuItemSlider itemOptionsControlRadialPosition("POSITION:", 3, 66, 50, 180, &gRadialMenuPosition, 0, 320, 16, SetRadialMenuPosition, -1, -1, kMenuSliderPercent);
 CGameMenuItemZBool itemOptionsControlRadialDimBackground("DIM BACKGROUND:", 3, 66, 60, 180, 0, SetRadialMenuDimBackground, NULL, NULL);
 CGameMenuItemZBool itemOptionsControlRadialDimHUD("TRANSPARENT RADIAL:", 3, 66, 70, 180, 0, SetRadialMenuDimHUD, NULL, NULL);
@@ -1785,6 +1810,7 @@ void SetupNetStartMenu(void)
     menuNetworkGameMode.Add(&itemNetGameBoolAutoTeams, false);
     menuNetworkGameMode.Add(&itemNetGameBoolTeamFlags, false);
     menuNetworkGameMode.Add(&itemNetGameSetTeams, false);
+    menuNetworkGameMode.Add(&itemNetGameBoolJuggernaut, false);
     menuNetworkGameMode.Add(&itemNetGameCycleSpawnLocation, false);
     menuNetworkGameMode.Add(&itemNetGameCycleShowWeaponsOverride, false);
     menuNetworkGameMode.Add(&itemNetGameCycleShowWeaponsOverrideTeams, false);
@@ -1816,6 +1842,8 @@ void SetupNetStartMenu(void)
     itemNetGameBoolPlayerColors.tooltip_pzTextUpper = "Allow non-vanilla player colors";
     itemNetGameBoolTeamColors.tooltip_pzTextUpper = "Highlight players with team colors";
     itemNetGameBoolTeamFlags.tooltip_pzTextUpper = "Toggle team flags for teams mode";
+    itemNetGameBoolJuggernaut.tooltip_pzTextUpper = "Toggle Juggernaut game mode";
+    itemNetGameBoolJuggernaut.tooltip_pzTextLower = "(Juggernaut gets akimbo/quad)";
     itemNetGameCycleSpawnLocation.tooltip_pzTextUpper = "Set spawn location behavior";
     itemNetGameCycleShowWeaponsOverride.tooltip_pzTextUpper = "Set global setting for show weapons option";
     itemNetGameCycleShowWeaponsOverride.tooltip_pzTextLower = "(This is applied to all players in round)";
@@ -1844,7 +1872,6 @@ void SetupNetStartMenu(void)
     menuNetworkGameMonsters.Add(&itemBloodQAV, false);
 
     //////////////////////
-    menuNetworkGameMutators.Add(&itemGameMutatorsTitle, false);
     menuNetworkGameMutators.Add(&itemNetMutatorBoolQuadDamagePowerup, true);
     menuNetworkGameMutators.Add(&itemNetMutatorBoolBeastVision, false);
     menuNetworkGameMutators.Add(&itemNetMutatorDamageInvul, false);
@@ -1856,8 +1883,10 @@ void SetupNetStartMenu(void)
     menuNetworkGameMutators.Add(&itemNetMutatorBoolWeaponImpulseLimit, false);
     menuNetworkGameMutators.Add(&itemNetMutatorAmmoScale, false);
     menuNetworkGameMutators.Add(&itemNetMutatorSectorBehavior, false);
-    menuNetworkGameMutators.Add(&itemNetMutatorHitscanProjectiles, false);
+    menuNetworkGameMutators.Add(&itemNetMutatorEnemyHitscanProjectiles, false);
+    menuNetworkGameMutators.Add(&itemNetMutatorPlayerHitscanProjectiles, false);
     menuNetworkGameMutators.Add(&itemNetMutatorGoreBehavior, false);
+    menuNetworkGameMutators.Add(&itemNetMutatorGoreCollision, false);
     menuNetworkGameMutators.Add(&itemNetMutatorPlayerSpeed, false);
     menuNetworkGameMutators.Add(&itemNetMutatorPlayerWater, false);
     menuNetworkGameMutators.Add(&itemNetMutatorRandomizerMode, false);
@@ -1873,6 +1902,7 @@ void SetupNetStartMenu(void)
     menuMatchRules.Add(&itemMatchRulesRounds, true);
     menuMatchRules.Add(&itemMatchRulesVote, false);
     menuMatchRules.Add(&itemMatchRulesHostOnly, false);
+    menuMatchRules.Add(&itemNetStartBoolLagCompensation, false);
     menuMatchRules.Add(&itemMatchRulesHelp1, false);
     menuMatchRules.Add(&itemMatchRulesHelp2, false);
     menuMatchRules.Add(&itemMatchRulesHelp3, false);
@@ -1900,7 +1930,7 @@ void SetupNetStartMenu(void)
     menuChosenMutators.Add(&itemChosenMutatorsHelp2, false);
     menuChosenMutators.Add(&itemBloodQAV, false);
     menuNetworkGameMutators.Add(&itemBloodQAV, false);
-    menuNetworkGameMutators.OrganizeItems(true, true, 4);
+    menuNetworkGameMutators.OrganizeItems(true, true, 4, false);
     itemNetMutatorBoolQuadDamagePowerup.tooltip_pzTextUpper = "Replaces guns akimbo powerup";
     itemNetMutatorBoolQuadDamagePowerup.tooltip_pzTextLower = "with Quake's quad damage";
     itemNetMutatorBoolBeastVision.tooltip_pzTextLower = "Replace beast vision item function";
@@ -1919,11 +1949,14 @@ void SetupNetStartMenu(void)
     itemNetMutatorBoolWeaponImpulseLimit.tooltip_pzTextLower = "firing downwards at point-blank";
     itemNetMutatorAmmoScale.tooltip_pzTextUpper = "Scale ammo pickup amount";
     itemNetMutatorSectorBehavior.tooltip_pzTextUpper = "Improve room over room sector logic";
-    itemNetMutatorHitscanProjectiles.tooltip_pzTextUpper = "Set hitscan enemies to spawn projectiles";
+    itemNetMutatorEnemyHitscanProjectiles.tooltip_pzTextUpper = "Set hitscan enemies to spawn projectiles";
 #ifdef NOONE_EXTENSIONS
-    itemNetMutatorHitscanProjectiles.tooltip_pzTextLower = "(does not support xmapedit enemies)";
+    itemNetMutatorEnemyHitscanProjectiles.tooltip_pzTextLower = "(does not support xmapedit enemies)";
 #endif
+    itemNetMutatorPlayerHitscanProjectiles.tooltip_pzTextUpper = "Set hitscan weapons to spawn projectiles";
     itemNetMutatorGoreBehavior.tooltip_pzTextUpper = "Spawns excessive gibs and increases particles";
+    itemNetMutatorGoreCollision.tooltip_pzTextUpper = "Toggles collisions for spawned gibs";
+    itemNetMutatorGoreCollision.tooltip_pzTextLower = "(Does not apply to existing gibs)";
     itemNetMutatorPlayerSpeed.tooltip_pzTextUpper = "Adjusts the player speed";
     itemNetMutatorPlayerWater.tooltip_pzTextUpper = "Adjusts the oxygen supply";
     itemNetMutatorRandomizerMode.tooltip_pzTextUpper = "Set the randomizer's mode";
@@ -1976,8 +2009,10 @@ void SetupNetStartMenu(void)
     itemNetMutatorBoolWeaponImpulseLimit.at20 = !!gWeaponImpulseLimit;
     itemNetMutatorAmmoScale.m_nFocus = gAmmoScale % ARRAY_SSIZE(pzAmmoScaleStrings);
     itemNetMutatorSectorBehavior.at20 = !!gSectorBehavior;
-    itemNetMutatorHitscanProjectiles.m_nFocus = gHitscanProjectiles % ARRAY_SSIZE(pzHitscanProjectilesStrings);
-    itemNetMutatorGoreBehavior.m_nFocus = gGoreBehavior % ARRAY_SSIZE(pzGoreStrings);
+    itemNetMutatorEnemyHitscanProjectiles.m_nFocus = gEnemyHitscanProjectiles % ARRAY_SSIZE(pzHitscanProjectilesStrings);
+    itemNetMutatorPlayerHitscanProjectiles.m_nFocus = gPlayerHitscanProjectiles % ARRAY_SSIZE(pzHitscanProjectilesStrings);
+    itemNetMutatorGoreBehavior.m_nFocus = gGoreBehavior % ARRAY_SSIZE(pzGoreBehaviorStrings);
+    itemNetMutatorGoreCollision.m_nFocus = gGoreCollision % ARRAY_SSIZE(pzGoreCollisionStrings);
     itemNetMutatorPlayerSpeed.m_nFocus = gPlayerModSpeed % ARRAY_SSIZE(pzPlayerSpeeds);
     itemNetMutatorPlayerWater.m_nFocus = gPlayerModWaterOxygen % ARRAY_SSIZE(pzPlayerWater);
     itemNetMutatorRandomizerMode.m_nFocus = gRandomizerMode % ARRAY_SSIZE(pzRandomizerModeStrings);
@@ -2179,7 +2214,6 @@ void SetupOptionsMenu(void)
     itemOptionsGameBoolVanillaMode.tooltip_pzTextLower = "and restores bugs (v1.21 DOS compatibility mode)";
 
     //////////////////////
-    menuOptionsGameMutators.Add(&itemGameMutatorsTitle, false);
     menuOptionsGameMutators.Add(&itemMutatorBoolQuadDamagePowerup, true);
     menuOptionsGameMutators.Add(&itemMutatorCycleBeastVisionReplacement, false);
     menuOptionsGameMutators.Add(&itemMutatorDamageInvul, false);
@@ -2191,14 +2225,16 @@ void SetupOptionsMenu(void)
     menuOptionsGameMutators.Add(&itemMutatorBoolImpulseLimit, false);
     menuOptionsGameMutators.Add(&itemMutatorAmmoScale, false);
     menuOptionsGameMutators.Add(&itemMutatorSectorBehavior, false);
-    menuOptionsGameMutators.Add(&itemMutatorHitscanProjectiles, false);
+    menuOptionsGameMutators.Add(&itemMutatorEnemyHitscanProjectiles, false);
+    menuOptionsGameMutators.Add(&itemMutatorPlayerHitscanProjectiles, false);
     menuOptionsGameMutators.Add(&itemMutatorGoreBehavior, false);
+    menuOptionsGameMutators.Add(&itemMutatorGoreCollision, false);
     menuOptionsGameMutators.Add(&itemMutatorPlayerSpeed, false);
     menuOptionsGameMutators.Add(&itemMutatorPlayerWater, false);
     menuOptionsGameMutators.Add(&itemMutatorRandomizerMode, false);
     menuOptionsGameMutators.Add(&itemMutatorRandomizerSeed, false);
     menuOptionsGameMutators.Add(&itemBloodQAV, false);
-    menuOptionsGameMutators.OrganizeItems(true, true, 4);
+    menuOptionsGameMutators.OrganizeItems(true, true, 4, false);
     itemOptionsChainMutators.bDisableForNet = 1;
     itemMutatorBoolQuadDamagePowerup.tooltip_pzTextUpper = "Replaces guns akimbo powerup";
     itemMutatorBoolQuadDamagePowerup.tooltip_pzTextLower = "with Quake's quad damage";
@@ -2218,11 +2254,14 @@ void SetupOptionsMenu(void)
     itemMutatorBoolImpulseLimit.tooltip_pzTextLower = "firing downwards at point-blank";
     itemMutatorAmmoScale.tooltip_pzTextUpper = "Scale ammo pickup amount";
     itemMutatorSectorBehavior.tooltip_pzTextUpper = "Improve room over room sector logic";
-    itemMutatorHitscanProjectiles.tooltip_pzTextUpper = "Set hitscan enemies to spawn projectiles";
+    itemMutatorEnemyHitscanProjectiles.tooltip_pzTextUpper = "Set hitscan enemies to spawn projectiles";
 #ifdef NOONE_EXTENSIONS
-    itemMutatorHitscanProjectiles.tooltip_pzTextLower = "(does not support xmapedit enemies)";
+    itemMutatorEnemyHitscanProjectiles.tooltip_pzTextLower = "(does not support xmapedit enemies)";
 #endif
+    itemMutatorPlayerHitscanProjectiles.tooltip_pzTextUpper = "Set hitscan weapons to spawn projectiles";
     itemMutatorGoreBehavior.tooltip_pzTextUpper = "Spawns excessive gibs and increases particles";
+    itemMutatorGoreCollision.tooltip_pzTextUpper = "Toggles collisions for spawned gibs";
+    itemMutatorGoreCollision.tooltip_pzTextLower = "(Does not apply to existing gibs)";
     itemMutatorPlayerSpeed.tooltip_pzTextUpper = "Adjusts the player speed";
     itemMutatorPlayerWater.tooltip_pzTextUpper = "Adjusts the oxygen supply";
     itemMutatorRandomizerMode.tooltip_pzTextUpper = "Set the randomizer's mode";
@@ -2254,8 +2293,10 @@ void SetupOptionsMenu(void)
     itemMutatorBoolImpulseLimit.at20 = !!gWeaponImpulseLimit;
     itemMutatorAmmoScale.m_nFocus = gAmmoScale % ARRAY_SSIZE(pzAmmoScaleStrings);
     itemMutatorSectorBehavior.at20 = !!gSectorBehavior;
-    itemMutatorHitscanProjectiles.m_nFocus = gHitscanProjectiles % ARRAY_SSIZE(pzHitscanProjectilesStrings);
-    itemMutatorGoreBehavior.m_nFocus = gGoreBehavior % ARRAY_SSIZE(pzGoreStrings);
+    itemMutatorEnemyHitscanProjectiles.m_nFocus = gEnemyHitscanProjectiles % ARRAY_SSIZE(pzHitscanProjectilesStrings);
+    itemMutatorPlayerHitscanProjectiles.m_nFocus = gPlayerHitscanProjectiles % ARRAY_SSIZE(pzHitscanProjectilesStrings);
+    itemMutatorGoreBehavior.m_nFocus = gGoreBehavior % ARRAY_SSIZE(pzGoreBehaviorStrings);
+    itemMutatorGoreCollision.m_nFocus = gGoreCollision % ARRAY_SSIZE(pzGoreCollisionStrings);
     itemMutatorPlayerSpeed.m_nFocus = gPlayerModSpeed % ARRAY_SSIZE(pzPlayerSpeeds);
     itemMutatorPlayerWater.m_nFocus = gPlayerModWaterOxygen % ARRAY_SSIZE(pzPlayerWater);
     itemMutatorRandomizerMode.m_nFocus = gRandomizerMode % ARRAY_SSIZE(pzRandomizerModeStrings);
@@ -2407,22 +2448,22 @@ void SetupOptionsMenu(void)
     menuOptionsDisplayPowerup.Add(&itemOptionsDisplayPowerupDuration, true);
     menuOptionsDisplayPowerup.Add(&itemOptionsDisplayPowerupPosition, false);
     menuOptionsDisplayPowerup.Add(&itemOptionsDisplayBoolPowerupStyle, false);
-    menuOptionsDisplayPowerup.Add(&itemOptionsDisplayBoolShowOxygen, false);
     menuOptionsDisplayPowerup.Add(&itemOptionsDisplayBoolShowDivingSuit, false);
+    menuOptionsDisplayPowerup.Add(&itemOptionsDisplayCycleShowOxygen, false);
     menuOptionsDisplayPowerup.Add(&itemBloodQAV, false);
     itemOptionsDisplayBoolPowerupStyle.tooltip_pzTextUpper = "Set the display style for power-ups";
-    itemOptionsDisplayBoolShowOxygen.tooltip_pzTextUpper = "Show oxygen supply while underwater";
     itemOptionsDisplayBoolShowDivingSuit.tooltip_pzTextUpper = "Show diving suit usage while underwater";
+    itemOptionsDisplayCycleShowOxygen.tooltip_pzTextUpper = "Show oxygen supply while underwater";
+    itemOptionsDisplayCycleShowOxygen.tooltip_pzTextLower = "(show as a powerup item or display a meter on HUD)";
 
     itemOptionsDisplayPowerupDuration.at20 = !!gPowerupDuration;
     itemOptionsDisplayPowerupPosition.m_nFocus = gPowerupDuration ? (gPowerupDuration-1) % ARRAY_SSIZE(pzHudRatioStrings) : 0;
     itemOptionsDisplayPowerupPosition.bEnable = !!gPowerupDuration;
     itemOptionsDisplayBoolPowerupStyle.at20 = gPowerupStyle;
     itemOptionsDisplayBoolPowerupStyle.bEnable = !!gPowerupDuration;
-    itemOptionsDisplayBoolShowOxygen.at20 = gPowerupShowOxygenSupply;
-    itemOptionsDisplayBoolShowOxygen.bEnable = !!gPowerupDuration;
     itemOptionsDisplayBoolShowDivingSuit.at20 = gPowerupShowDivingSuit;
     itemOptionsDisplayBoolShowDivingSuit.bEnable = !!gPowerupDuration;
+    itemOptionsDisplayCycleShowOxygen.m_nFocus = gPowerupShowOxygenSupply % ARRAY_SSIZE(pzHudRatioStrings);
 
 #ifdef USE_OPENGL
     menuOptionsDisplayPolymost.Add(&itemOptionsDisplayPolymostTitle, false);
@@ -2488,6 +2529,7 @@ void SetupOptionsMenu(void)
     menuOptionsPlayer.Add(&itemOptionsPlayerShowWeapons, false);
     menuOptionsPlayer.Add(&itemOptionsPlayerTeamsScoreStyle, false);
     menuOptionsPlayer.Add(&itemOptionsPlayerChatSound, false);
+    menuOptionsPlayer.Add(&itemOptionsMultiTimeLimitAlarm, false);
     menuOptionsPlayer.Add(&itemOptionsPlayerColorMsg, false);
     menuOptionsPlayer.Add(&itemOptionsPlayerObituaryMsg, false);
     menuOptionsPlayer.Add(&itemOptionsPlayerKillMsg, false);
@@ -2504,6 +2546,7 @@ void SetupOptionsMenu(void)
     itemOptionsPlayerShowWeapons.tooltip_pzTextUpper = "Display player's weapon";
     itemOptionsPlayerShowWeapons.tooltip_pzTextLower = "over their head";
     itemOptionsPlayerChatSound.tooltip_pzTextUpper = "Play beep sound for chat messages";
+    itemOptionsMultiTimeLimitAlarm.tooltip_pzTextUpper = "Play alarm near end of time limit";
     itemOptionsPlayerColorMsg.tooltip_pzTextUpper = "Color player names for chat messages";
     itemOptionsPlayerObituaryMsg.tooltip_pzTextUpper = "Use random obituary kill messages";
     itemOptionsPlayerKillMsg.tooltip_pzTextUpper = "Show player killed on screen";
@@ -2519,6 +2562,7 @@ void SetupOptionsMenu(void)
     itemOptionsPlayerShowWeapons.m_nFocus = gShowWeapon;
     itemOptionsPlayerTeamsScoreStyle.at20 = gTeamsScoreStyle;
     itemOptionsPlayerChatSound.at20 = gChatSnd;
+    itemOptionsMultiTimeLimitAlarm.at20 = gMultiTimeAlarm;
     itemOptionsPlayerColorMsg.at20 = gColorMsg;
     itemOptionsPlayerObituaryMsg.at20 = gKillObituary;
     itemOptionsPlayerKillMsg.at20 = gKillMsg;
@@ -2990,23 +3034,43 @@ void SetSectorBehavior(CGameMenuItemZBool *pItem)
     }
 }
 
-void SetHitscanProjectiles(CGameMenuItemZCycle *pItem)
+void SetEnemyHitscanProjectiles(CGameMenuItemZCycle *pItem)
 {
     if ((gGameOptions.nGameType == kGameTypeSinglePlayer) && (numplayers == 1)) {
-        gHitscanProjectiles = pItem->m_nFocus % ARRAY_SSIZE(pzHitscanProjectilesStrings);
-        gGameOptions.nHitscanProjectiles = gHitscanProjectiles;
+        gEnemyHitscanProjectiles = pItem->m_nFocus % ARRAY_SSIZE(pzHitscanProjectilesStrings);
+        gGameOptions.nEnemyHitscanProjectiles = gEnemyHitscanProjectiles;
     } else {
-        pItem->m_nFocus = gHitscanProjectiles % ARRAY_SSIZE(pzHitscanProjectilesStrings);
+        pItem->m_nFocus = gEnemyHitscanProjectiles % ARRAY_SSIZE(pzHitscanProjectilesStrings);
     }
 }
 
-void SetGoreMode(CGameMenuItemZCycle *pItem)
+void SetPlayerHitscanProjectiles(CGameMenuItemZCycle *pItem)
 {
     if ((gGameOptions.nGameType == kGameTypeSinglePlayer) && (numplayers == 1)) {
-        gGoreBehavior = pItem->m_nFocus % ARRAY_SSIZE(pzGoreStrings);
+        gPlayerHitscanProjectiles = pItem->m_nFocus % ARRAY_SSIZE(pzHitscanProjectilesStrings);
+        gGameOptions.nPlayerHitscanProjectiles = gPlayerHitscanProjectiles;
+    } else {
+        pItem->m_nFocus = gPlayerHitscanProjectiles % ARRAY_SSIZE(pzHitscanProjectilesStrings);
+    }
+}
+
+void SetGoreBehavior(CGameMenuItemZCycle *pItem)
+{
+    if ((gGameOptions.nGameType == kGameTypeSinglePlayer) && (numplayers == 1)) {
+        gGoreBehavior = pItem->m_nFocus % ARRAY_SSIZE(pzGoreBehaviorStrings);
         gGameOptions.nGoreBehavior = gGoreBehavior;
     } else {
-        pItem->m_nFocus = gGoreBehavior % ARRAY_SSIZE(pzGoreStrings);
+        pItem->m_nFocus = gGoreBehavior % ARRAY_SSIZE(pzGoreBehaviorStrings);
+    }
+}
+
+void SetGoreCollision(CGameMenuItemZCycle *pItem)
+{
+    if ((gGameOptions.nGameType == kGameTypeSinglePlayer) && (numplayers == 1)) {
+        gGoreCollision = pItem->m_nFocus % ARRAY_SSIZE(pzGoreCollisionStrings);
+        gGameOptions.nGoreCollision = gGoreCollision;
+    } else {
+        pItem->m_nFocus = gGoreCollision % ARRAY_SSIZE(pzGoreCollisionStrings);
     }
 }
 
@@ -3310,7 +3374,6 @@ void SetPowerupDuration(CGameMenuItemZBool *pItem)
         gPowerupDuration = (itemOptionsDisplayPowerupPosition.m_nFocus % ARRAY_SSIZE(pzHudRatioStrings))+1;
     itemOptionsDisplayPowerupPosition.bEnable = !!gPowerupDuration;
     itemOptionsDisplayBoolPowerupStyle.bEnable = !!gPowerupDuration;
-    itemOptionsDisplayBoolShowOxygen.bEnable = !!gPowerupDuration;
     itemOptionsDisplayBoolShowDivingSuit.bEnable = !!gPowerupDuration;
     viewResizeView(gViewSize);
 }
@@ -3688,6 +3751,7 @@ void SetFirstLaunchOptions(CGameMenuItemChain *pItem)
         gWeaponInterpolate = 0;
         gCenterHoriz = 0;
         gWeatherEffect = 0;
+        gRadialMenuToggle = 3;
     }
     else if (pItem == &itemFirstLaunchNBlood)
     {
@@ -3707,6 +3771,7 @@ void SetFirstLaunchOptions(CGameMenuItemChain *pItem)
         viewResizeView(gViewSize);
         gCenterHoriz = 0;
         gWeatherEffect = 0;
+        gRadialMenuToggle = 3;
     }
     itemOptionsDisplayViewBoolSlopeTilting.at20 = gSlopeTilting;
     itemOptionsDisplayCrosshair.m_nFocus = gAimReticle;
@@ -3719,8 +3784,7 @@ void SetFirstLaunchOptions(CGameMenuItemChain *pItem)
     itemOptionsDisplayBoolPowerupStyle.at20 = gPowerupStyle;
     itemOptionsDisplayBoolPowerupStyle.bEnable = !!gPowerupDuration;
     itemOptionsDisplayPowerupPosition.bEnable = !!gPowerupDuration;
-    itemOptionsDisplayBoolShowOxygen.at20 = gPowerupShowOxygenSupply;
-    itemOptionsDisplayBoolShowOxygen.bEnable = !!gPowerupDuration;
+    itemOptionsDisplayCycleShowOxygen.m_nFocus = gPowerupShowOxygenSupply;
     itemOptionsDisplayBoolShowDivingSuit.at20 = gPowerupShowDivingSuit;
     itemOptionsDisplayBoolShowDivingSuit.bEnable = !!gPowerupDuration;
     itemOptionsDisplayViewSecretMessageStyle.m_nFocus = gSecretStyle;
@@ -3731,6 +3795,7 @@ void SetFirstLaunchOptions(CGameMenuItemChain *pItem)
     itemOptionsDisplayViewWeaponInterpolation.m_nFocus = gWeaponInterpolate;
     itemOptionsDisplayViewBoolCenterHoriz.at20 = gCenterHoriz;
     itemOptionsDisplayViewWeatherEffect.at20 = gWeatherEffect;
+    itemOptionsControlRadialToggle.m_nFocus = gRadialMenuToggle;
     gGameMenuMgr.Pop(); // close menu
 }
 
@@ -3801,9 +3866,9 @@ void SetFOV(CGameMenuItemSlider *pItem)
     viewUpdateWeatherRatio();
 }
 
-void SetOxygenSupply(CGameMenuItemZBool *pItem)
+void SetOxygenSupply(CGameMenuItemZCycle *pItem)
 {
-    gPowerupShowOxygenSupply = pItem->at20;
+    gPowerupShowOxygenSupply = pItem->m_nFocus % ARRAY_SSIZE(pzPowerupOxygenMeter);
 }
 
 void SetDivingSuit(CGameMenuItemZBool *pItem)
@@ -4160,6 +4225,8 @@ void SetNetGameMode(CGameMenuItemZCycle *pItem)
         itemNetGameBoolTeamFlags.bNoDraw = 1;
         itemNetGameSetTeams.bEnable = nGameType == kGameTypeTeams;
         itemNetGameSetTeams.bNoDraw = !itemNetGameSetTeams.bEnable;
+        itemNetGameBoolJuggernaut.bEnable = nGameType == kGameTypeBloodBath;
+        itemNetGameBoolJuggernaut.bNoDraw = !itemNetGameBoolJuggernaut.bEnable;
         itemNetGameCycleShowWeaponsOverride.bEnable = nGameType != kGameTypeTeams;
         itemNetGameCycleShowWeaponsOverride.bNoDraw = !itemNetGameCycleShowWeaponsOverride.bEnable;
         itemNetGameCycleShowWeaponsOverrideTeams.bEnable = nGameType == kGameTypeTeams;
@@ -4410,6 +4477,11 @@ void UpdateTeamsScoreDisplay(CGameMenuItemZBool *pItem)
 void UpdatePlayerChatMessageSound(CGameMenuItemZBool *pItem)
 {
     gChatSnd = pItem->at20;
+}
+
+void UpdatePlayerMultiTimeLimitSound(CGameMenuItemZBool *pItem)
+{
+    gMultiTimeAlarm = pItem->at20;
 }
 
 void UpdatePlayerColorMessages(CGameMenuItemZBool *pItem)
@@ -5338,12 +5410,12 @@ void StartNetGame(CGameMenuItemChain *pItem)
         gPacketStartGame.uNetGameFlags |= kNetGameFlagVanillaColors;
     if (!itemNetGameBoolTeamColors.at20)
         gPacketStartGame.uNetGameFlags |= kNetGameFlagNoTeamColors;
-    if (!itemNetGameBoolTeamFlags.at20)
-        gPacketStartGame.uNetGameFlags |= kNetGameFlagNoTeamFlags;
     if (itemNetGameCycleSpawnLocation.m_nFocus > 0)
         gPacketStartGame.uNetGameFlags |= itemNetGameCycleSpawnLocation.m_nFocus == 1 ? kNetGameFlagSpawnSmart : kNetGameFlagSpawnDist;
     if (gPacketStartGame.gameType == kGameTypeTeams)
     {
+        if (!itemNetGameBoolTeamFlags.at20)
+            gPacketStartGame.uNetGameFlags |= kNetGameFlagNoTeamFlags;
         if (itemNetGameCycleShowWeaponsOverrideTeams.m_nFocus == 1)
             gPacketStartGame.uNetGameFlags |= kNetGameFlagHideWeaponsCloak;
         else if (itemNetGameCycleShowWeaponsOverrideTeams.m_nFocus == 2)
@@ -5353,6 +5425,8 @@ void StartNetGame(CGameMenuItemChain *pItem)
     }
     else
     {
+        if (itemNetGameBoolJuggernaut.at20)
+            gPacketStartGame.uNetGameFlags |= kNetGameFlagJuggernautGame;
         if (itemNetGameCycleShowWeaponsOverride.m_nFocus == 1)
             gPacketStartGame.uNetGameFlags |= kNetGameFlagHideWeaponsCloak;
         else if (itemNetGameCycleShowWeaponsOverride.m_nFocus == 2)
@@ -5370,6 +5444,8 @@ void StartNetGame(CGameMenuItemChain *pItem)
         gPacketStartGame.uNetGameFlags |= kNetGameFlagSecondWindToggle;
     if (itemNetStartBoolSpectatorMode.at20)
         gPacketStartGame.uNetGameFlags |= kNetGameFlagSpectatingAllow;
+    if (itemNetStartBoolLagCompensation.at20)
+        gPacketStartGame.uNetGameFlags |= kNetGameFlagLagCompensation;
     gPacketStartGame.episodeId = itemNetStart2.m_nFocus;
     gPacketStartGame.levelId = itemNetStart3.m_nFocus;
     gPacketStartGame.difficulty = itemNetStart4.m_nFocus;
@@ -5401,8 +5477,10 @@ void StartNetGame(CGameMenuItemChain *pItem)
     gPacketStartGame.bWeaponImpulseLimit = itemNetMutatorBoolWeaponImpulseLimit.at20;
     gPacketStartGame.nAmmoScale = itemNetMutatorAmmoScale.m_nFocus % ARRAY_SSIZE(pzAmmoScaleStrings);
     gPacketStartGame.bSectorBehavior = itemNetMutatorSectorBehavior.at20;
-    gPacketStartGame.nHitscanProjectiles = itemNetMutatorHitscanProjectiles.m_nFocus % ARRAY_SSIZE(pzHitscanProjectilesStrings);
-    gPacketStartGame.nGoreBehavior = itemNetMutatorGoreBehavior.m_nFocus % ARRAY_SSIZE(pzGoreStrings);
+    gPacketStartGame.nEnemyHitscanProjectiles = itemNetMutatorEnemyHitscanProjectiles.m_nFocus % ARRAY_SSIZE(pzHitscanProjectilesStrings);
+    gPacketStartGame.nPlayerHitscanProjectiles = itemNetMutatorPlayerHitscanProjectiles.m_nFocus % ARRAY_SSIZE(pzHitscanProjectilesStrings);
+    gPacketStartGame.nGoreBehavior = itemNetMutatorGoreBehavior.m_nFocus % ARRAY_SSIZE(pzGoreBehaviorStrings);
+    gPacketStartGame.nGoreCollision = itemNetMutatorGoreCollision.m_nFocus % ARRAY_SSIZE(pzGoreCollisionStrings);
     gPacketStartGame.nPlayerSpeed = itemNetMutatorPlayerSpeed.m_nFocus % ARRAY_SSIZE(pzPlayerSpeeds);
     gPacketStartGame.randomizerMode = itemNetMutatorRandomizerMode.m_nFocus % ARRAY_SSIZE(pzRandomizerModeStrings);
     Bstrncpy(gPacketStartGame.szRandomizerSeed, szRandomizerSeedMenu, sizeof(gPacketStartGame.szRandomizerSeed));

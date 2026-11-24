@@ -65,6 +65,7 @@ PROFILE gProfileNet[kMaxPlayers];
 
 bool gBlueFlagDropped = false;
 bool gRedFlagDropped = false;
+int gPlayerJuggernaut = -1;
 
 int gPlayerScores[kMaxPlayers];
 int gPlayerCoopLives[kMaxPlayers];
@@ -413,6 +414,30 @@ uint32_t PLAYER::CalcNonSpriteChecksum(void)
     return sum;
 }
 
+static vec3_t gLastPredictOffset;
+
+char playerPredictPositionApply(PLAYER *pPlayer)
+{
+    if (!(gGameOptions.uNetGameFlags&kNetGameFlagLagCompensation) || !pPlayer || !pPlayer->pSprite || !pPlayer->pXSprite || !pPlayer->pXSprite->health || !sectRangeIsFine(pPlayer->pSprite->sectnum))
+        return 0;
+    vec3_t playerPos = gLastPredictOffset = pPlayer->pSprite->xyz;
+
+    GINPUT *pInput = &pPlayer->input;
+    playerPos.x += int32_t(pInput->xoffset)<<5;
+    playerPos.y += int32_t(pInput->yoffset)<<5;
+    if (cansee(playerPos.x, playerPos.y, playerPos.z, pPlayer->pSprite->sectnum, pPlayer->pSprite->x, pPlayer->pSprite->y, pPlayer->pSprite->z, pPlayer->pSprite->sectnum)) // if predicted position is valid
+    {
+        pPlayer->pSprite->xyz = playerPos;
+        return 1;
+    }
+    return 0;
+}
+
+void playerPredictPositionRestore(PLAYER *pPlayer)
+{
+    pPlayer->pSprite->xyz = gLastPredictOffset;
+}
+
 int powerupCheck(PLAYER *pPlayer, int nPowerUp)
 {
     dassert(pPlayer != NULL);
@@ -510,7 +535,7 @@ char powerupActivate(PLAYER *pPlayer, int nPowerUp)
             {
                 if (gGameOptions.bQuadDamagePowerup) // if quad damage is active, do not switch weapon
                 {
-                    if (!nPwUpTime) // play quad damage starting sfx if quad damage is not already active
+                    if (!nPwUpTime && (pPlayer->nPlayer != gPlayerJuggernaut)) // play quad damage starting sfx if quad damage is not already active (do not play for juggernaut player)
                     {
                         if (pPlayer == gMe)
                             sndStartSample("NOTBLOOD0", 128, -1);
@@ -649,7 +674,7 @@ void powerupProcess(PLAYER *pPlayer)
         }
         else if (pPlayer->pwUpTime[i] > 0)
         {
-            if ((i == kPwUpTwoGuns) && gMatrixMode && !VanillaMode())
+            if ((i == kPwUpTwoGuns) && ((pPlayer->nPlayer == gPlayerJuggernaut) || (gMatrixMode && !VanillaMode()))) // don't drain for akimbo/quad
                 continue;
             if (!VanillaMode() && gGameOptions.bQuadDamagePowerup && (i == kPwUpTwoGuns) && (pPlayer->pwUpTime[i] == ((int)(2.987f * kTicsPerSec) * kTicsPerFrame))) // if quad damage is ending
             {
@@ -1309,6 +1334,7 @@ void playerStart(int nPlayer, int bNewLevel)
     gSonicMode = 0;
     gNukeMode = 0;
     gMatrixMode = 0;
+    gNoTarget = 0;
     gFullMap = 0;
     pPlayer->throwPower = 0;
     pPlayer->tauntTime = 0;
@@ -1323,6 +1349,7 @@ void playerStart(int nPlayer, int bNewLevel)
     pInput->q16mlook = 0;
     pInput->buttonFlags.byte = 0;
     pInput->useFlags.byte = 0;
+    pInput->xoffset = pInput->yoffset;
     pPlayer->flickerEffect = 0;
     pPlayer->quakeEffect = 0;
     pPlayer->tiltEffect = 0;
@@ -2656,6 +2683,12 @@ void playerFrag(PLAYER *pKiller, PLAYER *pVictim)
         {
             pKiller->fragCount++;
             pKiller->fragInfo[nVictim]++;
+            if ((gGameOptions.nGameType == kGameTypeBloodBath) && (gGameOptions.uNetGameFlags&kNetGameFlagJuggernautGame) && (gPlayerJuggernaut == -1 || gPlayerJuggernaut == nVictim))
+            {
+                gPlayerJuggernaut = nKiller;
+                if (!powerupCheck(pKiller, kPwUpTwoGuns)) // give akimbo/quad
+                    powerupActivate(pKiller, kPwUpTwoGuns);
+            }
             gMultiKillsFrags[nVictim] = 0;
             if (gKillMsg) // calculate kill message notification
             {
@@ -2837,7 +2870,8 @@ void playerProcessRoundCheck(PLAYER *pPlayer)
                 break;
             case kTicsPerSec*10:
                 nMessage = 6;
-                sndStartSample("NOTBLOOD3", 64, -1, 8259); // countdown alarm
+                if (gMultiTimeAlarm)
+                    sndStartSample("NOTBLOOD3", 64, -1, 8259); // countdown alarm
                 break;
             default:
                 return;

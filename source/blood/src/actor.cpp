@@ -1703,6 +1703,46 @@ MissileType missileInfo[] = {
         14,
         (char)-128,
         8,
+    },
+    // Shotgun shell projectile (player)
+    {
+        9295, // use bullet sprite from notblood.pk3/TILES099.ART
+        (625)<<12,
+        0,
+        14,
+        14,
+        (char)-128,
+        8,
+    },
+    // Shotgun alt-fire shell projectile (player)
+    {
+        9295, // use bullet sprite from notblood.pk3/TILES099.ART
+        (625)<<12,
+        0,
+        14,
+        14,
+        (char)-128,
+        8,
+    },
+    // Tommy gun bullet projectile (player)
+    {
+        9295, // use bullet sprite from notblood.pk3/TILES099.ART
+        (625)<<12,
+        0,
+        14,
+        14,
+        (char)-128,
+        8,
+    },
+    // Tommy gun bullet projectile (player)
+    {
+        9295, // use bullet sprite from notblood.pk3/TILES099.ART
+        (625)<<12,
+        0,
+        14,
+        14,
+        (char)-128,
+        8,
     }
 };
 
@@ -5737,7 +5777,7 @@ static bool MoveMissileBulletVectorTest(spritetype *pSource, spritetype *pShoote
                         int nSplatIncrement = kMaxSplatIncrementBase - gGameOptions.nDifficulty;
                         nSplatIncrement >>= 1;
                         const int nBloodSplats = pVectorData->bloodSplats + nSplatIncrement;
-                        if (pShooter)
+                        if (!pShooter)
                             break;
                         int nType = pShooter->type;
                         if (IsPlayerSprite(pShooter))
@@ -5846,7 +5886,7 @@ static bool MoveMissileBulletVectorTest(spritetype *pSource, spritetype *pShoote
     return didHit;
 }
 
-void MoveMissileBullet(spritetype *pSprite)
+char MoveMissileBullet(spritetype *pSprite)
 {
     dassert(pSprite != NULL);
     const int nXMissile = pSprite->extra;
@@ -5857,8 +5897,6 @@ void MoveMissileBullet(spritetype *pSprite)
     {
         int nOwner = actSpriteOwnerToSpriteId(pSprite);
         pOwner = &sprite[nOwner];
-        if (sprite[nOwner].type != sprite[nOwner].inittype)
-            sprite[nOwner].type = sprite[nOwner].type;
         bool bDudeSprite = IsDudeSprite(pOwner);
         if (!bDudeSprite) // if false, check inittype range (dudes can die before projectiles have hit their target - which mean their type may be set to gibs instead)
             bDudeSprite = (pOwner->inittype >= kDudeBase) && (pOwner->inittype < kDudeMax);
@@ -5870,7 +5908,8 @@ void MoveMissileBullet(spritetype *pSprite)
         else
             pOwner = NULL;
     }
-    const bool underwaterSector = (sector[pSprite->sectnum].extra >= 0 && xsector[sector[pSprite->sectnum].extra].Underwater);
+    const char bIsPlayer = (pOwner != NULL) && IsPlayerSprite(pOwner);
+    const bool underwaterSector = !bIsPlayer && (sector[pSprite->sectnum].extra >= 0 && xsector[sector[pSprite->sectnum].extra].Underwater); // do not slow projectile down for player owned projectiles
     const int nSprite = pSprite->index;
     const int bakX = pSprite->x;
     const int bakY = pSprite->y;
@@ -5878,11 +5917,32 @@ void MoveMissileBullet(spritetype *pSprite)
     const int dx = Cos(pSprite->ang)>>16;
     const int dy = Sin(pSprite->ang)>>16;
     int dz = zvel[nSprite]>>7;
-    const VECTOR_TYPE nType = pSprite->type == kMissileShell ? kVectorShell : kVectorBullet;
+    VECTOR_TYPE nType;
+    switch (pSprite->type)
+    {
+    case kMissileShell:
+        nType = kVectorShell;
+        break;
+    case kMissilePlayerShell:
+        nType = kVectorShell;
+        break;
+    case kMissilePlayerShellAP:
+        nType = kVectorShellAP;
+        break;
+    case kMissilePlayerBullet:
+        nType = kVectorTommyregular;
+        break;
+    case kMissilePlayerBulletAP:
+        nType = kVectorTommyAP;
+        break;
+    default:
+        nType = kVectorBullet;
+        break;
+    }
     int speed = missileInfo[pSprite->type - kMissileBase].velocity;
-    if (gGameOptions.nHitscanProjectiles == 1) // if hitscan projectile speed is 75%, adjust hitscan range
+    if (bIsPlayer ? gGameOptions.nPlayerHitscanProjectiles == 1 : gGameOptions.nEnemyHitscanProjectiles == 1) // if hitscan projectile speed is 75%, adjust hitscan range
         speed = (speed>>1) + (speed>>2);
-    else if (gGameOptions.nHitscanProjectiles == 3) // if hitscan projectile speed is 125%, adjust hitscan range
+    else if (bIsPlayer ? gGameOptions.nPlayerHitscanProjectiles == 3 : gGameOptions.nEnemyHitscanProjectiles == 3) // if hitscan projectile speed is 125%, adjust hitscan range
         speed += (speed>>2);
     if (underwaterSector) // if bullet is underwater, adjust hitscan range by 50%
         speed >>= 1;
@@ -5966,6 +6026,7 @@ void MoveMissileBullet(spritetype *pSprite)
     }
     if (pOwner)
         pOwner->cstat = bakCstat;
+    return weHitSomething;
 }
 
 void actExplodeSprite(spritetype *pSprite)
@@ -6442,7 +6503,7 @@ void actProcessSprites(void)
         if (pSprite->flags & 32)
             continue;
         viewBackupSpriteLoc(nSprite, pSprite);
-        if ((pSprite->type != kMissileShell) && (pSprite->type != kMissileBullet)) // if regular missile sprites
+        if (pSprite->type < kMissileShell) // if regular missile sprites
         {
             int hit = MoveMissile(pSprite);
             if (hit >= 0)
@@ -6450,7 +6511,16 @@ void actProcessSprites(void)
         }
         else // bullet projectile sprites
         {
-            MoveMissileBullet(pSprite);
+            const char weHitSomething = MoveMissileBullet(pSprite);
+            if (!weHitSomething && (gGameOptions.nPlayerHitscanProjectiles >= 4 || gGameOptions.nEnemyHitscanProjectiles >= 4)) // if hitscan projectile speed is 200%/300%, move bullet twice/thrice
+            {
+                const int nOwner = actSpriteOwnerToSpriteId(pSprite);
+                const char bIsPlayer = spriRangeIsFine(nOwner) && IsPlayerSprite(&sprite[nOwner]);
+                for (int nMoveTimes = (bIsPlayer ? gGameOptions.nPlayerHitscanProjectiles-4 : gGameOptions.nEnemyHitscanProjectiles-4); nMoveTimes >= 0; nMoveTimes--)
+                {
+                    MoveMissileBullet(pSprite); // moving the bullet really far in a single tick can sometimes hit the wrong things, so do it multiple times for 200%/300% speed
+                }
+            }
         }
     }
     for (nSprite = headspritestat[kStatExplosion]; nSprite >= 0; nSprite = nextspritestat[nSprite])
@@ -7159,6 +7229,9 @@ spritetype* actFireMissile(spritetype *pSprite, int a2, int a3, int a4, int a5, 
     dassert(nType >= kMissileBase && nType < kMissileMax);
     char v4 = 0;
     int nSprite = pSprite->index;
+    char bLagCompensation = 0;
+    if (IsPlayerSprite(pSprite))
+        bLagCompensation = playerPredictPositionApply(&gPlayer[pSprite->type-kDudePlayer1]);
     MissileType *pMissileInfo = &missileInfo[nType-kMissileBase];
     int x = pSprite->x+mulscale30(a2, Cos(pSprite->ang+512));
     int y = pSprite->y+mulscale30(a2, Sin(pSprite->ang+512));
@@ -7227,26 +7300,29 @@ spritetype* actFireMissile(spritetype *pSprite, int a2, int a3, int a4, int a5, 
     zvel[nMissile] = mulscale14(pMissileInfo->velocity, a6);
     actPropagateSpriteOwner(pMissile, pSprite);
     pMissile->cstat |= CSTAT_SPRITE_BLOCK;
-    if ((nType == kMissileShell) || (nType == kMissileBullet)) // do not set collisions on for bullet projectiles (so bullets will not collide with each other)
+    if (nType >= kMissileShell) // do not set collisions on for bullet projectiles (so bullets will not collide with each other)
     {
         if (gProjectileOldSprite)
         {
             pMissile->picnum = 9288; // use old bullet sprite from notblood.pk3/TILES099.ART
             pMissile->xrepeat = pMissile->yrepeat = 32;
         }
-        pMissile->cstat &= ~(CSTAT_SPRITE_BLOCK|CSTAT_SPRITE_BLOCK_HITSCAN);
-        if (gGameOptions.nHitscanProjectiles == 1) // if hitscan projectile speed is 75%, adjust speed
+        const char bIsPlayer = IsPlayerSprite(pSprite);
+        if (bIsPlayer) // player projectiles are half sized
+            pMissile->xrepeat = pMissile->yrepeat = 9;
+        if (bIsPlayer ? gGameOptions.nPlayerHitscanProjectiles == 1 : gGameOptions.nEnemyHitscanProjectiles == 1) // if hitscan projectile speed is 75%, adjust speed
         {
             xvel[nMissile] = (xvel[nMissile]>>1) + (xvel[nMissile]>>2);
             yvel[nMissile] = (yvel[nMissile]>>1) + (yvel[nMissile]>>2);
             zvel[nMissile] = (zvel[nMissile]>>1) + (zvel[nMissile]>>2);
         }
-        else if (gGameOptions.nHitscanProjectiles == 3) // if hitscan projectile speed is 125%, adjust speed
+        else if (bIsPlayer ? gGameOptions.nPlayerHitscanProjectiles == 3 : gGameOptions.nEnemyHitscanProjectiles == 3) // if hitscan projectile speed is 125%, adjust speed
         {
             xvel[nMissile] += (xvel[nMissile]>>2);
             yvel[nMissile] += (yvel[nMissile]>>2);
             zvel[nMissile] += (zvel[nMissile]>>2);
         }
+        pMissile->cstat &= ~(CSTAT_SPRITE_BLOCK | CSTAT_SPRITE_BLOCK_HITSCAN);
     }
     int nXSprite = pMissile->extra;
     dassert(nXSprite > 0 && nXSprite < kMaxXSprites);
@@ -7255,11 +7331,13 @@ spritetype* actFireMissile(spritetype *pSprite, int a2, int a3, int a4, int a5, 
    
     actBuildMissile(pMissile, nXSprite, nSprite);
     
-    if (v4 && (nType != kMissileShell) && (nType != kMissileBullet))
+    if (v4 && (nType < kMissileShell))
     {
         actImpactMissile(pMissile, hit);
         pMissile = NULL;
     }
+    if (bLagCompensation)
+        playerPredictPositionRestore(&gPlayer[pSprite->type-kDudePlayer1]);
     return pMissile;
 }
 
@@ -7468,9 +7546,43 @@ void actFireVector(spritetype *pShooter, int a2, int a3, int a4, int a5, int a6,
     int nRange = pVectorData->maxDist;
     int hit;
     vec3_t shooterPos;
+    char bLagCompensation = 0;
+    if (IsPlayerSprite(pShooter))
+        bLagCompensation = playerPredictPositionApply(&gPlayer[pShooter->type-kDudePlayer1]);
     if (!VanillaMode())
     {
         hit = VectorScanROR(pShooter, a2, a3, a4, a5, a6, nRange, 1, &shooterPos);
+        if (IsPlayerSprite(pShooter) && gGameOptions.nPlayerHitscanProjectiles && (approxDist(gHitInfo.hitx-shooterPos.x, gHitInfo.hity-shooterPos.y) > 1024)) // if player fired hitscan weapon and player hitscan projectiles is on, spawn bullet and return
+        {
+            int nType = 0;
+            switch (vectorType)
+            {
+            case kVectorShell:
+                nType = kMissilePlayerShell;
+                break;
+            case kVectorShellAP:
+                nType = kMissilePlayerShellAP;
+                break;
+            case kVectorTommyregular:
+                nType = kMissilePlayerBullet;
+                break;
+            case kVectorTommyAP:
+                nType = kMissilePlayerBulletAP;
+                break;
+            default:
+                break;
+            }
+            if (nType >= kMissileBase && nType < kMissileMax)
+            {
+                PLAYER *pPlayer = &gPlayer[pShooter->type-kDudePlayer1];
+                if (bLagCompensation)
+                    playerPredictPositionRestore(pPlayer);
+                int zAimOffset = pPlayer->zWeapon-pPlayer->pSprite->z;
+                zAimOffset -= fix16_clamp(pPlayer->q16look, F16(-347), F16(289))>>13;
+                actFireMissile(pShooter, a2, zAimOffset, a4, a5, a6, nType);
+                return;
+            }
+        }
     }
     else
     {
@@ -7725,6 +7837,8 @@ void actFireVector(spritetype *pShooter, int a2, int a3, int a4, int a5, int a6,
                         int nSplatIncrement = kMaxSplatIncrementBase - gGameOptions.nDifficulty;
                         nSplatIncrement >>= 1;
                         const int nBloodSplats = pVectorData->bloodSplats + nSplatIncrement;
+                        if (!pShooter)
+                            break;
                         int nType = pShooter->type;
                         if (IsPlayerSprite(pShooter))
                         {
@@ -7827,6 +7941,9 @@ void actFireVector(spritetype *pShooter, int a2, int a3, int a4, int a5, int a6,
 
     if (pVectorData->surfHit[nSurf].fxSnd >= 0)
         sfxPlay3DSound(x, y, z, pVectorData->surfHit[nSurf].fxSnd, nSector);
+
+    if (bLagCompensation)
+        playerPredictPositionRestore(&gPlayer[pShooter->type-kDudePlayer1]);
 }
 
 void FireballSeqCallback(int, int nXSprite)

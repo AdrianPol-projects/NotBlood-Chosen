@@ -1008,6 +1008,14 @@ void viewCorrectViewOffsets(int nPlayer, vec3_t const *oldpos)
     pView->at38 += pPlayer->pSprite->z-oldpos->z;
 }
 
+void viewGetPlayerPrediction(int nPlayer, GINPUT *pInput)
+{
+    PLAYER *pPlayer = &gPlayer[nPlayer];
+    VIEW *pView = &gPrevView[nPlayer];
+    pInput->xoffset = gPrediction ? int8_t(ClipRange((pPlayer->pSprite->x-pView->at50)>>5, INT8_MIN, INT8_MAX)) : 0;
+    pInput->yoffset = gPrediction ? int8_t(ClipRange((pPlayer->pSprite->y-pView->at54)>>5, INT8_MIN, INT8_MAX)) : 0;
+}
+
 static char bInterpWarnVanilla = 0;
 
 void viewClearInterpolations(void)
@@ -1270,7 +1278,7 @@ void DrawStatNumber(const char *pFormat, int nNumber, int nTile, int x, int y, i
     }
 }
 
-void TileHGauge(int nTile, int x, int y, int nMult, int nDiv, int nStat, int nScale)
+void TileHGauge(int nTile, int x, int y, int nMult, int nDiv, int nStat, int nScale, int nPal)
 {
     int bx = scale(mulscale16(tilesiz[nTile].x,nScale),nMult,nDiv)+x;
     int sbx;
@@ -1288,7 +1296,7 @@ void TileHGauge(int nTile, int x, int y, int nMult, int nDiv, int nStat, int nSc
         sbx = (xdim>>1)+mulscale16(bx, xscalecorrect)-1;
         break;
     }
-    rotatesprite(x<<16, y<<16, nScale, 0, nTile, 0, 0, nStat|90, 0, 0, sbx, ydim-1);
+    rotatesprite(x<<16, y<<16, nScale, 0, nTile, 0, nPal, nStat|90, 0, 0, sbx, ydim-1);
 }
 
 int gPackIcons[kPackMax] = {
@@ -1546,9 +1554,9 @@ void viewDrawPowerUps(PLAYER* pPlayer)
     nPowerActive[1] = pPlayer->pwUpTime[kPwUpReflectShots]; // reflects enemy shots
     nPowerActive[2] = pPlayer->pwUpTime[kPwUpDeathMask]; // invulnerability
     if (powerupCheck(pPlayer, kPwUpTwoGuns) && gGameOptions.bQuadDamagePowerup && !VanillaMode()) // if quad damage is enabled, use quad damage icon from notblood.pk3/TILES099.ART
-        nPowerActive[3] = 0, nPowerActive[4] = !gMatrixMode ? pPlayer->pwUpTime[kPwUpTwoGuns] : 0; // quad damage
+        nPowerActive[3] = 0, nPowerActive[4] = !gMatrixMode && (pPlayer->nPlayer != gPlayerJuggernaut) ? pPlayer->pwUpTime[kPwUpTwoGuns] : 0; // quad damage
     else
-        nPowerActive[3] = !gMatrixMode ? pPlayer->pwUpTime[kPwUpTwoGuns] : 0, nPowerActive[4] = 0; // guns akimbo
+        nPowerActive[3] = !gMatrixMode && (pPlayer->nPlayer != gPlayerJuggernaut) ? pPlayer->pwUpTime[kPwUpTwoGuns] : 0, nPowerActive[4] = 0; // guns akimbo
     nPowerActive[5] = pPlayer->pwUpTime[kPwUpShadowCloakUseless]; // shadow cloak
 
     // not in official maps
@@ -1560,7 +1568,7 @@ void viewDrawPowerUps(PLAYER* pPlayer)
     nPowerActive[11] = pPlayer->pwUpTime[kPwUpShrinkShroom]; // shrink shroom
 
     nPowerActive[12] = !gPowerupShowDivingSuit ? 0 : pPlayer->isUnderwater && packItemActive(pPlayer, kPackDivingSuit) ? pPlayer->pwUpTime[kPwUpDivingSuit] : 0; // diving suit supply
-    nPowerActive[13] = !gPowerupShowOxygenSupply ? 0 : pPlayer->isUnderwater && !packItemActive(pPlayer, kPackDivingSuit) ? ClipLow(pPlayer->underwaterTime, 1) : 0; // underwater air supply
+    nPowerActive[13] = gPowerupShowOxygenSupply != 1 ? 0 : pPlayer->isUnderwater && !packItemActive(pPlayer, kPackDivingSuit) ? ClipLow(pPlayer->underwaterTime, 1) : 0; // underwater air supply
 
     int nSortPower[kPowerUps+1];
     unsigned char nSortIndex[kPowerUps+1];
@@ -2189,6 +2197,26 @@ void viewDrawCtfHud(ClockTicks arg)
     flashTeamScore(arg, 1, true);
 }
 
+void viewDrawJuggernaut(void)
+{
+    if (!((gPlayerJuggernaut >= 0) && (gPlayerJuggernaut < kMaxPlayers)) || gGameMenuMgr.m_bActive)
+        return;
+
+    int nY = 40;
+    if (gGameOptions.nGameType != kGameTypeSinglePlayer) // offset for multiplayer stats bar
+    {
+        for (int nRows = (gNetPlayers - 1) / 4; nRows >= 0; nRows--)
+        {
+            nY += 5;
+        }
+    }
+    char buffer[128] = "";
+    int nPal = playerColorPalMessage(gPlayer[gPlayerJuggernaut].teamId);
+    sprintf(buffer, "Juggernaut: %s", gProfile[gPlayerJuggernaut].name);
+    COLORSTR colorStr = {nPal, 0, {12, 127}, {-1, -1}};
+    viewDrawText(3, buffer, 160, nY, -128, 0, 1, 1, 0, 0, &colorStr);
+}
+
 void viewDrawKillMsg(ClockTicks arg)
 {
     if (gKillMsg == 0)
@@ -2220,10 +2248,10 @@ void viewDrawKillMsg(ClockTicks arg)
         playerResetKillMsg();
 }
 
-void viewDrawMultiKill(ClockTicks arg)
+char viewDrawMultiKill(ClockTicks arg)
 {
     if (gMultiKill == 0)
-        return;
+        return 0;
 
     int nY = 40;
     if (gGameOptions.nGameType != kGameTypeSinglePlayer) // offset for multiplayer stats bar
@@ -2237,13 +2265,14 @@ void viewDrawMultiKill(ClockTicks arg)
     if (bShowMultiKill)
     {
         const int nPalette = playerColorPalMultiKill(gMe->teamId);
+        const int nKills = gMultiKillsFrags[gMe->nPlayer];
         if ((int)totalclock & 16) // flash multi kill message
-            return;
-        switch (gMultiKillsFrags[gMe->nPlayer])
+            return nKills > 1;
+        switch (nKills)
         {
             case 0:
             case 1:
-                break;
+                return 0;
             case 2:
                 viewDrawText(0, "Double Kill!", 160, nY, -128, nPalette, 1, 1);
                 break;
@@ -2257,19 +2286,21 @@ void viewDrawMultiKill(ClockTicks arg)
                 viewDrawText(0, "M O N S T E R  K I L L !!!", 160, nY, -128, nPalette, 1, 1);
                 break;
         }
+        return 1;
     }
     else if ((gAnnounceKillingSpreeTicks > 0) && (gAnnounceKillingSpreePlayer < kMaxPlayers)) // announce player's kill streak
     {
         const int nPalette = playerColorPalMultiKill(gPlayer[gAnnounceKillingSpreePlayer].teamId);
+        const int nKills = gMultiKillsFrags[gAnnounceKillingSpreePlayer];
         char buffer[128] = "";
-        switch (gMultiKillsFrags[gAnnounceKillingSpreePlayer])
+        switch (nKills)
         {
             case 0:
             case 1:
             case 2:
             case 3:
             case 4:
-                return;
+                return 0;
             case 5:
             case 6:
             case 7:
@@ -2314,7 +2345,9 @@ void viewDrawMultiKill(ClockTicks arg)
         gAnnounceKillingSpreeTicks = gAnnounceKillingSpreeTicks - arg;
         if (gAnnounceKillingSpreeTicks <= 0) // reset currently announced kill streak
             playerResetAnnounceKillingSpree();
+        return 1;
     }
+    return 0;
 }
 
 void viewDrawWinner(const char *pString, int nPal)
@@ -2451,6 +2484,8 @@ void UpdateStatusBar(ClockTicks arg)
 
         if (pPlayer->throwPower && pXSprite->health > 0)
             TileHGauge(2260, 124, 175-10, pPlayer->throwPower, 65536);
+        else if (!pPlayer->packItemTime && pPlayer->isUnderwater && (gPowerupShowOxygenSupply == 2) && pPlayer->underwaterTime && (pPlayer->underwaterTime < 1200))
+            TileHGauge(2260, 124, 175-10, int((float)ClipLow(pPlayer->underwaterTime, 1) * (65536.f / 1200.f)), 65536, 0, 65536, 10);
         else
             viewDrawPack(pPlayer, 166, 200-tilesiz[2201].y/2-30);
         viewDrawStats(pPlayer, 2-xscalestats, 140);
@@ -2462,6 +2497,8 @@ void UpdateStatusBar(ClockTicks arg)
     {
         if (pPlayer->throwPower && pXSprite->health > 0)
             TileHGauge(2260, 124, 175, pPlayer->throwPower, 65536);
+        else if (!pPlayer->packItemTime && pPlayer->isUnderwater && (gPowerupShowOxygenSupply == 2) && pPlayer->underwaterTime && (pPlayer->underwaterTime < 1200))
+            TileHGauge(2260, 124, 175, int((float)ClipLow(pPlayer->underwaterTime, 1) * (65536.f / 1200.f)), 65536, 0, 65536, 10);
         else
             viewDrawPack(pPlayer, 166, 200-tilesiz[2201].y/2);
     }
@@ -2644,6 +2681,8 @@ void UpdateStatusBar(ClockTicks arg)
         {
             TileHGauge(2260, 124, 175, pPlayer->throwPower, 65536);
         }
+        else if (pPlayer->isUnderwater && pPlayer->underwaterTime && (gPowerupShowOxygenSupply == 2) && (pPlayer->underwaterTime < 1200))
+            TileHGauge(2260, 124, 175, int((float)ClipLow(pPlayer->underwaterTime, 1) * (65536.f / 1200.f)), 65536, 0, 65536, 10);
         viewDrawStats(pPlayer, 2-xscalestats, 140-yscalestats);
         viewDrawDamage(pPlayer);
         viewDrawSpeed();
@@ -2668,7 +2707,10 @@ void UpdateStatusBar(ClockTicks arg)
         if (gPlayerRoundEnding) // let winner message override multikill message
             viewDrawWinner();
         else
-            viewDrawMultiKill(arg);
+        {
+            if (!viewDrawMultiKill(arg)) // if the multi-kill text space is not occupied
+                viewDrawJuggernaut();
+        }
     }
 
     if (gGameOptions.nGameType == kGameTypeTeams)
@@ -4183,6 +4225,19 @@ void viewProcessSprites(int32_t cX, int32_t cY, int32_t cZ, int32_t cA, int32_t 
                         }
                     }
                 }
+
+                if ((gPlayerJuggernaut >= 0) && (gGameOptions.nGameType == kGameTypeBloodBath) && (pPlayer->nPlayer == gPlayerJuggernaut)) { // if player is juggernaut, highlight red and make bigger by 150%
+                    int topnew, topold, bottomnew, bottomold;
+                    GetSpriteExtents(pTSprite, &topold, &bottomold);
+                    pTSprite->xrepeat += pTSprite->xrepeat>>1;
+                    pTSprite->yrepeat += pTSprite->yrepeat>>1;
+                    pTSprite->pal = 2;
+                    if (gSpriteHit[nXSprite].florhit) { // only do this if player is standing on ground
+                        GetSpriteExtents(pTSprite, &topnew, &bottomnew);
+                        if (bottomnew != bottomold) // align bottom of new tile to old tile
+                            pTSprite->z -= bottomnew - bottomold;
+                    }
+                }
             }
             
             if (nSprite != gView->pSprite->index || gViewPos != VIEWPOS_0 || (gMirrorDrawing && !VanillaMode())) {
@@ -5279,7 +5334,7 @@ RORHACK:
             newaspect_enable = 0;
         renderSetAspect(viewingRange, yxAspect);
 
-        if (gWeatherEffect)
+        if (gWeatherEffect && sectRangeIsFine(nSectnum))
         {
             gWeather.Process(cX, cY, cZ, fix16_to_int(cA), nSectnum, (int)gFrameClock, gView->pSprite->clipdist<<2, gGameOptions.uMapCRC);
             gWeather.Draw(cX, cY, cZ, fix16_to_int(cA), q16horiz + fix16_from_int(defaultHoriz) + deliriumPitchI, nSectnum, (int)gFrameClock, gInterpolate, gGameOptions.uMapCRC, !!(MIRRORMODE&1), !!(MIRRORMODE&2));

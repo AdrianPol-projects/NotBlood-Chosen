@@ -713,8 +713,10 @@ void StartLevel(GAMEOPTIONS *pOpt)
         pOpt->bWeaponImpulseLimit = gWeaponImpulseLimit;
         pOpt->nAmmoScale = gAmmoScale;
         pOpt->bSectorBehavior = gSectorBehavior;
-        pOpt->nHitscanProjectiles = gHitscanProjectiles;
+        pOpt->nEnemyHitscanProjectiles = gEnemyHitscanProjectiles;
+        pOpt->nPlayerHitscanProjectiles = gPlayerHitscanProjectiles;
         pOpt->nGoreBehavior = gGoreBehavior;
+        pOpt->nGoreCollision = gGoreCollision;
         pOpt->nPlayerSpeed = gPlayerModSpeed;
         pOpt->nPlayerWater = gPlayerModWaterOxygen;
         pOpt->nRandomizerMode = gRandomizerMode;
@@ -766,8 +768,10 @@ void StartLevel(GAMEOPTIONS *pOpt)
         pOpt->bWeaponImpulseLimit = gPacketStartGame.bWeaponImpulseLimit;
         pOpt->nAmmoScale = gPacketStartGame.nAmmoScale;
         pOpt->bSectorBehavior = gPacketStartGame.bSectorBehavior;
-        pOpt->nHitscanProjectiles = gPacketStartGame.nHitscanProjectiles;
+        pOpt->nEnemyHitscanProjectiles = gPacketStartGame.nEnemyHitscanProjectiles;
+        pOpt->nPlayerHitscanProjectiles = gPacketStartGame.nPlayerHitscanProjectiles;
         pOpt->nGoreBehavior = gPacketStartGame.nGoreBehavior;
+        pOpt->nGoreCollision = gPacketStartGame.nGoreCollision;
         pOpt->nPlayerSpeed = gPacketStartGame.nPlayerSpeed;
         pOpt->nPlayerWater = gPacketStartGame.nPlayerWater;
         pOpt->nRandomizerMode = gPacketStartGame.randomizerMode;
@@ -785,6 +789,7 @@ void StartLevel(GAMEOPTIONS *pOpt)
     {
         gBlueFlagDropped = false;
         gRedFlagDropped = false;
+        gPlayerJuggernaut = -1;
         gView = gMe;
         gViewIndex = myconnectindex;
         r_mirrormodemulti = 4; // set active flag
@@ -1288,6 +1293,13 @@ void ProcessFrame(void)
         gPlayer[i].input.q16turn = gFifoInput[gNetFifoTail&255][i].q16turn;
         gPlayer[i].input.strafe = gFifoInput[gNetFifoTail&255][i].strafe;
         gPlayer[i].input.q16mlook = gFifoInput[gNetFifoTail&255][i].q16mlook;
+        if (gGameOptions.uNetGameFlags&kNetGameFlagLagCompensation)
+        {
+            gPlayer[i].input.xoffset = gFifoInput[gNetFifoTail&255][i].xoffset;
+            gPlayer[i].input.yoffset = gFifoInput[gNetFifoTail&255][i].yoffset;
+        }
+        else
+            gPlayer[i].input.xoffset = gPlayer[i].input.yoffset = 0;
     }
     gNetFifoTail++;
     if (!(gFrame&7))
@@ -2413,6 +2425,8 @@ RESTART:
             ctrlGetInput();
             if (totalclock >= gNetFifoClock && ready2send)
             {
+                if ((numplayers > 1) && gGameStarted && (gGameOptions.uNetGameFlags&kNetGameFlagLagCompensation))
+                    viewGetPlayerPrediction(myconnectindex, &gInput);
                 do
                 {
                     if (!frameJustDrawn)

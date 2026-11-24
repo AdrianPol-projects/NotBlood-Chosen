@@ -113,7 +113,7 @@ char gMidNames[kMaxPlayers][MAXPLAYERNAME];  // saved players by connect index (
     X(keySettings) X(itemWeaponSettings) X(randomizerMode) X(episodeId) X(levelId) X(uNetGameFlags) \
     X(userMap) X(monsterQuantity) X(monsterHealth) X(monsterSpeed) X(bQuadDamagePowerup) X(nBeastVision) \
     X(nDamageInvul) X(nProjectileBehavior) X(bNapalmFalloff) X(nEnemyBehavior) X(bEnemyRandomTNT) \
-    X(nWeaponsVer) X(bWeaponImpulseLimit) X(nAmmoScale) X(bSectorBehavior) X(nHitscanProjectiles) \
+    X(nWeaponsVer) X(bWeaponImpulseLimit) X(nAmmoScale) X(bSectorBehavior) X(nEnemyHitscanProjectiles) X(nPlayerHitscanProjectiles) X(nGoreCollision) \
     X(nGoreBehavior) X(nPlayerSpeed) X(nPlayerWater) X(bFriendlyFire) X(bAutoTeams) X(nSpawnProtection) \
     X(nSpawnWeapon) X(uSpriteBannedFlags)
 
@@ -305,6 +305,7 @@ bool readTextSave(const char *pzPath, COOPSAVE *pSave)
         else if (!strcmp(pKey, "title")) Bstrncpyz(pSave->szTitle, pValue, sizeof(pSave->szTitle));
         else if (!strcmp(pKey, "userMapName")) Bstrncpyz(s.userMapName, pValue, sizeof(s.userMapName));
         else if (!strcmp(pKey, "szRandomizerSeed")) Bstrncpyz(s.szRandomizerSeed, pValue, sizeof(s.szRandomizerSeed));
+        else if (!strcmp(pKey, "nHitscanProjectiles")) s.nEnemyHitscanProjectiles = (short)strtol(pValue, NULL, 10); // saves from 1.3 and older
 #define READ_SETTING(f) else if (!strcmp(pKey, #f)) s.f = (decltype(s.f))strtoll(pValue, NULL, 10);
         COOP_SETTINGS(READ_SETTING)
 #undef READ_SETTING
