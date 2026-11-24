@@ -26,7 +26,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # one run per branch and kind: a map editor release doesn't cancel an Android build
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.only || 'push' }}
   cancel-in-progress: true
 
 env:
