@@ -39,6 +39,41 @@ expect(w.st.sector === 1, 'jumps up a 340 step');
 const tris = V.triangulate(M.cleanPoly([[0, 0], [2048, 0], [2048, 2048], [1024, 2048], [1024, 1024], [0, 1024]]));
 expect(tris.length === 4, 'L-shaped room makes 4 triangles (' + tris.length + ')');
 const mesh = V.buildMesh(world({ floor: 128 }));
-expect(mesh.pos.length > 0 && mesh.pos.length % 9 === 0, 'mesh has whole triangles');
+expect(mesh.count > 0 && mesh.count % 3 === 0 && mesh.batches.every((b) => b.pos.length === b.count * 3 && b.uv.length === b.count * 2), 'mesh has whole triangles');
+
+// a door: shut it stops the player, used it opens and lets them through, then shuts again
+{
+  const p = world({ kind: 'door', wait: 10, speed: 5 });
+  p.rooms.push(Object.assign(M.newRoom(rect(4096, 512, 6144, 1536))));
+  const hts = V.Heights(p), w = V.Walker(p, M.buildMap(p, false), hts);
+  for (let i = 0; i < 90; i++) w.step(1, 0, false, false, 1);
+  expect(w.st.sector === 0, 'a shut door stops the player');
+  expect(w.useTarget() === 1, 'use reaches the door ahead');
+  hts.st[1].target = 1;
+  let t = 0;
+  for (let i = 0; i < 60; i++) { t += 16; V.runMovers(p, hts, w, t, 16); }
+  expect(hts.st[1].open === 1, 'the door opened');
+  for (let i = 0; i < 200; i++) { t += 16; V.runMovers(p, hts, w, t, 16); w.step(1, 0, false, false, 1); }
+  expect(w.st.sector === 2, 'walked through the open door into the room behind (' + w.st.sector + ')');
+  for (let i = 0; i < 200; i++) { t += 16; V.runMovers(p, hts, w, t, 16); }
+  expect(hts.st[1].open === 0, 'the door shut again after its wait');
+}
+// a lift: standing on it and using it lifts the player to the upper room
+{
+  const p = world({ kind: 'lift', rise: 600, wait: 0 });
+  p.rooms.push(Object.assign(M.newRoom(rect(4096, 512, 6144, 1536)), { floor: 600 }));
+  const hts = V.Heights(p), w = V.Walker(p, M.buildMap(p, false), hts);
+  for (let i = 0; i < 60; i++) w.step(1, 0, false, false, 1);
+  expect(w.st.sector === 1, 'walked onto the lift');
+  for (let i = 0; i < 200; i++) w.step(1, 0, false, false, 1);
+  expect(w.st.sector === 1, 'the upper room is out of reach before the lift goes up');
+  expect(w.useTarget() === 1, 'use on the lift it stands on');
+  hts.st[1].target = 1;
+  let t = 0;
+  for (let i = 0; i < 120; i++) { t += 16; V.runMovers(p, hts, w, t, 16); w.step(0, 0, false, false, 1); }
+  expect(Math.abs(w.st.z - 600) < 1, 'the lift carried the player up (z=' + Math.round(w.st.z) + ')');
+  for (let i = 0; i < 120; i++) w.step(1, 0, false, false, 1);
+  expect(w.st.sector === 2, 'stepped off the lift into the upper room');
+}
 console.log(failed ? failed + ' walk checks failed' : 'walk checks passed');
 process.exit(failed ? 1 : 0);

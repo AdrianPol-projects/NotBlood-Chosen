@@ -36,6 +36,21 @@ starts(p, [[512, 512], [3500, 3500], [5000, 1500], [1500, -1000], [5600, 5600]])
 for (const t of M.THINGS) if (!t.start) p.things.push({ type: t.type, x: 200 + (t.type * 37) % 3600, y: 200 + (t.type * 53) % 3600 });
 fs.writeFileSync(path.join(out, 'JOINED.MAP'), M.exportMap(p));
 
+// 3: a door, a lift, a secret room and enemies
+p = M.newProject(); p.name = 'FEATURES';
+add(p, rect(0, 0, 4096, 4096));
+add(p, rect(4096, 1536, 4352, 2560), { kind: 'door', doorPic: 302, key: 1, height: 1536 }); // door into the secret room
+add(p, rect(4352, 1024, 6144, 3072), { secret: true });
+add(p, rect(1024, -1024, 2048, 0), { kind: 'lift', rise: 768 });
+add(p, rect(1024, -3072, 2048, -1024), { floor: 768 });                                  // where the lift goes
+starts(p, [[512, 512], [3500, 3500]]);
+p.things.push({ type: 100, x: 2000, y: 2000 });
+for (const t of M.THINGS) if (t.enemy) p.things.push({ type: t.type, x: 300 + (t.type * 61) % 3400, y: 2600 + (t.type * 29) % 1300 });
+expect(!M.checkProject(p).some((x) => x.level === 'error'), 'features map has no errors: ' + JSON.stringify(M.checkProject(p)));
+fs.writeFileSync(path.join(out, 'FEATURES.MAP'), M.exportMap(p));
+const q = M.newProject(); q.rooms.push(Object.assign(M.newRoom(rect(0, 0, 512, 512)), { kind: 'door', secret: true }));
+expect(M.checkProject(q).some((x) => /secret/.test(x.text)), 'a secret door is refused');
+
 // checks that must refuse
 p = M.newProject();
 add(p, rect(0, 0, 1024, 1024));

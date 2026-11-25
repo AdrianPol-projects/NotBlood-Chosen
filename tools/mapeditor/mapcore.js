@@ -59,6 +59,31 @@
     { group: 'Keys', type: 103, name: 'Dagger key', pic: 2555, xr: 32, yr: 32 },
     { group: 'Keys', type: 104, name: 'Spider key', pic: 2556, xr: 32, yr: 32 },
     { group: 'Keys', type: 105, name: 'Moon key', pic: 2557, xr: 32, yr: 32 },
+    // enemies: picture, size and flags as in Blood's own levels (status 6: an enemy)
+    { group: 'Enemies', type: 201, name: 'Cultist (tommy gun)', pic: 2820, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 202, name: 'Cultist (shotgun)', pic: 2825, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 248, name: 'Cultist (TNT)', pic: 2820, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 247, name: 'Cultist (tesla)', pic: 2820, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 203, name: 'Axe zombie', pic: 1170, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 205, name: 'Axe zombie (in the ground)', pic: 3054, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 204, name: 'Butcher', pic: 1370, xr: 48, yr: 48, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 206, name: 'Flesh gargoyle', pic: 1470, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 207, name: 'Stone gargoyle', pic: 1470, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 210, name: 'Phantasm', pic: 3060, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 211, name: 'Hell hound', pic: 1270, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 212, name: 'Hand', pic: 1980, xr: 32, yr: 32, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 213, name: 'Brown spider', pic: 1920, xr: 16, yr: 16, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 214, name: 'Red spider', pic: 1925, xr: 24, yr: 24, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 215, name: 'Black spider', pic: 1935, xr: 32, yr: 32, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 216, name: 'Mother spider', pic: 1930, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 217, name: 'Gill beast', pic: 1570, xr: 48, yr: 48, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 218, name: 'Bone eel', pic: 1870, xr: 32, yr: 32, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 219, name: 'Bat', pic: 1948, xr: 32, yr: 32, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 220, name: 'Rat', pic: 1745, xr: 24, yr: 24, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 221, name: 'Green pod', pic: 1792, xr: 32, yr: 32, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 223, name: 'Fire pod', pic: 1792, xr: 48, yr: 48, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 227, name: 'Cerberus', pic: 2680, xr: 64, yr: 64, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 245, name: 'Innocent', pic: 3798, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
   ];
   const THING_BY_TYPE = {};
   for (const t of THINGS) THING_BY_TYPE[t.type] = t;
@@ -69,7 +94,9 @@
     floor: [270, 287, 253, 448, 568, 255, 438, 274],
     ceiling: [568, 449, 255, 448, 556],
     sky: [3678, 2500],
+    door: [5, 302, 2453, 495, 195, 22],
   };
+  const KEY_NAMES = ['none', 'skull key', 'eye key', 'fire key', 'dagger key', 'spider key', 'moon key'];
 
   const Z_PER_UNIT = 16; // Build: 1 unit across = 16 units up and down
   const LIMITS = { sectors: 4096, walls: 16384, sprites: 16384, tiles: 30720, coord: 0x7ffff };
@@ -82,11 +109,26 @@
       floorPic: 270, ceilPic: 568, wallPic: 449,
       sky: false,        // open sky instead of a ceiling
       light: 0,          // 0 normal, up to 30 darker; negative brighter (Blood's shade)
+      kind: 'room',      // 'room', 'door' (opens upwards), 'lift' (floor goes up)
+      secret: false,     // walking in counts as a secret found
+      doorPic: 302,      // door: the texture on its faces (the neighbours' walls towards it)
+      speed: 10,         // door/lift: tenths of a second to open or rise
+      wait: 30,          // door/lift: tenths of a second before it goes back (0: stays)
+      key: 0,            // door: the key it needs (KEY_NAMES)
+      rise: 512,         // lift: how far the floor goes up, in map units
     };
   }
 
   function newProject() {
-    return { version: 1, name: 'MYMAP', rooms: [], things: [], visibility: 0, skyPic: 3678 };
+    return { version: 2, name: 'MYMAP', rooms: [], things: [], visibility: 800, skyPic: 3678 };
+  }
+
+  // rooms from older projects get the fields added since
+  function upgradeProject(prj) {
+    const base = newRoom([]);
+    prj.rooms.forEach((r) => { for (const k in base) if (r[k] === undefined && k !== 'pts') r[k] = base[k]; });
+    if (prj.visibility === undefined) prj.visibility = 0;
+    return prj;
   }
 
   // ---- geometry -------------------------------------------------------------------------------
@@ -223,11 +265,26 @@
       const why = roomProblem(r.pts, prj.rooms, i);
       if (why) err('Room ' + (i + 1) + ': ' + why.toLowerCase() + '.');
       if (r.height < 64) err('Room ' + (i + 1) + ' is too low (at least 64 high).');
+      const name = (r.kind === 'door' ? 'Door ' : r.kind === 'lift' ? 'Lift ' : 'Room ') + (i + 1);
+      if (r.secret && r.kind !== 'room') err(name + ': only a normal room can be a secret (put the secret room behind the door).');
+      if (r.kind === 'lift' && !(r.rise > 0 && r.rise < r.height - 64)) err(name + ': it has to rise by more than 0 and less than its height.');
+      if (r.kind === 'door' && !(r.key >= 0 && r.key <= 6)) err(name + ': unknown key.');
+      if (r.kind !== 'room' && !(r.speed > 0 && r.speed < 4096 && r.wait >= 0 && r.wait < 4096)) err(name + ': speed and wait have to be between 1 and 4095.');
     });
+    if (prj.rooms.length && !roomProblemsAny(prj)) {
+      const m = buildMap(prj, false);
+      prj.rooms.forEach((r, i) => {
+        if (r.kind === 'room') return;
+        const touches = m.walls.some((w) => w.sector === i && w.nextsector >= 0);
+        if (!touches) out.push({ level: 'warning', text: (r.kind === 'door' ? 'Door ' : 'Lift ') + (i + 1) + ' touches no other room, so nobody can get to it.' });
+      });
+    }
     let sp = 0, dm = 0;
     prj.things.forEach((t, i) => {
       if (!THING_BY_TYPE[t.type]) err('Thing ' + (i + 1) + ' has an unknown type.');
       if (roomAt([t.x, t.y], prj.rooms) < 0) err((THING_BY_TYPE[t.type] || { name: 'Thing' }).name + ' ' + (i + 1) + ' is not inside a room.');
+      const tr = roomAt([t.x, t.y], prj.rooms);
+      if (tr >= 0 && prj.rooms[tr].kind === 'door') warn((THING_BY_TYPE[t.type] || { name: 'Thing' }).name + ' ' + (i + 1) + ' is in a door, which is closed at the start.');
       if (t.type === 1) sp++;
       if (t.type === 2) dm++;
     });
@@ -237,6 +294,10 @@
     const n = buildMap(prj, true);
     if (n.sectors > LIMITS.sectors || n.walls > LIMITS.walls || n.sprites > LIMITS.sprites) err('The map is too big for the game.');
     return out;
+  }
+
+  function roomProblemsAny(prj) {
+    return prj.rooms.some((r, i) => roomProblem(r.pts, prj.rooms, i));
   }
 
   // ---- the .MAP file ---------------------------------------------------------------------------
@@ -280,20 +341,64 @@
     const b = new Uint8Array(size);
     let pos = 0;
     for (const [value, bits] of fields) {
+      const v = bits === 32 ? value >>> 0 : value & (Math.pow(2, bits) - 1); // negative numbers as two's complement
       for (let i = 0; i < bits; i++, pos++) {
-        if (Math.floor(value / Math.pow(2, i)) % 2) b[pos >> 3] |= 1 << (pos & 7);
+        if (Math.floor(v / Math.pow(2, i)) % 2) b[pos >> 3] |= 1 << (pos & 7);
       }
     }
     return b;
   }
 
-  function xsprite(nSprite, data1) {
+  function xsprite(nSprite, data1, x) {
     // up to data1 as dbSaveMap() writes them; everything after it stays 0
+    x = x || {};
     return bitPack(56, [
-      [nSprite, 14], [0, 1], [0, 17], [0, 10], [0, 10], [0, 8], [0, 1], [0, 1], [0, 2], [0, 12], [0, 12], [0, 1], [0, 1],
+      [nSprite, 14], [0, 1], [0, 17], [x.txID || 0, 10], [x.rxID || 0, 10], [x.command || 0, 8], [x.triggerOn || 0, 1], [0, 1], [0, 2], [0, 12], [0, 12], [0, 1], [0, 1],
       [0, 2], [0, 2], [0, 1], [0, 1], [0, 8], [0, 1], [0, 1], [0, 1], [0, 3], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1],
       [0, 1], [0, 2], [0, 5], [0, 1], [0, 1], [0, 1], [0, 1], [data1 & 0xffff, 16],
     ]);
+  }
+
+  // a sector's extra data (XSECTOR), in dbSaveMap()'s order; everything not given stays 0
+  function xsector(nSector, x) {
+    const f = (k, bits) => [x[k] || 0, bits];
+    return bitPack(60, [
+      [nSector, 14], f('state', 1), f('busy', 17), f('data', 16), f('txID', 10), f('busyWaveA', 3), f('busyWaveB', 3), f('rxID', 10),
+      f('command', 8), f('triggerOn', 1), f('triggerOff', 1), f('busyTimeA', 12), f('waitTimeA', 12), f('restState', 1), f('interruptable', 1),
+      f('amplitude', 8), f('freq', 8), f('reTriggerA', 1), f('reTriggerB', 1), f('phase', 8), f('wave', 4), f('shadeAlways', 1),
+      f('shadeFloor', 1), f('shadeCeiling', 1), f('shadeWalls', 1), f('shade', 8), f('panAlways', 1), f('panFloor', 1), f('panCeiling', 1),
+      f('Drag', 1), f('Underwater', 1), f('Depth', 3), f('panVel', 8), f('panAngle', 11), f('unused1', 1), f('decoupled', 1),
+      f('triggerOnce', 1), f('isTriggered', 1), f('Key', 3), f('Push', 1), f('Vector', 1), f('Reserved', 1), f('Enter', 1), f('Exit', 1),
+      f('Wallpush', 1), f('color', 1), f('unused2', 1), f('busyTimeB', 12), f('waitTimeB', 12), f('stopOn', 1), f('stopOff', 1),
+      f('ceilpal', 4), f('offCeilZ', 32), f('onCeilZ', 32), f('offFloorZ', 32), f('onFloorZ', 32),
+    ]);
+  }
+
+  // what makes a room a door, a lift or a secret (null: a plain room), and the heights it starts at
+  function sectorExtra(r, i) {
+    const floorz = -(r.floor * Z_PER_UNIT), ceilz = floorz - r.height * Z_PER_UNIT;
+    if (r.kind === 'door') {
+      // Blood's "Z motion" sector: shut (ceiling on the floor) until a player uses its walls
+      return {
+        type: 600, ceilz: floorz, floorz,
+        x: { busyTimeA: r.speed, busyTimeB: r.speed, waitTimeA: r.wait, reTriggerA: r.wait ? 1 : 0, interruptable: 1,
+          Wallpush: 1, Key: r.key | 0, offCeilZ: floorz, onCeilZ: ceilz, offFloorZ: floorz, onFloorZ: floorz },
+      };
+    }
+    if (r.kind === 'lift') {
+      // a Z motion sector whose floor goes up: use it while standing on it, or use its side from below
+      const up = floorz - r.rise * Z_PER_UNIT;
+      return {
+        type: 600, ceilz, floorz,
+        x: { busyTimeA: r.speed, busyTimeB: r.speed, waitTimeA: r.wait, reTriggerA: r.wait ? 1 : 0, interruptable: 1,
+          Push: 1, Wallpush: 1, offCeilZ: ceilz, onCeilZ: ceilz, offFloorZ: floorz, onFloorZ: up },
+      };
+    }
+    if (r.secret) {
+      // like Blood's own: entering once sends "secret 0 found" (channel 2, command 64)
+      return { type: 0, ceilz, floorz, x: { Enter: 1, triggerOn: 1, triggerOnce: 1, txID: 2, command: 64 } };
+    }
+    return { type: 0, ceilz, floorz, x: null };
   }
 
   const CRC_TABLE = (() => {
@@ -354,7 +459,7 @@
       const info = THING_BY_TYPE[t.type];
       const s = roomAt([t.x, t.y], rooms);
       const r = rooms[s];
-      return { t, info, sector: s, z: -(r.floor * Z_PER_UNIT) - (info.dz || 0) };
+      return { t, info, sector: s, z: r ? -(r.floor * Z_PER_UNIT) - ((info && info.dz) || 0) : 0 };
     });
     return { sectors, walls, sprites };
   }
@@ -366,6 +471,11 @@
     const { sectors, walls, sprites } = buildMap(prj, false);
     const rev = 1;
     const out = new Out();
+    // the level's number of secrets: an invisible sprite that tells the game at the start
+    // (listens on channel 7, "level start", and sends "64 + count" to channel 1, like Blood's maps)
+    const nSecrets = prj.rooms.filter((r) => r.secret).length;
+    const counter = nSecrets ? sprites.find((s) => s.t.type === 1) || sprites[0] : null;
+    const nSprites = sprites.length + (counter ? 1 : 0);
     out.bytes([0x42, 0x4c, 0x4d, 0x1a, 0x00, 0x07]); // "BLM\x1a", version 0x700
     // where the game puts a player when the map has no start (the first single player start)
     const start = sprites.find((s) => s.t.type === 1) || sprites[0];
@@ -377,7 +487,7 @@
       .u32(HEADER_NEW)                  // "song id": marks an encrypted v7 map
       .u8(2)                            // parallax type
       .i32(rev)
-      .i16(sectors.length).i16(walls.length).i16(sprites.length).done();
+      .i16(sectors.length).i16(walls.length).i16(nSprites).done();
     out.bytes(crypt(head, HEADER_NEW));
     const head2 = new Uint8Array(128);
     const name = 'NotBlood Chosen map editor';
@@ -391,9 +501,10 @@
     for (let i = 0; i < 16; i++) sky.i16(i);
     out.bytes(crypt(sky.done(), 32));
 
-    sectors.forEach((s) => {
+    let nExtra = 0;
+    sectors.forEach((s, i) => {
       const r = s.room;
-      const floorz = -(r.floor * Z_PER_UNIT), ceilz = floorz - r.height * Z_PER_UNIT;
+      const ex = sectorExtra(r, i), floorz = ex.floorz, ceilz = ex.ceilz;
       const shade = Math.max(-128, Math.min(127, r.light | 0));
       const rec = new Rec(40)
         .i16(s.wallptr).i16(s.wallnum).i32(ceilz).i32(floorz)
@@ -401,17 +512,21 @@
         .i16(r.sky ? prj.skyPic : r.ceilPic).i16(0).i8(shade).u8(0).u8(0).u8(0)
         .i16(r.floorPic).i16(0).i8(shade).u8(0).u8(0).u8(0)
         .u8(0).u8(0)                                        // visibility, fogpal
-        .i16(0).i16(0).i16(-1);                             // type, hitag, extra (none)
+        .i16(ex.type).i16(0).i16(ex.x ? ++nExtra : -1);     // type, hitag, extra
       out.bytes(crypt(rec.done(), rev * 40));
+      if (ex.x) out.bytes(xsector(i, ex.x));
     });
     walls.forEach((w) => {
       const r = sectors[w.sector].room;
       const o = walls[w.point2];
       const len = Math.hypot(o.x - w.x, o.y - w.y);
+      // the face of a door is the wall of the room in front of it
+      const next = w.nextsector >= 0 ? sectors[w.nextsector].room : null;
+      const pic = next && next.kind === 'door' ? next.doorPic : r.wallPic;
       const rec = new Rec(32)
         .i32(w.x).i32(w.y).i16(w.point2).i16(w.nextwall).i16(w.nextsector)
         .u16(0)                                             // cstat
-        .i16(r.wallPic).i16(r.wallPic)                      // picnum, overpicnum
+        .i16(pic).i16(pic)                                  // picnum, overpicnum
         .i8(Math.max(-128, Math.min(127, r.light | 0))).u8(0)
         .u8(Math.max(1, Math.min(255, Math.round(len / 128)))).u8(8) // x and y repeat
         .u8(0).u8(0)                                        // panning
@@ -437,6 +552,17 @@
       out.bytes(crypt(rec.done(), (rev * 44) | HEADER_NEW));
       out.bytes(xsprite(i, data1));
     });
+    if (counter) {
+      const rec = new Rec(44)
+        .i32(counter.t.x).i32(counter.t.y).i32(counter.z)
+        .u16(0x8000).i16(0).i8(0).u8(0).u8(0).u8(0)         // invisible
+        .u8(16).u8(16).i8(0).i8(0)
+        .i16(counter.sector).i16(0).i16(0)
+        .i16(-1).i16(0).i16(0).i16(0)
+        .i16(0).i16(0).i16(sprites.length + 1);
+      out.bytes(crypt(rec.done(), (rev * 44) | HEADER_NEW));
+      out.bytes(xsprite(sprites.length, 0, { rxID: 7, txID: 1, command: 64 + Math.min(nSecrets, 191), triggerOn: 1 }));
+    }
     const body = out.result();
     const crc = crc32(body, body.length);
     const full = new Uint8Array(body.length + 4);
@@ -451,10 +577,10 @@
     return (s || 'MYMAP') + '.MAP';
   }
 
-  const VERSION = '0.2';
+  const VERSION = '0.3';
 
   const api = {
-    VERSION, THINGS, THING_BY_TYPE, COMMON_TILES, Z_PER_UNIT, LIMITS,
+    VERSION, THINGS, KEY_NAMES, upgradeProject, sectorExtra, THING_BY_TYPE, COMMON_TILES, Z_PER_UNIT, LIMITS,
     newRoom, newProject, cleanPoly, roomProblem, pointInPoly, roomAt, area2, centroidInside,
     checkProject, buildMap, exportMap, mapFileName, crc32,
   };

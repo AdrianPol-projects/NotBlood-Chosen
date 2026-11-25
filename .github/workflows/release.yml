@@ -306,6 +306,7 @@ jobs:
           node tools/mapeditor/test_mapcore.js /tmp/maps
           python3 tools/mapeditor/check_structure.py /tmp/maps/*.MAP
           node tools/mapeditor/test_walk.js
+          node tools/mapeditor/test_gamefiles.js
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

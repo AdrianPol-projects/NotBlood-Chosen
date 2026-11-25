@@ -47,6 +47,19 @@ h3 { margin: 2px 0 6px; font-size: 16px; color: var(--accent2); }
 #help .box { max-width: 640px; margin: 20px auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
 #help li { margin: 4px 0; }
 small { color: var(--dim); }
+#tiles { position: fixed; inset: 0; z-index: 9; background: #000e; display: none; flex-direction: column; }
+#tiles.open { display: flex; }
+#tiles .bar { display: flex; gap: 6px; align-items: center; padding: 8px; padding-top: max(8px, env(safe-area-inset-top)); }
+#tiles .grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; padding: 8px; align-content: start; }
+#tiles .grid button { padding: 2px; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--dim); }
+#tiles canvas { width: 64px; height: 64px; image-rendering: pixelated; background: #000; }
+.tileprev { width: 40px; height: 40px; image-rendering: pixelated; background: #000; border-radius: 4px; vertical-align: middle; }
+.picrow { display: flex; gap: 6px; align-items: center; }
+.picrow button { flex: 0 0 auto; }
+.v3d-use { position: absolute; right: 16px; display: none; width: 76px; height: 56px; border-radius: 16px; background: #0008; bottom: 176px; }
+#v3d.walking .v3d-use { display: block; }
+.v3d-msg { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); color: #f0a24a; font-weight: 700; font-size: 20px; text-shadow: 0 2px 4px #000; opacity: 0; transition: opacity .3s; pointer-events: none; text-align: center; }
+.v3d-msg.show { opacity: 1; }
 #v3d { position: fixed; inset: 0; z-index: 8; background: #000; display: none; }
 #v3d.open { display: block; }
 #v3d canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
@@ -92,10 +105,13 @@ small { color: var(--dim); }
   <button id="newBtn">New map</button>
   <button id="saveBtn">Save project (.json)</button>
   <button id="openBtn">Open project (.json)</button>
+  <button id="artBtn">Blood files for textures…</button>
+  <button id="mapSetBtn">Map settings</button>
   <label class="row" style="margin:0"><span>Grid</span>
     <select id="gridSel"><option>64</option><option>128</option><option selected>256</option><option>512</option><option>1024</option></select></label>
   <button id="helpBtn">Help</button>
   <input id="fileIn" type="file" accept=".json,application/json" hidden>
+  <input id="artIn" type="file" multiple hidden>
 </div>
 <div id="help"><div class="box">
   <h3>Blood Map Maker</h3>
@@ -105,7 +121,9 @@ small { color: var(--dim); }
     <li>Draw rooms <b>touching</b> each other to join them: where their edges meet you can walk through. Rooms can't overlap.</li>
     <li><b>Select</b> a room to set its floor height, ceiling height, textures, light and sky. A small floor difference is a step, a big one needs a jump.</li>
     <li><b>3D / Walk</b>: look at the map from above, or walk through it from the single player start to try steps, openings and heights (sizes are close to Blood's, not exact).</li>
-    <li><b>+ Thing</b>: pick what to place (starts, weapons, ammo, health, armor, power-ups, keys) and tap in a room. Select a start to turn it.</li>
+    <li><b>Doors, lifts, secrets</b>: select a room and change <i>This is</i>. A door is a thin room between two rooms; a lift raises its floor; a secret room counts as a secret when the player walks in.</li>
+    <li><b>Real textures</b>: ☰ → <i>Blood files for textures</i> and pick TILES000–017.ART and BLOOD.RFF from your game folder. They stay on your device.</li>
+    <li><b>+ Thing</b>: pick what to place (starts, weapons, ammo, health, armor, power-ups, keys, enemies) and tap in a room. Select a start to turn it.</li>
     <li>A map needs a <b>single player start</b>. Bloodbath uses the <b>bloodbath starts</b> (put 8, one per player); co-op uses one single player start per player.</li>
     <li>☰ → <b>Save .MAP for the game</b>. Put the file in the game folder (Android: the <i>NotBlood</i> folder of the main storage) and pick it under <i>&lt; USER MAP &gt;</i> when you choose an episode, or MULTIPLAYER → USER MAP. In online games the others get the map from the server by themselves.</li>
   </ol>
@@ -113,8 +131,10 @@ small { color: var(--dim); }
   <div class="btns"><button id="helpClose" class="on">Got it</button></div>
 </div></div>
 <div id="toast"></div>
+<div id="tiles"><div class="bar"><button id="tilePrev" class="small">◀</button><input id="tileGo" type="number" min="0" max="30719" placeholder="Tile number" style="flex:1"><button id="tileNext" class="small">▶</button><button id="tileClose" class="small on">Cancel</button></div><div class="grid" id="tileGrid"></div></div>
 <div id="v3d"></div>
 <script src="mapcore.js"></script>
+<script src="gamefiles.js"></script>
 <script src="view3d.js"></script>
 <script>
 (function () {
@@ -124,7 +144,7 @@ small { color: var(--dim); }
   const cv = $('cv'), ctx = cv.getContext('2d');
   const STORE = 'bloodmapmaker.project';
 
-  let prj = load() || M.newProject();
+  let prj = M.upgradeProject(load() || M.newProject());
   let tool = 'rect', grid = 256;
   let view = { x: 0, y: 0, scale: 0.08 }; // map units -> css px
   let sel = null; // {kind:'room'|'thing', i}
@@ -166,7 +186,7 @@ small { color: var(--dim); }
     const hue = 20 - h * 40, light = 22 + h * 10;
     return 'hsla(' + hue + ',55%,' + light + '%,' + alpha + ')';
   }
-  const THING_MARK = { Starts: '#6fbf73', Weapons: '#f0a24a', Ammo: '#d9c36a', Health: '#ef5b4b', Armor: '#6fa8dc', 'Power-ups': '#c27ba0', Keys: '#ffffff' };
+  const THING_MARK = { Starts: '#6fbf73', Weapons: '#f0a24a', Ammo: '#d9c36a', Health: '#ef5b4b', Armor: '#6fa8dc', 'Power-ups': '#c27ba0', Keys: '#ffffff', Enemies: '#d33' };
 
   function draw() {
     const w = W(), h = H();
@@ -191,8 +211,14 @@ small { color: var(--dim); }
       ctx.beginPath();
       r.pts.forEach((p, k) => { const s = toScreen(p); k ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); });
       ctx.closePath();
-      ctx.fillStyle = r.sky ? 'hsla(210,35%,22%,.85)' : roomColor(r, 0.85);
+      ctx.fillStyle = r.kind === 'door' ? 'hsla(30,60%,30%,.9)' : r.kind === 'lift' ? 'hsla(190,40%,25%,.9)' : r.sky ? 'hsla(210,35%,22%,.85)' : roomColor(r, 0.85);
       ctx.fill();
+      if (r.kind !== 'room' || r.secret) { // hatching
+        ctx.save(); ctx.clip();
+        ctx.strokeStyle = r.secret ? '#c27ba055' : '#ffffff22'; ctx.lineWidth = 1;
+        for (let k = -h; k < w + h; k += 10) { ctx.beginPath(); ctx.moveTo(k, 0); ctx.lineTo(k + h, h); ctx.stroke(); }
+        ctx.restore();
+      }
       const isSel = sel && sel.kind === 'room' && sel.i === i;
       ctx.lineWidth = isSel ? 3 : 1.5;
       ctx.strokeStyle = isSel ? '#f0a24a' : '#c9a49a';
@@ -201,7 +227,8 @@ small { color: var(--dim); }
       if (c && view.scale > 0.03) {
         const s = toScreen(c);
         ctx.fillStyle = '#eee2dcb0'; ctx.font = '12px system-ui'; ctx.textAlign = 'center';
-        ctx.fillText((i + 1) + (r.sky ? ' sky' : '') + (r.floor ? ' ▲' + r.floor : ''), s[0], s[1]);
+        const tag = r.kind === 'door' ? ' DOOR' + (r.key ? ' 🔑' : '') : r.kind === 'lift' ? ' LIFT ↑' + r.rise : '';
+        ctx.fillText((i + 1) + tag + (r.secret ? ' secret' : '') + (r.sky ? ' sky' : '') + (r.floor ? ' ▲' + r.floor : ''), s[0], s[1]);
       }
     });
     // openings between rooms
@@ -222,7 +249,7 @@ small { color: var(--dim); }
       if (info.start) { counts[t.type]++; label = (t.type === 1 ? 'S' : 'B') + counts[t.type]; }
       ctx.fillStyle = '#000'; ctx.font = 'bold ' + Math.round(r * 0.95) + 'px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(label, s[0], s[1] + 0.5); ctx.textBaseline = 'alphabetic';
-      if (info.start) {
+      if (info.start || info.enemy) {
         const a = ((t.ang || 0) / 2048) * Math.PI * 2;
         ctx.strokeStyle = '#6fbf73'; ctx.lineWidth = 2; ctx.beginPath();
         ctx.moveTo(s[0] + Math.cos(a) * r, s[1] + Math.sin(a) * r); ctx.lineTo(s[0] + Math.cos(a) * r * 2.2, s[1] + Math.sin(a) * r * 2.2); ctx.stroke();
@@ -279,43 +306,121 @@ small { color: var(--dim); }
     return vals.map((v) => '<option' + (v === cur ? ' selected' : '') + '>' + v + '</option>').join('') + '<option value="other">other…</option>';
   }
 
+  // a texture field: a picture of the tile (with the player's Blood files), its number, and a picker
+  function picField(id, label, cur) {
+    return '<div class="row"><label>' + label + '</label><div class="picrow"><canvas class="tileprev" id="' + id + 'Img" width="40" height="40"></canvas>'
+      + '<input id="' + id + '" type="number" min="0" max="30719" value="' + cur + '" style="flex:1"><button id="' + id + 'Pick" class="small">Pick</button></div></div>';
+  }
+  function hookPic(id, obj, f, list, after) {
+    const show = () => drawTile($(id + 'Img'), obj[f]);
+    show();
+    const set = (v) => {
+      v = parseInt(v, 10);
+      if (!(v >= 0 && v < 30720)) { toast('Tile numbers go from 0 to 30719'); $(id).value = obj[f]; return; }
+      snapshot(); obj[f] = v; $(id).value = v; show(); changed(); if (after) after();
+    };
+    $(id).addEventListener('change', (e) => set(e.target.value));
+    $(id + 'Pick').onclick = () => openTiles(obj[f], list, set);
+  }
+  function drawTile(cv, n) {
+    if (!cv) return;
+    const c = cv.getContext('2d');
+    c.clearRect(0, 0, cv.width, cv.height);
+    const img = window.GameFiles && window.GameFiles.tileImage(n, 128);
+    if (!img) { c.fillStyle = '#555'; c.font = '10px system-ui'; c.textAlign = 'center'; c.fillText(n, cv.width / 2, cv.height / 2 + 3); return; }
+    const tmp = document.createElement('canvas'); tmp.width = img.width; tmp.height = img.height; tmp.getContext('2d').putImageData(img, 0, 0);
+    const k = Math.min(cv.width / img.width, cv.height / img.height);
+    c.imageSmoothingEnabled = false;
+    c.drawImage(tmp, (cv.width - img.width * k) / 2, (cv.height - img.height * k) / 2, img.width * k, img.height * k);
+  }
+
+  // the tile picker: Blood's tiles as pictures (or numbers without the files), the common ones first
+  let tilePage = 0, tileSet = null, tileList = [];
+  function openTiles(cur, common, set) {
+    tileSet = set; tileList = common || [];
+    tilePage = common && common.includes(cur) ? -1 : Math.floor(cur / 60);
+    $('tiles').classList.add('open'); fillTiles();
+  }
+  function fillTiles() {
+    const g = $('tileGrid'); g.innerHTML = '';
+    const nums = tilePage < 0 ? tileList : Array.from({ length: 60 }, (_, k) => tilePage * 60 + k).filter((n) => n < 30720);
+    const have = window.GameFiles && window.GameFiles.tileCount() > 0;
+    for (const n of nums) {
+      if (have && tilePage >= 0 && !window.GameFiles.tile(n)) continue;
+      const b = document.createElement('button');
+      const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64; b.appendChild(cv);
+      b.appendChild(document.createTextNode(n));
+      b.onclick = () => { $('tiles').classList.remove('open'); tileSet(n); };
+      g.appendChild(b); drawTile(cv, n);
+    }
+    if (!g.children.length) g.innerHTML = '<p style="color:var(--dim)">No tiles here. ' + (have ? 'Try the arrows.' : 'Load your Blood files (☰) to see the pictures.') + '</p>';
+    $('tileGo').placeholder = tilePage < 0 ? 'Common ones; or a number' : 'Tiles ' + tilePage * 60 + '–' + (tilePage * 60 + 59);
+  }
+  $('tilePrev').onclick = () => { tilePage = Math.max(-1, tilePage - 1); fillTiles(); };
+  $('tileNext').onclick = () => { tilePage = Math.min(511, tilePage + 1); fillTiles(); };
+  $('tileGo').onchange = (e) => { const n = parseInt(e.target.value, 10); if (n >= 0 && n < 30720) { tilePage = Math.floor(n / 60); fillTiles(); } };
+  $('tileClose').onclick = () => $('tiles').classList.remove('open');
+
   function roomPanel(i) {
     const r = prj.rooms[i];
-    openSheet('<h3>Room ' + (i + 1) + '</h3>'
+    const opt = (v, n, cur) => '<option value="' + v + '"' + (String(cur) === String(v) ? ' selected' : '') + '>' + n + '</option>';
+    const title = r.kind === 'door' ? 'Door ' : r.kind === 'lift' ? 'Lift ' : 'Room ';
+    openSheet('<h3>' + title + (i + 1) + '</h3>'
+      + '<div class="row"><label>This is</label><select id="pKind">' + opt('room', 'a room', r.kind) + opt('door', 'a door (opens up when used)', r.kind) + opt('lift', 'a lift (floor goes up when used)', r.kind) + '</select></div>'
+      + (r.kind === 'room' ? '<div class="row"><label>Secret</label><select id="pSecret">' + opt(0, 'No', +r.secret) + opt(1, 'Yes: walking in finds a secret', +r.secret) + '</select></div>' : '')
       + '<div class="row"><label>Floor height</label><input id="pFloor" type="number" step="16" value="' + r.floor + '"></div>'
-      + '<div class="row"><label>Room height</label><input id="pHeight" type="number" step="64" min="64" value="' + r.height + '"></div>'
-      + '<div class="row"><label>Sky (no ceiling)</label><select id="pSky"><option value="0">No</option><option value="1"' + (r.sky ? ' selected' : '') + '>Yes</option></select></div>'
-      + '<div class="row"><label>Light</label><select id="pLight">' + [[-8, 'Bright'], [0, 'Normal'], [8, 'Dim'], [16, 'Dark'], [24, 'Very dark']].map(([v, n]) => '<option value="' + v + '"' + (r.light === v ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div>'
-      + '<div class="row"><label>Floor texture</label><select id="pFloorPic">' + tileOptions(M.COMMON_TILES.floor, r.floorPic) + '</select></div>'
-      + '<div class="row"><label>Ceiling texture</label><select id="pCeilPic">' + tileOptions(M.COMMON_TILES.ceiling, r.ceilPic) + '</select></div>'
-      + '<div class="row"><label>Wall texture</label><select id="pWallPic">' + tileOptions(M.COMMON_TILES.wall, r.wallPic) + '</select></div>'
-      + '<div class="btns"><button id="pCopy" class="small">Use for new rooms</button><button id="pDel" class="small">Delete room</button><button id="pClose" class="small on">Done</button></div>'
-      + '<p><small>Heights are in map units (a room is usually 1536–2560 high). Up is more.</small></p>');
-    const num = (id, f, min) => $(id).addEventListener('change', (e) => { snapshot(); r[f] = Math.max(min, parseInt(e.target.value, 10) || 0); changed(); });
-    num('pFloor', 'floor', -8192); num('pHeight', 'height', 64);
-    $('pSky').addEventListener('change', (e) => { snapshot(); r.sky = e.target.value === '1'; changed(); });
-    $('pLight').addEventListener('change', (e) => { snapshot(); r.light = parseInt(e.target.value, 10); changed(); });
-    const pic = (id, f) => $(id).addEventListener('change', (e) => {
-      let v = e.target.value;
-      if (v === 'other') { v = prompt('Tile number (0-30719)', r[f]); if (v === null) { roomPanel(i); return; } }
-      v = parseInt(v, 10);
-      if (!(v >= 0 && v < 30720)) { toast('Tile numbers go from 0 to 30719'); roomPanel(i); return; }
-      snapshot(); r[f] = v; changed(); roomPanel(i);
-    });
-    pic('pFloorPic', 'floorPic'); pic('pCeilPic', 'ceilPic'); pic('pWallPic', 'wallPic');
+      + '<div class="row"><label>' + (r.kind === 'door' ? 'Height when open' : 'Room height') + '</label><input id="pHeight" type="number" step="64" min="64" value="' + r.height + '"></div>'
+      + (r.kind === 'lift' ? '<div class="row"><label>Goes up by</label><input id="pRise" type="number" step="32" min="16" value="' + r.rise + '"></div>' : '')
+      + (r.kind !== 'room' ? '<div class="row"><label>Speed</label><select id="pSpeed">' + [[5, 'Fast (½ s)'], [10, 'Normal (1 s)'], [20, 'Slow (2 s)'], [40, 'Very slow (4 s)']].map(([v, n]) => opt(v, n, r.speed)).join('') + '</select></div>'
+        + '<div class="row"><label>Goes back after</label><select id="pWait">' + [[0, 'Never (stays)'], [20, '2 seconds'], [30, '3 seconds'], [50, '5 seconds'], [100, '10 seconds']].map(([v, n]) => opt(v, n, r.wait)).join('') + '</select></div>' : '')
+      + (r.kind === 'door' ? '<div class="row"><label>Needs</label><select id="pKey">' + M.KEY_NAMES.map((n, k) => opt(k, k ? 'the ' + n : 'no key', r.key)).join('') + '</select></div>' + picField('pDoorPic', 'Door texture', r.doorPic) : '')
+      + (r.kind !== 'door' ? '<div class="row"><label>Sky (no ceiling)</label><select id="pSky">' + opt(0, 'No', +r.sky) + opt(1, 'Yes', +r.sky) + '</select></div>' : '')
+      + '<div class="row"><label>Light</label><select id="pLight">' + [[-8, 'Bright'], [0, 'Normal'], [8, 'Dim'], [16, 'Dark'], [24, 'Very dark']].map(([v, n]) => opt(v, n, r.light)).join('') + '</select></div>'
+      + picField('pFloorPic', 'Floor texture', r.floorPic)
+      + (r.sky ? '' : picField('pCeilPic', 'Ceiling texture', r.ceilPic))
+      + picField('pWallPic', 'Wall texture', r.wallPic)
+      + '<div class="btns"><button id="pCopy" class="small">Use for new rooms</button><button id="pDel" class="small">Delete</button><button id="pClose" class="small on">Done</button></div>'
+      + '<p><small>Heights are in map units (a room is usually 1536–2560 high). Up is more. '
+      + (r.kind === 'door' ? 'Draw a door as a thin room between two rooms; players open it by using its face.' : r.kind === 'lift' ? 'Players use it while standing on it, or use its side from below.' : '') + '</small></p>');
+    const num = (id, f, min) => $(id) && $(id).addEventListener('change', (e) => { snapshot(); r[f] = Math.max(min, parseInt(e.target.value, 10) || 0); changed(); });
+    num('pFloor', 'floor', -8192); num('pHeight', 'height', 64); num('pRise', 'rise', 16);
+    const sel2 = (id, f, conv, again) => $(id) && $(id).addEventListener('change', (e) => { snapshot(); r[f] = conv(e.target.value); changed(); if (again) roomPanel(i); });
+    sel2('pKind', 'kind', (v) => v, true);
+    sel2('pSecret', 'secret', (v) => v === '1');
+    sel2('pSky', 'sky', (v) => v === '1', true);
+    sel2('pLight', 'light', (v) => parseInt(v, 10));
+    sel2('pSpeed', 'speed', (v) => parseInt(v, 10));
+    sel2('pWait', 'wait', (v) => parseInt(v, 10));
+    sel2('pKey', 'key', (v) => parseInt(v, 10));
+    if ($('pKind')) $('pKind').addEventListener('change', () => { if (r.kind !== 'room') r.secret = false; if (r.kind === 'door') r.sky = false; store(); });
+    hookPic('pFloorPic', r, 'floorPic', M.COMMON_TILES.floor);
+    if ($('pCeilPic')) hookPic('pCeilPic', r, 'ceilPic', M.COMMON_TILES.ceiling);
+    hookPic('pWallPic', r, 'wallPic', M.COMMON_TILES.wall);
+    if ($('pDoorPic')) hookPic('pDoorPic', r, 'doorPic', M.COMMON_TILES.door);
     $('pCopy').onclick = () => { roomDefaults = { floor: r.floor, height: r.height, floorPic: r.floorPic, ceilPic: r.ceilPic, wallPic: r.wallPic, sky: r.sky, light: r.light }; toast('New rooms will look like this one'); };
     $('pDel').onclick = () => { deleteRoom(i); closeSheet(); };
     $('pClose').onclick = () => { sel = null; closeSheet(); draw(); };
+  }
+
+  function mapPanel() {
+    const opt = (v, n, cur) => '<option value="' + v + '"' + (String(cur) === String(v) ? ' selected' : '') + '>' + n + '</option>';
+    openSheet('<h3>Map settings</h3>'
+      + '<div class="row"><label>Darker with distance</label><select id="mVis">' + [[0, 'No'], [400, 'A little'], [800, 'Normal (like Blood)'], [1600, 'A lot']].map(([v, n]) => opt(v, n, prj.visibility)).join('') + '</select></div>'
+      + picField('mSky', 'Sky texture', prj.skyPic)
+      + '<div class="btns"><button id="mClose" class="small on">Done</button></div>');
+    $('mVis').onchange = (e) => { snapshot(); prj.visibility = parseInt(e.target.value, 10); changed(); };
+    hookPic('mSky', prj, 'skyPic', M.COMMON_TILES.sky);
+    $('mClose').onclick = closeSheet;
   }
   let roomDefaults = {};
 
   function thingPanel(i) {
     const t = prj.things[i], info = M.THING_BY_TYPE[t.type];
     openSheet('<h3>' + info.name + '</h3>'
-      + (info.start ? '<div class="row"><label>Facing</label><div class="btns" style="margin:0"><button id="tL" class="small">⟲ Turn</button><button id="tR" class="small">Turn ⟳</button></div></div>' : '')
+      + (info.start || info.enemy ? '<div class="row"><label>Facing</label><div class="btns" style="margin:0"><button id="tL" class="small">⟲ Turn</button><button id="tR" class="small">Turn ⟳</button></div></div>' : '')
       + '<div class="btns"><button id="tDel" class="small">Delete</button><button id="tClose" class="small on">Done</button></div>'
       + '<p><small>Tap elsewhere in Select to pick something else. To move it, delete it and place it again.</small></p>');
-    if (info.start) {
+    if (info.start || info.enemy) {
       $('tL').onclick = () => { snapshot(); t.ang = ((t.ang || 0) - 256 + 2048) & 2047; changed(); };
       $('tR').onclick = () => { snapshot(); t.ang = ((t.ang || 0) + 256) & 2047; changed(); };
     }
@@ -496,7 +601,7 @@ small { color: var(--dim); }
     try {
       const p = JSON.parse(await f.text());
       if (!p || !Array.isArray(p.rooms) || !Array.isArray(p.things)) throw new Error();
-      snapshot(); prj = Object.assign(M.newProject(), p); $('name').value = prj.name; changed(); fit();
+      snapshot(); prj = M.upgradeProject(Object.assign(M.newProject(), p)); $('name').value = prj.name; changed(); fit();
     } catch (err) { toast('That is not a map project file'); }
   };
   $('newBtn').onclick = () => {
@@ -506,6 +611,28 @@ small { color: var(--dim); }
   };
   $('gridSel').onchange = (e) => { grid = +e.target.value; draw(); };
   $('menuBtn').onclick = () => $('menu').classList.toggle('open');
+  $('mapSetBtn').onclick = () => { $('menu').classList.remove('open'); mapPanel(); };
+  $('artBtn').onclick = () => {
+    $('menu').classList.remove('open');
+    const have = window.GameFiles.ready();
+    openSheet('<h3>Blood files for textures</h3><p><small>Pick <b>TILES000.ART</b> to <b>TILES017.ART</b> and <b>BLOOD.RFF</b> from your Blood (NotBlood) folder; on a phone, long-press to select several. '
+      + 'They stay in this browser and are never sent anywhere. Then the tile picker and the 3D view show Blood\'s real textures.</small></p>'
+      + '<p>' + (have ? '✓ ' + window.GameFiles.tileCount() + ' tiles and the palette are loaded.' : 'Not loaded yet.') + '</p>'
+      + '<div class="btns"><button id="aPick" class="on small">Pick files…</button>' + (have ? '<button id="aForget" class="small">Forget them</button>' : '') + '<button id="aClose" class="small">Close</button></div>');
+    $('aPick').onclick = () => $('artIn').click();
+    if ($('aForget')) $('aForget').onclick = async () => { await window.GameFiles.forget(); toast('Forgotten'); closeSheet(); };
+    $('aClose').onclick = closeSheet;
+  };
+  $('artIn').onchange = async (e) => {
+    const files = [...e.target.files]; e.target.value = ''; // (clearing the input empties its list)
+    if (!files || !files.length) return;
+    toast('Reading ' + files.length + ' files…');
+    const rep = await window.GameFiles.load(files);
+    closeSheet();
+    toast(rep.tiles + ' tiles' + (rep.palette ? ' and the palette' : '') + ' loaded' + (rep.problems.length ? '. ' + rep.problems[0] : '') + (!window.GameFiles.palette() ? '. BLOOD.RFF is needed too (for the colours).' : ''));
+    draw();
+  };
+  window.GameFiles.restore();
   $('helpBtn').onclick = () => { $('menu').classList.remove('open'); $('help').classList.add('open'); };
   $('helpClose').onclick = () => { $('help').classList.remove('open'); try { localStorage.setItem(STORE + '.help', '1'); } catch (e) {} };
   $('badge').onclick = problemsPanel;

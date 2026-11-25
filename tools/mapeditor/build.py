@@ -5,7 +5,7 @@ import os, re, sys
 here = os.path.dirname(os.path.abspath(__file__))
 html = open(os.path.join(here, "index.html"), encoding="utf-8").read()
 one = html
-for name in ("mapcore.js", "view3d.js"):
+for name in ("mapcore.js", "gamefiles.js", "view3d.js"):
     js = open(os.path.join(here, name), encoding="utf-8").read()
     tag = '<script src="%s"></script>' % name
     assert tag in one, tag

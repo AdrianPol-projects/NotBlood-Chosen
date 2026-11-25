@@ -47,6 +47,19 @@ h3 { margin: 2px 0 6px; font-size: 16px; color: var(--accent2); }
 #help .box { max-width: 640px; margin: 20px auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
 #help li { margin: 4px 0; }
 small { color: var(--dim); }
+#tiles { position: fixed; inset: 0; z-index: 9; background: #000e; display: none; flex-direction: column; }
+#tiles.open { display: flex; }
+#tiles .bar { display: flex; gap: 6px; align-items: center; padding: 8px; padding-top: max(8px, env(safe-area-inset-top)); }
+#tiles .grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; padding: 8px; align-content: start; }
+#tiles .grid button { padding: 2px; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--dim); }
+#tiles canvas { width: 64px; height: 64px; image-rendering: pixelated; background: #000; }
+.tileprev { width: 40px; height: 40px; image-rendering: pixelated; background: #000; border-radius: 4px; vertical-align: middle; }
+.picrow { display: flex; gap: 6px; align-items: center; }
+.picrow button { flex: 0 0 auto; }
+.v3d-use { position: absolute; right: 16px; display: none; width: 76px; height: 56px; border-radius: 16px; background: #0008; bottom: 176px; }
+#v3d.walking .v3d-use { display: block; }
+.v3d-msg { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); color: #f0a24a; font-weight: 700; font-size: 20px; text-shadow: 0 2px 4px #000; opacity: 0; transition: opacity .3s; pointer-events: none; text-align: center; }
+.v3d-msg.show { opacity: 1; }
 #v3d { position: fixed; inset: 0; z-index: 8; background: #000; display: none; }
 #v3d.open { display: block; }
 #v3d canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
@@ -92,10 +105,13 @@ small { color: var(--dim); }
   <button id="newBtn">New map</button>
   <button id="saveBtn">Save project (.json)</button>
   <button id="openBtn">Open project (.json)</button>
+  <button id="artBtn">Blood files for textures…</button>
+  <button id="mapSetBtn">Map settings</button>
   <label class="row" style="margin:0"><span>Grid</span>
     <select id="gridSel"><option>64</option><option>128</option><option selected>256</option><option>512</option><option>1024</option></select></label>
   <button id="helpBtn">Help</button>
   <input id="fileIn" type="file" accept=".json,application/json" hidden>
+  <input id="artIn" type="file" multiple hidden>
 </div>
 <div id="help"><div class="box">
   <h3>Blood Map Maker</h3>
@@ -105,7 +121,9 @@ small { color: var(--dim); }
     <li>Draw rooms <b>touching</b> each other to join them: where their edges meet you can walk through. Rooms can't overlap.</li>
     <li><b>Select</b> a room to set its floor height, ceiling height, textures, light and sky. A small floor difference is a step, a big one needs a jump.</li>
     <li><b>3D / Walk</b>: look at the map from above, or walk through it from the single player start to try steps, openings and heights (sizes are close to Blood's, not exact).</li>
-    <li><b>+ Thing</b>: pick what to place (starts, weapons, ammo, health, armor, power-ups, keys) and tap in a room. Select a start to turn it.</li>
+    <li><b>Doors, lifts, secrets</b>: select a room and change <i>This is</i>. A door is a thin room between two rooms; a lift raises its floor; a secret room counts as a secret when the player walks in.</li>
+    <li><b>Real textures</b>: ☰ → <i>Blood files for textures</i> and pick TILES000–017.ART and BLOOD.RFF from your game folder. They stay on your device.</li>
+    <li><b>+ Thing</b>: pick what to place (starts, weapons, ammo, health, armor, power-ups, keys, enemies) and tap in a room. Select a start to turn it.</li>
     <li>A map needs a <b>single player start</b>. Bloodbath uses the <b>bloodbath starts</b> (put 8, one per player); co-op uses one single player start per player.</li>
     <li>☰ → <b>Save .MAP for the game</b>. Put the file in the game folder (Android: the <i>NotBlood</i> folder of the main storage) and pick it under <i>&lt; USER MAP &gt;</i> when you choose an episode, or MULTIPLAYER → USER MAP. In online games the others get the map from the server by themselves.</li>
   </ol>
@@ -113,6 +131,7 @@ small { color: var(--dim); }
   <div class="btns"><button id="helpClose" class="on">Got it</button></div>
 </div></div>
 <div id="toast"></div>
+<div id="tiles"><div class="bar"><button id="tilePrev" class="small">◀</button><input id="tileGo" type="number" min="0" max="30719" placeholder="Tile number" style="flex:1"><button id="tileNext" class="small">▶</button><button id="tileClose" class="small on">Cancel</button></div><div class="grid" id="tileGrid"></div></div>
 <div id="v3d"></div>
 <script>
 // NotBlood Chosen map editor: the map model, its checks and the Blood .MAP writer.
@@ -176,6 +195,31 @@ small { color: var(--dim); }
     { group: 'Keys', type: 103, name: 'Dagger key', pic: 2555, xr: 32, yr: 32 },
     { group: 'Keys', type: 104, name: 'Spider key', pic: 2556, xr: 32, yr: 32 },
     { group: 'Keys', type: 105, name: 'Moon key', pic: 2557, xr: 32, yr: 32 },
+    // enemies: picture, size and flags as in Blood's own levels (status 6: an enemy)
+    { group: 'Enemies', type: 201, name: 'Cultist (tommy gun)', pic: 2820, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 202, name: 'Cultist (shotgun)', pic: 2825, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 248, name: 'Cultist (TNT)', pic: 2820, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 247, name: 'Cultist (tesla)', pic: 2820, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 203, name: 'Axe zombie', pic: 1170, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 205, name: 'Axe zombie (in the ground)', pic: 3054, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 204, name: 'Butcher', pic: 1370, xr: 48, yr: 48, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 206, name: 'Flesh gargoyle', pic: 1470, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 207, name: 'Stone gargoyle', pic: 1470, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 210, name: 'Phantasm', pic: 3060, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 211, name: 'Hell hound', pic: 1270, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 212, name: 'Hand', pic: 1980, xr: 32, yr: 32, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 213, name: 'Brown spider', pic: 1920, xr: 16, yr: 16, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 214, name: 'Red spider', pic: 1925, xr: 24, yr: 24, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 215, name: 'Black spider', pic: 1935, xr: 32, yr: 32, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 216, name: 'Mother spider', pic: 1930, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 217, name: 'Gill beast', pic: 1570, xr: 48, yr: 48, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 218, name: 'Bone eel', pic: 1870, xr: 32, yr: 32, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 219, name: 'Bat', pic: 1948, xr: 32, yr: 32, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 220, name: 'Rat', pic: 1745, xr: 24, yr: 24, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 221, name: 'Green pod', pic: 1792, xr: 32, yr: 32, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 223, name: 'Fire pod', pic: 1792, xr: 48, yr: 48, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 227, name: 'Cerberus', pic: 2680, xr: 64, yr: 64, cstat: 384, stat: 6, enemy: true },
+    { group: 'Enemies', type: 245, name: 'Innocent', pic: 3798, xr: 40, yr: 40, cstat: 384, stat: 6, enemy: true },
   ];
   const THING_BY_TYPE = {};
   for (const t of THINGS) THING_BY_TYPE[t.type] = t;
@@ -186,7 +230,9 @@ small { color: var(--dim); }
     floor: [270, 287, 253, 448, 568, 255, 438, 274],
     ceiling: [568, 449, 255, 448, 556],
     sky: [3678, 2500],
+    door: [5, 302, 2453, 495, 195, 22],
   };
+  const KEY_NAMES = ['none', 'skull key', 'eye key', 'fire key', 'dagger key', 'spider key', 'moon key'];
 
   const Z_PER_UNIT = 16; // Build: 1 unit across = 16 units up and down
   const LIMITS = { sectors: 4096, walls: 16384, sprites: 16384, tiles: 30720, coord: 0x7ffff };
@@ -199,11 +245,26 @@ small { color: var(--dim); }
       floorPic: 270, ceilPic: 568, wallPic: 449,
       sky: false,        // open sky instead of a ceiling
       light: 0,          // 0 normal, up to 30 darker; negative brighter (Blood's shade)
+      kind: 'room',      // 'room', 'door' (opens upwards), 'lift' (floor goes up)
+      secret: false,     // walking in counts as a secret found
+      doorPic: 302,      // door: the texture on its faces (the neighbours' walls towards it)
+      speed: 10,         // door/lift: tenths of a second to open or rise
+      wait: 30,          // door/lift: tenths of a second before it goes back (0: stays)
+      key: 0,            // door: the key it needs (KEY_NAMES)
+      rise: 512,         // lift: how far the floor goes up, in map units
     };
   }
 
   function newProject() {
-    return { version: 1, name: 'MYMAP', rooms: [], things: [], visibility: 0, skyPic: 3678 };
+    return { version: 2, name: 'MYMAP', rooms: [], things: [], visibility: 800, skyPic: 3678 };
+  }
+
+  // rooms from older projects get the fields added since
+  function upgradeProject(prj) {
+    const base = newRoom([]);
+    prj.rooms.forEach((r) => { for (const k in base) if (r[k] === undefined && k !== 'pts') r[k] = base[k]; });
+    if (prj.visibility === undefined) prj.visibility = 0;
+    return prj;
   }
 
   // ---- geometry -------------------------------------------------------------------------------
@@ -340,11 +401,26 @@ small { color: var(--dim); }
       const why = roomProblem(r.pts, prj.rooms, i);
       if (why) err('Room ' + (i + 1) + ': ' + why.toLowerCase() + '.');
       if (r.height < 64) err('Room ' + (i + 1) + ' is too low (at least 64 high).');
+      const name = (r.kind === 'door' ? 'Door ' : r.kind === 'lift' ? 'Lift ' : 'Room ') + (i + 1);
+      if (r.secret && r.kind !== 'room') err(name + ': only a normal room can be a secret (put the secret room behind the door).');
+      if (r.kind === 'lift' && !(r.rise > 0 && r.rise < r.height - 64)) err(name + ': it has to rise by more than 0 and less than its height.');
+      if (r.kind === 'door' && !(r.key >= 0 && r.key <= 6)) err(name + ': unknown key.');
+      if (r.kind !== 'room' && !(r.speed > 0 && r.speed < 4096 && r.wait >= 0 && r.wait < 4096)) err(name + ': speed and wait have to be between 1 and 4095.');
     });
+    if (prj.rooms.length && !roomProblemsAny(prj)) {
+      const m = buildMap(prj, false);
+      prj.rooms.forEach((r, i) => {
+        if (r.kind === 'room') return;
+        const touches = m.walls.some((w) => w.sector === i && w.nextsector >= 0);
+        if (!touches) out.push({ level: 'warning', text: (r.kind === 'door' ? 'Door ' : 'Lift ') + (i + 1) + ' touches no other room, so nobody can get to it.' });
+      });
+    }
     let sp = 0, dm = 0;
     prj.things.forEach((t, i) => {
       if (!THING_BY_TYPE[t.type]) err('Thing ' + (i + 1) + ' has an unknown type.');
       if (roomAt([t.x, t.y], prj.rooms) < 0) err((THING_BY_TYPE[t.type] || { name: 'Thing' }).name + ' ' + (i + 1) + ' is not inside a room.');
+      const tr = roomAt([t.x, t.y], prj.rooms);
+      if (tr >= 0 && prj.rooms[tr].kind === 'door') warn((THING_BY_TYPE[t.type] || { name: 'Thing' }).name + ' ' + (i + 1) + ' is in a door, which is closed at the start.');
       if (t.type === 1) sp++;
       if (t.type === 2) dm++;
     });
@@ -354,6 +430,10 @@ small { color: var(--dim); }
     const n = buildMap(prj, true);
     if (n.sectors > LIMITS.sectors || n.walls > LIMITS.walls || n.sprites > LIMITS.sprites) err('The map is too big for the game.');
     return out;
+  }
+
+  function roomProblemsAny(prj) {
+    return prj.rooms.some((r, i) => roomProblem(r.pts, prj.rooms, i));
   }
 
   // ---- the .MAP file ---------------------------------------------------------------------------
@@ -397,20 +477,64 @@ small { color: var(--dim); }
     const b = new Uint8Array(size);
     let pos = 0;
     for (const [value, bits] of fields) {
+      const v = bits === 32 ? value >>> 0 : value & (Math.pow(2, bits) - 1); // negative numbers as two's complement
       for (let i = 0; i < bits; i++, pos++) {
-        if (Math.floor(value / Math.pow(2, i)) % 2) b[pos >> 3] |= 1 << (pos & 7);
+        if (Math.floor(v / Math.pow(2, i)) % 2) b[pos >> 3] |= 1 << (pos & 7);
       }
     }
     return b;
   }
 
-  function xsprite(nSprite, data1) {
+  function xsprite(nSprite, data1, x) {
     // up to data1 as dbSaveMap() writes them; everything after it stays 0
+    x = x || {};
     return bitPack(56, [
-      [nSprite, 14], [0, 1], [0, 17], [0, 10], [0, 10], [0, 8], [0, 1], [0, 1], [0, 2], [0, 12], [0, 12], [0, 1], [0, 1],
+      [nSprite, 14], [0, 1], [0, 17], [x.txID || 0, 10], [x.rxID || 0, 10], [x.command || 0, 8], [x.triggerOn || 0, 1], [0, 1], [0, 2], [0, 12], [0, 12], [0, 1], [0, 1],
       [0, 2], [0, 2], [0, 1], [0, 1], [0, 8], [0, 1], [0, 1], [0, 1], [0, 3], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1],
       [0, 1], [0, 2], [0, 5], [0, 1], [0, 1], [0, 1], [0, 1], [data1 & 0xffff, 16],
     ]);
+  }
+
+  // a sector's extra data (XSECTOR), in dbSaveMap()'s order; everything not given stays 0
+  function xsector(nSector, x) {
+    const f = (k, bits) => [x[k] || 0, bits];
+    return bitPack(60, [
+      [nSector, 14], f('state', 1), f('busy', 17), f('data', 16), f('txID', 10), f('busyWaveA', 3), f('busyWaveB', 3), f('rxID', 10),
+      f('command', 8), f('triggerOn', 1), f('triggerOff', 1), f('busyTimeA', 12), f('waitTimeA', 12), f('restState', 1), f('interruptable', 1),
+      f('amplitude', 8), f('freq', 8), f('reTriggerA', 1), f('reTriggerB', 1), f('phase', 8), f('wave', 4), f('shadeAlways', 1),
+      f('shadeFloor', 1), f('shadeCeiling', 1), f('shadeWalls', 1), f('shade', 8), f('panAlways', 1), f('panFloor', 1), f('panCeiling', 1),
+      f('Drag', 1), f('Underwater', 1), f('Depth', 3), f('panVel', 8), f('panAngle', 11), f('unused1', 1), f('decoupled', 1),
+      f('triggerOnce', 1), f('isTriggered', 1), f('Key', 3), f('Push', 1), f('Vector', 1), f('Reserved', 1), f('Enter', 1), f('Exit', 1),
+      f('Wallpush', 1), f('color', 1), f('unused2', 1), f('busyTimeB', 12), f('waitTimeB', 12), f('stopOn', 1), f('stopOff', 1),
+      f('ceilpal', 4), f('offCeilZ', 32), f('onCeilZ', 32), f('offFloorZ', 32), f('onFloorZ', 32),
+    ]);
+  }
+
+  // what makes a room a door, a lift or a secret (null: a plain room), and the heights it starts at
+  function sectorExtra(r, i) {
+    const floorz = -(r.floor * Z_PER_UNIT), ceilz = floorz - r.height * Z_PER_UNIT;
+    if (r.kind === 'door') {
+      // Blood's "Z motion" sector: shut (ceiling on the floor) until a player uses its walls
+      return {
+        type: 600, ceilz: floorz, floorz,
+        x: { busyTimeA: r.speed, busyTimeB: r.speed, waitTimeA: r.wait, reTriggerA: r.wait ? 1 : 0, interruptable: 1,
+          Wallpush: 1, Key: r.key | 0, offCeilZ: floorz, onCeilZ: ceilz, offFloorZ: floorz, onFloorZ: floorz },
+      };
+    }
+    if (r.kind === 'lift') {
+      // a Z motion sector whose floor goes up: use it while standing on it, or use its side from below
+      const up = floorz - r.rise * Z_PER_UNIT;
+      return {
+        type: 600, ceilz, floorz,
+        x: { busyTimeA: r.speed, busyTimeB: r.speed, waitTimeA: r.wait, reTriggerA: r.wait ? 1 : 0, interruptable: 1,
+          Push: 1, Wallpush: 1, offCeilZ: ceilz, onCeilZ: ceilz, offFloorZ: floorz, onFloorZ: up },
+      };
+    }
+    if (r.secret) {
+      // like Blood's own: entering once sends "secret 0 found" (channel 2, command 64)
+      return { type: 0, ceilz, floorz, x: { Enter: 1, triggerOn: 1, triggerOnce: 1, txID: 2, command: 64 } };
+    }
+    return { type: 0, ceilz, floorz, x: null };
   }
 
   const CRC_TABLE = (() => {
@@ -471,7 +595,7 @@ small { color: var(--dim); }
       const info = THING_BY_TYPE[t.type];
       const s = roomAt([t.x, t.y], rooms);
       const r = rooms[s];
-      return { t, info, sector: s, z: -(r.floor * Z_PER_UNIT) - (info.dz || 0) };
+      return { t, info, sector: s, z: r ? -(r.floor * Z_PER_UNIT) - ((info && info.dz) || 0) : 0 };
     });
     return { sectors, walls, sprites };
   }
@@ -483,6 +607,11 @@ small { color: var(--dim); }
     const { sectors, walls, sprites } = buildMap(prj, false);
     const rev = 1;
     const out = new Out();
+    // the level's number of secrets: an invisible sprite that tells the game at the start
+    // (listens on channel 7, "level start", and sends "64 + count" to channel 1, like Blood's maps)
+    const nSecrets = prj.rooms.filter((r) => r.secret).length;
+    const counter = nSecrets ? sprites.find((s) => s.t.type === 1) || sprites[0] : null;
+    const nSprites = sprites.length + (counter ? 1 : 0);
     out.bytes([0x42, 0x4c, 0x4d, 0x1a, 0x00, 0x07]); // "BLM\x1a", version 0x700
     // where the game puts a player when the map has no start (the first single player start)
     const start = sprites.find((s) => s.t.type === 1) || sprites[0];
@@ -494,7 +623,7 @@ small { color: var(--dim); }
       .u32(HEADER_NEW)                  // "song id": marks an encrypted v7 map
       .u8(2)                            // parallax type
       .i32(rev)
-      .i16(sectors.length).i16(walls.length).i16(sprites.length).done();
+      .i16(sectors.length).i16(walls.length).i16(nSprites).done();
     out.bytes(crypt(head, HEADER_NEW));
     const head2 = new Uint8Array(128);
     const name = 'NotBlood Chosen map editor';
@@ -508,9 +637,10 @@ small { color: var(--dim); }
     for (let i = 0; i < 16; i++) sky.i16(i);
     out.bytes(crypt(sky.done(), 32));
 
-    sectors.forEach((s) => {
+    let nExtra = 0;
+    sectors.forEach((s, i) => {
       const r = s.room;
-      const floorz = -(r.floor * Z_PER_UNIT), ceilz = floorz - r.height * Z_PER_UNIT;
+      const ex = sectorExtra(r, i), floorz = ex.floorz, ceilz = ex.ceilz;
       const shade = Math.max(-128, Math.min(127, r.light | 0));
       const rec = new Rec(40)
         .i16(s.wallptr).i16(s.wallnum).i32(ceilz).i32(floorz)
@@ -518,17 +648,21 @@ small { color: var(--dim); }
         .i16(r.sky ? prj.skyPic : r.ceilPic).i16(0).i8(shade).u8(0).u8(0).u8(0)
         .i16(r.floorPic).i16(0).i8(shade).u8(0).u8(0).u8(0)
         .u8(0).u8(0)                                        // visibility, fogpal
-        .i16(0).i16(0).i16(-1);                             // type, hitag, extra (none)
+        .i16(ex.type).i16(0).i16(ex.x ? ++nExtra : -1);     // type, hitag, extra
       out.bytes(crypt(rec.done(), rev * 40));
+      if (ex.x) out.bytes(xsector(i, ex.x));
     });
     walls.forEach((w) => {
       const r = sectors[w.sector].room;
       const o = walls[w.point2];
       const len = Math.hypot(o.x - w.x, o.y - w.y);
+      // the face of a door is the wall of the room in front of it
+      const next = w.nextsector >= 0 ? sectors[w.nextsector].room : null;
+      const pic = next && next.kind === 'door' ? next.doorPic : r.wallPic;
       const rec = new Rec(32)
         .i32(w.x).i32(w.y).i16(w.point2).i16(w.nextwall).i16(w.nextsector)
         .u16(0)                                             // cstat
-        .i16(r.wallPic).i16(r.wallPic)                      // picnum, overpicnum
+        .i16(pic).i16(pic)                                  // picnum, overpicnum
         .i8(Math.max(-128, Math.min(127, r.light | 0))).u8(0)
         .u8(Math.max(1, Math.min(255, Math.round(len / 128)))).u8(8) // x and y repeat
         .u8(0).u8(0)                                        // panning
@@ -554,6 +688,17 @@ small { color: var(--dim); }
       out.bytes(crypt(rec.done(), (rev * 44) | HEADER_NEW));
       out.bytes(xsprite(i, data1));
     });
+    if (counter) {
+      const rec = new Rec(44)
+        .i32(counter.t.x).i32(counter.t.y).i32(counter.z)
+        .u16(0x8000).i16(0).i8(0).u8(0).u8(0).u8(0)         // invisible
+        .u8(16).u8(16).i8(0).i8(0)
+        .i16(counter.sector).i16(0).i16(0)
+        .i16(-1).i16(0).i16(0).i16(0)
+        .i16(0).i16(0).i16(sprites.length + 1);
+      out.bytes(crypt(rec.done(), (rev * 44) | HEADER_NEW));
+      out.bytes(xsprite(sprites.length, 0, { rxID: 7, txID: 1, command: 64 + Math.min(nSecrets, 191), triggerOn: 1 }));
+    }
     const body = out.result();
     const crc = crc32(body, body.length);
     const full = new Uint8Array(body.length + 4);
@@ -568,10 +713,10 @@ small { color: var(--dim); }
     return (s || 'MYMAP') + '.MAP';
   }
 
-  const VERSION = '0.2';
+  const VERSION = '0.3';
 
   const api = {
-    VERSION, THINGS, THING_BY_TYPE, COMMON_TILES, Z_PER_UNIT, LIMITS,
+    VERSION, THINGS, KEY_NAMES, upgradeProject, sectorExtra, THING_BY_TYPE, COMMON_TILES, Z_PER_UNIT, LIMITS,
     newRoom, newProject, cleanPoly, roomProblem, pointInPoly, roomAt, area2, centroidInside,
     checkProject, buildMap, exportMap, mapFileName, crc32,
   };
@@ -581,20 +726,199 @@ small { color: var(--dim); }
 
 </script>
 <script>
-// Blood Map Maker: 3D preview and walkthrough (WebGL, no libraries).
+// Blood Map Maker: the player's own Blood files, for real textures in the 3D view and the tile
+// picker. Nothing of Blood is included: the player picks TILES000.ART ... TILES017.ART (and any
+// TILES0xx.ART of mods) and BLOOD.RFF from their game folder once; they're kept in this browser.
 //
-// The map is drawn from the same sectors and walls the .MAP export writes (MapCore.buildMap), so
-// openings, steps and sky look like they will in the game. There are no Blood textures here:
-// every tile number gets its own colour and a pattern, which shows the shapes and the scale.
-// Walking uses rough Blood-like player sizes (see PLAYER); it's a quick check that rooms are
-// reachable and steps are climbable, not the game's exact physics.
+// ART: Build's tile files (header, sizes, animation info, then each tile's pixels column by column).
+// RFF: Blood's archive; the palette (BLOOD.PAL) and the shading table (NORMAL.PLU) come from it.
+// Both read the way the game reads them (source/build tiles, source/blood/src/resource.cpp).
+(function (root) {
+  'use strict';
+
+  const DB = 'bloodmapmaker', STORE = 'files';
+  const tiles = new Map(); // tile number -> { w, h, data (Uint8Array, column by column), picanm }
+  let palette = null;      // Uint8Array(768), 0..255
+  let shades = null;       // Uint8Array(64 * 256): shade -> palette index -> palette index
+  let listeners = [];
+
+  function u16(dv, o) { return dv.getUint16(o, true); }
+
+  // one ART file into the tile table
+  function addArt(buf) {
+    // newer tools put "BUILDART" in front of the usual header (tiles.cpp reads both)
+    const sig = new Uint8Array(buf, 0, Math.min(8, buf.byteLength));
+    if (String.fromCharCode(...sig) === 'BUILDART') buf = buf.slice(8);
+    const dv = new DataView(buf);
+    if (buf.byteLength < 16 || dv.getInt32(0, true) !== 1) throw new Error('not a Build ART file');
+    const first = dv.getInt32(8, true), last = dv.getInt32(12, true), n = last - first + 1;
+    if (first < 0 || n <= 0 || n > 30720 || 16 + n * 8 > buf.byteLength) throw new Error('damaged ART file');
+    let pos = 16 + n * 8;
+    let count = 0;
+    for (let i = 0; i < n; i++) {
+      const w = dv.getInt16(16 + i * 2, true), h = dv.getInt16(16 + n * 2 + i * 2, true);
+      const picanm = dv.getInt32(16 + n * 4 + i * 4, true);
+      if (w <= 0 || h <= 0) continue;
+      if (pos + w * h > buf.byteLength) throw new Error('damaged ART file');
+      tiles.set(first + i, { w, h, data: new Uint8Array(buf, pos, w * h), picanm });
+      pos += w * h;
+      count++;
+    }
+    return count;
+  }
+
+  function rffCrypt(bytes, key) { // Resource::Crypt: xor with (key >> 1), key counting up
+    for (let i = 0; i < bytes.length; i++, key = (key + 1) & 0xffff) bytes[i] ^= (key >> 1) & 0xff;
+  }
+
+  // BLOOD.PAL and NORMAL.PLU out of BLOOD.RFF, reading only the parts needed (it's big)
+  async function readRff(file) {
+    const head = new DataView(await file.slice(0, 32).arrayBuffer());
+    if (head.byteLength < 32 || head.getUint32(0, true) !== 0x1a464652) throw new Error('not an RFF file'); // "RFF\x1a"
+    const version = u16(head, 4), offset = head.getUint32(8, true), count = head.getUint32(12, true);
+    if (count > 100000 || offset + count * 48 > file.size) throw new Error('damaged RFF file');
+    const dict = new Uint8Array(await file.slice(offset, offset + count * 48).arrayBuffer());
+    if ((version & 0xff00) === 0x300) rffCrypt(dict, (offset + (version & 0xff) * offset) & 0xffff);
+    else if ((version & 0xff00) !== 0x200) throw new Error('unknown RFF version');
+    const dv = new DataView(dict.buffer);
+    const str = (o, n) => { let s = ''; for (let i = 0; i < n && dict[o + i]; i++) s += String.fromCharCode(dict[o + i]); return s.toUpperCase(); };
+    const found = {};
+    for (let i = 0; i < count; i++) {
+      const e = i * 48, type = str(e + 33, 3), name = str(e + 36, 8), flags = dict[e + 32], id = dv.getInt32(e + 44, true);
+      const key = type === 'PAL' && (name === 'BLOOD' || ((flags & 1) && id === 0)) ? 'pal' : type === 'PLU' && name === 'NORMAL' ? 'plu' : null;
+      if (!key || found[key]) continue;
+      const at = dv.getUint32(e + 16, true), size = dv.getUint32(e + 20, true);
+      if (at + size > file.size) continue;
+      const data = new Uint8Array(await file.slice(at, at + size).arrayBuffer());
+      if (flags & 16) rffCrypt(data.subarray(0, Math.min(256, data.length)), 0);
+      found[key] = data;
+    }
+    if (!found.pal || found.pal.length < 768) throw new Error('BLOOD.PAL not found in this RFF');
+    let pal = found.pal.slice(0, 768);
+    if (pal.every((v) => v < 64)) pal = pal.map((v) => (v << 2) | (v >> 4)); // 6-bit palettes
+    return { pal, plu: found.plu && found.plu.length >= 64 * 256 ? found.plu.slice(0, 64 * 256) : null };
+  }
+
+  // ---- keeping them in the browser -----------------------------------------------------------------
+  function db() {
+    return new Promise((resolve, reject) => {
+      const rq = indexedDB.open(DB, 1);
+      rq.onupgradeneeded = () => rq.result.createObjectStore(STORE);
+      rq.onsuccess = () => resolve(rq.result);
+      rq.onerror = () => reject(rq.error);
+    });
+  }
+  async function dbPut(key, value) {
+    const d = await db();
+    await new Promise((resolve, reject) => { const t = d.transaction(STORE, 'readwrite'); t.objectStore(STORE).put(value, key); t.oncomplete = resolve; t.onerror = () => reject(t.error); });
+    d.close();
+  }
+  async function dbGet(key) {
+    const d = await db();
+    const v = await new Promise((resolve, reject) => { const rq = d.transaction(STORE).objectStore(STORE).get(key); rq.onsuccess = () => resolve(rq.result); rq.onerror = () => reject(rq.error); });
+    d.close();
+    return v;
+  }
+
+  function changed() { listeners.forEach((f) => { try { f(); } catch (e) {} }); }
+
+  // the files the player picked: ART and RFF files, anything else is ignored
+  async function load(fileList) {
+    const files = [...fileList];
+    const arts = files.filter((f) => /\.art$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name));
+    const rff = files.find((f) => /^blood\.rff$/i.test(f.name)) || files.find((f) => /\.rff$/i.test(f.name));
+    const report = { tiles: 0, palette: false, problems: [] };
+    const saved = { arts: [], pal: null, plu: null };
+    for (const f of arts) {
+      try {
+        const buf = await f.arrayBuffer();
+        report.tiles += addArt(buf);
+        saved.arts.push({ name: f.name.toUpperCase(), buf });
+      } catch (e) { report.problems.push(f.name + ': ' + e.message); }
+    }
+    if (rff) {
+      try {
+        const r = await readRff(rff);
+        palette = r.pal; shades = r.plu; report.palette = true;
+        saved.pal = palette; saved.plu = shades;
+      } catch (e) { report.problems.push(rff.name + ': ' + e.message); }
+    }
+    // keep what we have together with what was kept before
+    try {
+      const old = (await dbGet('game')) || { arts: [] };
+      const names = new Set(saved.arts.map((a) => a.name));
+      const merged = { arts: old.arts.filter((a) => !names.has(a.name)).concat(saved.arts), pal: saved.pal || old.pal || null, plu: saved.plu || old.plu || null };
+      await dbPut('game', merged);
+    } catch (e) { report.problems.push('Could not keep the files in this browser (' + e.message + ')'); }
+    changed();
+    return report;
+  }
+
+  async function restore() {
+    try {
+      const g = await dbGet('game');
+      if (!g) return false;
+      for (const a of g.arts || []) { try { addArt(a.buf); } catch (e) {} }
+      if (g.pal) { palette = new Uint8Array(g.pal); shades = g.plu ? new Uint8Array(g.plu) : null; }
+      changed();
+      return true;
+    } catch (e) { return false; }
+  }
+
+  async function forget() {
+    tiles.clear(); palette = null; shades = null;
+    try { await dbPut('game', null); } catch (e) {}
+    changed();
+  }
+
+  // a tile as RGBA (for pictures in the editor), shade 0; null when unknown
+  function tileImage(n, maxSize) {
+    const t = tiles.get(n);
+    if (!t || !palette) return null;
+    const step = Math.max(1, Math.ceil(Math.max(t.w, t.h) / (maxSize || 1e9)));
+    const w = Math.ceil(t.w / step), h = Math.ceil(t.h / step);
+    const img = new ImageData(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = t.data[(x * step) * t.h + y * step], o = (y * w + x) * 4;
+      if (i === 255) continue; // see-through
+      img.data[o] = palette[i * 3]; img.data[o + 1] = palette[i * 3 + 1]; img.data[o + 2] = palette[i * 3 + 2]; img.data[o + 3] = 255;
+    }
+    return img;
+  }
+
+  root.GameFiles = {
+    load, restore, forget, addArt, readRff, tileImage,
+    tile: (n) => tiles.get(n) || null,
+    tileCount: () => tiles.size,
+    maxTile: () => { let m = -1; tiles.forEach((_, k) => { if (k > m) m = k; }); return m; },
+    palette: () => palette,
+    shades: () => shades,
+    ready: () => !!palette && tiles.size > 0,
+    onChange: (f) => listeners.push(f),
+  };
+})(typeof window !== 'undefined' ? window : this);
+
+</script>
+<script>
+// Blood Map Maker: 3D view and walkthrough (WebGL 1, no libraries).
+//
+// The level is drawn from the same sectors and walls the .MAP export writes (MapCore.buildMap).
+// With the player's Blood files loaded (gamefiles.js) it looks like the game: Blood's tiles,
+// mapped the way Build maps them (walls: xrepeat/yrepeat, floors: 16 map units per pixel), Blood's
+// palette and its shading table (room light plus darkness with distance), sprites for items and
+// enemies, and the parallax sky. Without them every tile number gets a colour of its own.
+//
+// Walking uses rough Blood-like player sizes (PLAYER). Doors and lifts work (Use), keys are picked
+// up, and entering a secret room says so; enemies stand still. A quick check of a map, not the
+// game's exact physics.
 (function (root) {
   'use strict';
   const M = root.MapCore;
+  const G = () => root.GameFiles;
 
-  const PLAYER = { radius: 128, height: 720, eye: 576, step: 256, jump: 5.3, gravity: 0.55, speed: 30, run: 56 }; // map units, per frame at 60 fps
+  const PLAYER = { radius: 128, height: 720, eye: 576, step: 256, jump: 5.3, gravity: 0.55, speed: 30, run: 56, reach: 900 }; // map units, per 1/60 s
 
-  // ---- small matrix helpers (column-major, like WebGL wants) ---------------------------------
+  // ---- matrices (column-major) -------------------------------------------------------------------
   function perspective(fovy, aspect, near, far) {
     const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
     return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0]);
@@ -618,14 +942,14 @@ small { color: var(--dim); }
     return o;
   }
 
-  // a colour for a tile number: the same tile always looks the same
+  // a colour for a tile number (no Blood files): the same tile always looks the same
   function tileColor(pic, kind) {
-    let h = (pic * 2654435761) >>> 0;
+    const h = (pic * 2654435761) >>> 0;
     const hue = (h % 360) / 360, sat = 0.25 + ((h >> 9) % 30) / 100, val = kind === 'floor' ? 0.42 : kind === 'ceil' ? 0.3 : 0.52;
     const i = Math.floor(hue * 6), f = hue * 6 - i, p = val * (1 - sat), q = val * (1 - f * sat), t = val * (1 - (1 - f) * sat);
     return [[val, t, p], [q, val, p], [p, val, t], [p, q, val], [t, p, val], [val, p, q]][i % 6];
   }
-  const THING_COLORS = { Starts: [0.44, 0.75, 0.45], Weapons: [0.94, 0.64, 0.29], Ammo: [0.85, 0.76, 0.42], Health: [0.94, 0.36, 0.29], Armor: [0.44, 0.66, 0.86], 'Power-ups': [0.76, 0.48, 0.63], Keys: [1, 1, 1] };
+  const THING_COLORS = { Starts: [0.44, 0.75, 0.45], Weapons: [0.94, 0.64, 0.29], Ammo: [0.85, 0.76, 0.42], Health: [0.94, 0.36, 0.29], Armor: [0.44, 0.66, 0.86], 'Power-ups': [0.76, 0.48, 0.63], Keys: [1, 1, 1], Enemies: [0.8, 0.15, 0.12] };
 
   // ear clipping for a room outline (MapCore keeps them clockwise on screen: positive area)
   function triangulate(pts) {
@@ -650,89 +974,134 @@ small { color: var(--dim); }
         cut = true;
         break;
       }
-      if (!cut) break; // shouldn't happen for a valid room; draw what we have
+      if (!cut) break;
     }
     if (idx.length === 3) tris.push(idx.slice());
     return tris;
   }
 
-  // ---- the level as triangles -------------------------------------------------------------------
-  // world: X = map x, Y = height (up), Z = map y
-  function buildMesh(prj) {
-    const pos = [], col = [], uvw = [];
-    const ceil = []; // ceilings go last: the overview leaves them out to look inside
+  // ---- doors and lifts: where floors and ceilings are right now -------------------------------------
+  function Heights(prj) {
+    const rooms = prj.rooms;
+    const st = rooms.map(() => ({ open: 0, target: 0, waitUntil: 0 }));
+    const floorOf = (s) => { const r = rooms[s]; return r.kind === 'lift' ? r.floor + r.rise * st[s].open : r.floor; };
+    const ceilOf = (s) => { const r = rooms[s]; return r.kind === 'door' ? r.floor + r.height * st[s].open : r.floor + r.height; };
+    return { st, floorOf, ceilOf, moving: () => st.some((x) => x.open !== x.target) };
+  }
+
+  // ---- the level as triangles, one batch per tile -------------------------------------------------
+  // world: X = map x, Y = height (up), Z = map y. uv in tile pixels.
+  function buildMesh(prj, hts, opts) {
+    opts = opts || {};
+    hts = hts || Heights(prj);
+    const batches = new Map(); // key -> { pic, ceil, pos, uv, col, shade }
+    const batch = (pic, ceil) => {
+      const key = pic + (ceil ? 'c' : '');
+      let b = batches.get(key);
+      if (!b) batches.set(key, b = { pic, ceil, pos: [], uv: [], col: [], shade: [] });
+      return b;
+    };
     const m = M.buildMap(prj, false);
     const rooms = prj.rooms;
-    const floorOf = (s) => rooms[s].floor, ceilOf = (s) => rooms[s].floor + rooms[s].height;
-    const lightOf = (s) => Math.max(0.25, 1 - (rooms[s].light || 0) / 40);
-    function quad(a, b, y1, y2, c) { // wall from map point a to b, heights y1..y2
-      if (y2 <= y1) return;
-      const v = [[a[0], y1, a[1]], [b[0], y1, b[1]], [b[0], y2, b[1]], [a[0], y2, a[1]]];
-      for (const k of [0, 1, 2, 0, 2, 3]) { pos.push(...v[k]); col.push(...c); uvw.push(1); }
+    const { floorOf, ceilOf } = hts;
+    const shadeOf = (s) => rooms[s].light || 0;
+    function wallQuad(pic, a, b, y1, y2, top, s, c) {
+      if (y2 <= y1 + 0.01) return;
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const xrep = Math.max(1, Math.min(255, Math.round(len / 128))); // as the export writes it
+      const u1 = xrep * 8;
+      // Build: yrepeat 8 is 256 z units (16 map units) per pixel, measured from the ceiling
+      const v = (y) => (top - y) / 16;
+      const q = [[a, y1, 0, v(y1)], [b, y1, u1, v(y1)], [b, y2, u1, v(y2)], [a, y2, 0, v(y2)]];
+      const bt = batch(pic, false);
+      for (const k of [0, 1, 2, 0, 2, 3]) {
+        const [p, y, u, vv] = q[k];
+        bt.pos.push(p[0], y, p[1]); bt.uv.push(u, vv); bt.col.push(...c); bt.shade.push(s);
+      }
     }
     m.walls.forEach((w) => {
       const s = w.sector, o = m.walls[w.point2], a = [w.x, w.y], b = [o.x, o.y];
       const r = rooms[s];
-      // light the walls a little by which way they face, so corners show
+      const next = w.nextsector >= 0 ? rooms[w.nextsector] : null;
+      const pic = next && next.kind === 'door' ? next.doorPic : r.wallPic; // a door's face, as exported
       const dir = Math.atan2(b[1] - a[1], b[0] - a[0]);
-      const shade = (0.78 + 0.22 * Math.cos(dir * 2)) * lightOf(s);
-      const c = tileColor(r.wallPic, 'wall').map((x) => x * shade);
-      if (w.nextsector < 0) { quad(a, b, floorOf(s), ceilOf(s), c); return; }
+      const c = tileColor(pic, 'wall').map((x) => x * (0.78 + 0.22 * Math.cos(dir * 2)));
+      const sh = shadeOf(s) + Math.round(4 * Math.abs(Math.sin(dir))); // walls facing different ways a little different
+      const f = floorOf(s), cl = ceilOf(s);
+      if (w.nextsector < 0) { wallQuad(pic, a, b, f, cl, cl, sh, c); return; }
       const n = w.nextsector;
-      if (floorOf(n) > floorOf(s)) quad(a, b, floorOf(s), floorOf(n), c);               // a step up
-      if (ceilOf(n) < ceilOf(s) && !(r.sky && rooms[n].sky)) quad(a, b, ceilOf(n), ceilOf(s), c); // lower ceiling ahead
+      if (floorOf(n) > f) wallQuad(pic, a, b, f, Math.min(floorOf(n), cl), cl, sh, c);
+      if (ceilOf(n) < cl && !(r.sky && rooms[n].sky)) wallQuad(pic, a, b, Math.max(ceilOf(n), f), cl, cl, sh, c);
     });
     rooms.forEach((r, s) => {
       const tris = triangulate(r.pts);
-      const lf = lightOf(s);
-      const cf = tileColor(r.floorPic, 'floor').map((x) => x * lf), cc = tileColor(r.ceilPic, 'ceil').map((x) => x * lf);
+      const f = floorOf(s), cl = ceilOf(s);
+      const fb = batch(r.floorPic, false), cb = r.sky ? null : batch(r.ceilPic, true);
+      const cf = tileColor(r.floorPic, 'floor'), cc = tileColor(r.ceilPic, 'ceil');
       for (const t of tris) {
-        for (const k of t) { pos.push(r.pts[k][0], r.floor, r.pts[k][1]); col.push(...cf); uvw.push(0); }
-        if (!r.sky) for (const k of [t[0], t[2], t[1]]) ceil.push([r.pts[k][0], r.floor + r.height, r.pts[k][1], cc]);
+        for (const k of t) { const p = r.pts[k]; fb.pos.push(p[0], f, p[1]); fb.uv.push(p[0] / 16, p[1] / 16); fb.col.push(...cf); fb.shade.push(shadeOf(s)); }
+        if (cb && cl > f) for (const k of [t[0], t[2], t[1]]) { const p = r.pts[k]; cb.pos.push(p[0], cl, p[1]); cb.uv.push(p[0] / 16, p[1] / 16); cb.col.push(...cc); cb.shade.push(shadeOf(s)); }
       }
     });
-    // things: small boxes standing on the floor
-    prj.things.forEach((t) => {
+    // things without pictures (or the player starts, which are invisible in the game): little boxes
+    const boxes = batch(-1, false);
+    prj.things.forEach((t, i) => {
+      if (opts.hide && opts.hide.has(i)) return;
+      const info = M.THING_BY_TYPE[t.type] || { group: '' };
+      if (opts.textured && !info.start && G() && G().tile(info.pic)) return; // drawn as a sprite
       const s = M.roomAt([t.x, t.y], rooms);
       if (s < 0) return;
-      const info = M.THING_BY_TYPE[t.type] || { group: '' };
       const c = THING_COLORS[info.group] || [0.7, 0.7, 0.7];
-      const big = info.start ? 96 : 56, hgt = info.start ? 320 : 112, y0 = rooms[s].floor;
-      const x1 = t.x - big, x2 = t.x + big, z1 = t.y - big, z2 = t.y + big, y1 = y0, y2 = y0 + hgt;
-      const faces = [[[x1, z1], [x2, z1]], [[x2, z1], [x2, z2]], [[x2, z2], [x1, z2]], [[x1, z2], [x1, z1]]];
-      faces.forEach(([a, b], i) => quad(a, b, y1, y2, c.map((v) => v * (0.75 + 0.08 * i))));
-      for (const [x, z] of [[x1, z1], [x2, z1], [x2, z2], [x1, z1], [x2, z2], [x1, z2]]) { pos.push(x, y2, z); col.push(...c); uvw.push(2); }
-      if (info.start) { // a nose showing which way the start faces
-        const a = ((t.ang || 0) / 2048) * Math.PI * 2, nx = t.x + Math.cos(a) * 220, nz = t.y + Math.sin(a) * 220;
-        quad([t.x - Math.sin(a) * 30, t.y + Math.cos(a) * 30], [nx, nz], y2 - 90, y2 - 30, [0.9, 1, 0.9]);
+      const big = info.start ? 96 : info.enemy ? 120 : 56, hgt = info.start ? 320 : info.enemy ? 560 : 112, y1 = floorOf(s), y2 = y1 + hgt;
+      const x1 = t.x - big, x2 = t.x + big, z1 = t.y - big, z2 = t.y + big;
+      const quad = (a, b, ya, yb, cc) => {
+        const v = [[a[0], ya, a[1]], [b[0], ya, b[1]], [b[0], yb, b[1]], [a[0], yb, a[1]]];
+        for (const k of [0, 1, 2, 0, 2, 3]) { boxes.pos.push(...v[k]); boxes.uv.push(0, 0); boxes.col.push(...cc); boxes.shade.push(0); }
+      };
+      [[[x1, z1], [x2, z1]], [[x2, z1], [x2, z2]], [[x2, z2], [x1, z2]], [[x1, z2], [x1, z1]]].forEach(([a, b], k) => quad(a, b, y1, y2, c.map((v) => v * (0.75 + 0.08 * k))));
+      for (const [x, z] of [[x1, z1], [x2, z1], [x2, z2], [x1, z1], [x2, z2], [x1, z2]]) { boxes.pos.push(x, y2, z); boxes.uv.push(0, 0); boxes.col.push(...c); boxes.shade.push(0); }
+      if (info.start) {
+        const a = ((t.ang || 0) / 2048) * Math.PI * 2;
+        quad([t.x - Math.sin(a) * 30, t.y + Math.cos(a) * 30], [t.x + Math.cos(a) * 220, t.y + Math.sin(a) * 220], y2 - 90, y2 - 30, [0.9, 1, 0.9]);
       }
     });
-    const ceilStart = pos.length / 3;
-    for (const [x, y, z, c] of ceil) { pos.push(x, y, z); col.push(...c); uvw.push(0); }
-    return { pos: new Float32Array(pos), col: new Float32Array(col), uvw: new Float32Array(uvw), map: m, ceilStart };
+    let ceilStart = 0, count = 0;
+    const list = [...batches.values()].sort((a, b) => (a.ceil - b.ceil));
+    for (const b of list) { b.first = count; b.count = b.pos.length / 3; count += b.count; if (!b.ceil) ceilStart = count; }
+    return { batches: list, map: m, count, ceilStart };
   }
 
-  const VS = `attribute vec3 aPos; attribute vec3 aCol; attribute float aKind;
+  // ---- WebGL --------------------------------------------------------------------------------------
+  const VS = `attribute vec3 aPos; attribute vec2 aUV; attribute vec3 aCol; attribute float aShade;
 uniform mat4 uMVP; uniform vec3 uEye;
-varying vec3 vCol; varying vec3 vPos; varying float vKind; varying float vDist;
-void main() { gl_Position = uMVP * vec4(aPos, 1.0); vCol = aCol; vPos = aPos; vKind = aKind; vDist = distance(aPos, uEye); }`;
+varying vec2 vUV; varying vec3 vCol; varying float vShade; varying float vDist; varying vec3 vPos;
+void main() { gl_Position = uMVP * vec4(aPos, 1.0); vUV = aUV; vCol = aCol; vShade = aShade; vDist = distance(aPos, uEye); vPos = aPos; }`;
   const FS = `precision mediump float;
-varying vec3 vCol; varying vec3 vPos; varying float vKind; varying float vDist;
-uniform vec3 uFog; uniform float uFogDist;
+varying vec2 vUV; varying vec3 vCol; varying float vShade; varying float vDist; varying vec3 vPos;
+uniform int uMode;          // 0: colours, 1: Blood tile (palette + shading), 2: tile, no shading table
+uniform sampler2D uTex; uniform vec2 uSize; uniform sampler2D uPal; uniform sampler2D uLook;
+uniform float uVis; uniform float uSeeThrough; uniform vec3 uFog; uniform float uFogDist;
 void main() {
-  // a 256-unit pattern (Blood's walls are mostly 64-pixel tiles at that size) so size and movement show
-  vec3 p = vPos / 256.0;
-  float g;
-  if (vKind < 0.5) g = step(0.5, fract(p.x * 0.5 + floor(p.z) * 0.5)) * 0.06 + 0.97 - 0.06 * (step(fract(p.x), 0.03) + step(fract(p.z), 0.03));
-  else if (vKind < 1.5) g = 0.97 - 0.07 * step(fract(p.y), 0.03) - 0.05 * step(fract(p.x + p.z), 0.03);
-  else g = 1.0;
-  vec3 c = vCol * g;
-  float fog = clamp(vDist / uFogDist, 0.0, 0.85);
-  gl_FragColor = vec4(mix(c, uFog, fog), 1.0);
+  if (uMode == 0) {
+    vec3 p = vPos / 256.0;
+    float g = 0.97 - 0.06 * (step(fract(p.x), 0.03) + step(fract(p.z), 0.03) + step(fract(p.y), 0.03));
+    gl_FragColor = vec4(mix(vCol * g, uFog, clamp(vDist / uFogDist, 0.0, 0.85)), 1.0);
+    return;
+  }
+  // the tile is stored column by column (ART), so x and y swap in the texture
+  vec2 px = mod(floor(vUV), uSize);
+  float idx = floor(texture2D(uTex, vec2((px.y + 0.5) / uSize.y, (px.x + 0.5) / uSize.x)).r * 255.0 + 0.5);
+  if (uSeeThrough > 0.5 && idx > 254.5) discard;
+  float shade = clamp(vShade + vDist * uVis, 0.0, 63.0);
+  float pi = idx;
+  if (uMode == 1) pi = floor(texture2D(uLook, vec2((idx + 0.5) / 256.0, (floor(shade) + 0.5) / 64.0)).r * 255.0 + 0.5);
+  vec3 c = texture2D(uPal, vec2((pi + 0.5) / 256.0, 0.5)).rgb;
+  if (uMode == 2) c *= 1.0 - shade / 64.0;
+  gl_FragColor = vec4(c, 1.0);
 }`;
 
   function makeGL(canvas) {
-    const gl = canvas.getContext('webgl', { antialias: true }) || canvas.getContext('experimental-webgl');
+    const gl = canvas.getContext('webgl', { antialias: false }) || canvas.getContext('experimental-webgl');
     if (!gl) return null;
     const sh = (type, src) => {
       const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
@@ -744,32 +1113,86 @@ void main() {
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     gl.useProgram(prog);
-    return {
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    const u = (n) => gl.getUniformLocation(prog, n);
+    const r = {
       gl, prog,
-      aPos: gl.getAttribLocation(prog, 'aPos'), aCol: gl.getAttribLocation(prog, 'aCol'), aKind: gl.getAttribLocation(prog, 'aKind'),
-      uMVP: gl.getUniformLocation(prog, 'uMVP'), uEye: gl.getUniformLocation(prog, 'uEye'), uFog: gl.getUniformLocation(prog, 'uFog'), uFogDist: gl.getUniformLocation(prog, 'uFogDist'),
-      bufs: [gl.createBuffer(), gl.createBuffer(), gl.createBuffer()], count: 0,
+      a: { pos: gl.getAttribLocation(prog, 'aPos'), uv: gl.getAttribLocation(prog, 'aUV'), col: gl.getAttribLocation(prog, 'aCol'), shade: gl.getAttribLocation(prog, 'aShade') },
+      u: { mvp: u('uMVP'), eye: u('uEye'), mode: u('uMode'), tex: u('uTex'), size: u('uSize'), pal: u('uPal'), look: u('uLook'), vis: u('uVis'), see: u('uSeeThrough'), fog: u('uFog'), fogDist: u('uFogDist') },
+      level: { pos: gl.createBuffer(), uv: gl.createBuffer(), col: gl.createBuffer(), shade: gl.createBuffer() },
+      dyn: { pos: gl.createBuffer(), uv: gl.createBuffer(), col: gl.createBuffer(), shade: gl.createBuffer() },
+      tiles: new Map(), palTex: null, lookTex: null,
     };
+    gl.uniform1i(r.u.tex, 0); gl.uniform1i(r.u.pal, 1); gl.uniform1i(r.u.look, 2);
+    return r;
   }
 
-  function upload(r, mesh) {
+  function lumTexture(gl, w, h, data) {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, w, h, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  // the palette and shading table, once
+  function gameTextures(r) {
+    const g = G();
+    if (!g || !g.ready()) return false;
     const gl = r.gl;
-    [[mesh.pos, r.aPos, 3], [mesh.col, r.aCol, 3], [mesh.uvw, r.aKind, 1]].forEach(([data, loc, n], i) => {
-      gl.bindBuffer(gl.ARRAY_BUFFER, r.bufs[i]);
-      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(loc);
-      gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 0, 0);
+    if (!r.palTex) {
+      r.palTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, r.palTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 256, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, g.palette());
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      if (g.shades()) r.lookTex = lumTexture(gl, 256, 64, g.shades());
+    }
+    return true;
+  }
+  function tileTexture(r, pic) {
+    if (r.tiles.has(pic)) return r.tiles.get(pic);
+    const t = G() && G().tile(pic);
+    // stored as it is in the ART file: h pixels wide (one column), w columns high
+    const v = t ? { tex: lumTexture(r.gl, t.h, t.w, t.data), w: t.w, h: t.h } : null;
+    r.tiles.set(pic, v);
+    return v;
+  }
+
+  function uploadInto(r, bufs, data) {
+    const gl = r.gl;
+    [['pos', 3], ['uv', 2], ['col', 3], ['shade', 1]].forEach(([k, n]) => {
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufs[k]);
+      gl.bufferData(gl.ARRAY_BUFFER, data[k], gl.DYNAMIC_DRAW);
     });
-    r.count = mesh.pos.length / 3;
-    r.ceilStart = mesh.ceilStart;
+  }
+  function bindBuffers(r, bufs) {
+    const gl = r.gl;
+    [['pos', 3], ['uv', 2], ['col', 3], ['shade', 1]].forEach(([k, n]) => {
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufs[k]);
+      gl.enableVertexAttribArray(r.a[k]);
+      gl.vertexAttribPointer(r.a[k], n, gl.FLOAT, false, 0, 0);
+    });
+  }
+  function flatten(batches) {
+    const n = batches.reduce((s, b) => s + b.count, 0);
+    const out = { pos: new Float32Array(n * 3), uv: new Float32Array(n * 2), col: new Float32Array(n * 3), shade: new Float32Array(n) };
+    let o = 0;
+    for (const b of batches) { out.pos.set(b.pos, o * 3); out.uv.set(b.uv, o * 2); out.col.set(b.col, o * 3); out.shade.set(b.shade, o); o += b.count; }
+    return out;
   }
 
   // ---- walking ------------------------------------------------------------------------------------
   // Like Build: the player is a circle on the map plus a height range. A wall stops it when it's
-  // solid, the step up is too high, or the opening is too low for the player.
-  function Walker(prj, map) {
+  // solid, the step up is too high, or the opening is too low (a shut door has no opening at all).
+  function Walker(prj, map, hts) {
+    hts = hts || Heights(prj);
     const rooms = prj.rooms;
-    const floorOf = (s) => rooms[s].floor, ceilOf = (s) => rooms[s].floor + rooms[s].height;
+    const { floorOf, ceilOf } = hts;
     const edges = map.walls.map((w) => ({ a: [w.x, w.y], b: [map.walls[w.point2].x, map.walls[w.point2].y], s: w.sector, n: w.nextsector }));
     const st = { x: 0, y: 0, z: 0, vz: 0, ang: 0, pitch: 0, sector: -1, onGround: true };
     const start = prj.things.find((t) => t.type === 1) || prj.things.find((t) => t.type === 2);
@@ -778,7 +1201,7 @@ void main() {
     st.sector = M.roomAt([st.x, st.y], rooms);
     if (st.sector >= 0) st.z = floorOf(st.sector);
 
-    function blocks(e, z) { // can a player standing at feet height z pass this edge?
+    function blocks(e, z) {
       if (e.n < 0) return true;
       const lo = Math.max(floorOf(e.n), floorOf(e.s)), hi = Math.min(ceilOf(e.n), ceilOf(e.s));
       if (floorOf(e.n) - z > PLAYER.step) return true;
@@ -790,39 +1213,50 @@ void main() {
       t = Math.max(0, Math.min(1, t));
       return [a[0] + dx * t, a[1] + dy * t];
     }
+    const cr = (o, u, v) => (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0]);
     function crosses(p, q, a, b) {
-      const c = (o, u, v) => (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0]);
-      const d1 = c(a, b, p), d2 = c(a, b, q), d3 = c(p, q, a), d4 = c(p, q, b);
+      const d1 = cr(a, b, p), d2 = cr(a, b, q), d3 = cr(p, q, a), d4 = cr(p, q, b);
       return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
     }
     function tryMove(dx, dy) {
       let p = [st.x + dx, st.y + dy];
-      // slide along whatever is in the way
       for (let it = 0; it < 3; it++) {
         for (const e of edges) {
           if (!blocks(e, st.z)) continue;
           const c = closest(p, e.a, e.b), ddx = p[0] - c[0], ddy = p[1] - c[1], d = Math.hypot(ddx, ddy);
           if (d < PLAYER.radius) {
             if (d > 0.001) { p[0] = c[0] + ddx / d * PLAYER.radius; p[1] = c[1] + ddy / d * PLAYER.radius; }
-            else { p = [st.x, st.y]; }
+            else p = [st.x, st.y];
           }
         }
       }
-      for (const e of edges) if (blocks(e, st.z) && crosses([st.x, st.y], p, e.a, e.b)) return; // never through a wall
+      for (const e of edges) if (blocks(e, st.z) && crosses([st.x, st.y], p, e.a, e.b)) return;
       const s = M.roomAt(p, rooms);
       if (s < 0) return;
       if (floorOf(s) - st.z > PLAYER.step) return;
       if (ceilOf(s) - Math.max(st.z, floorOf(s)) < PLAYER.height * 0.8) return;
       st.x = p[0]; st.y = p[1]; st.sector = s;
     }
+    // what "use" reaches: the nearest wall straight ahead (its other side: a door or lift), else
+    // the lift it stands on
+    function useTarget() {
+      const a = [st.x, st.y], b = [st.x + Math.cos(st.ang) * PLAYER.reach, st.y + Math.sin(st.ang) * PLAYER.reach];
+      let best = null, bd = Infinity;
+      for (const e of edges) {
+        if (e.s !== st.sector || !crosses(a, b, e.a, e.b)) continue;
+        const c = closest(a, e.a, e.b), d = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        if (d < bd) { bd = d; best = e; }
+      }
+      if (best && best.n >= 0 && rooms[best.n].kind !== 'room') return best.n;
+      if (st.sector >= 0 && rooms[st.sector].kind === 'lift') return st.sector;
+      return -1;
+    }
     return {
-      st, PLAYER,
-      // fwd/side in -1..1, run: bool; dt in frames of 1/60 s
+      st, PLAYER, useTarget,
       step(fwd, side, run, jump, dt) {
         const sp = (run ? PLAYER.run : PLAYER.speed) * dt;
         const cs = Math.cos(st.ang), sn = Math.sin(st.ang);
         const dx = (cs * fwd - sn * side) * sp, dy = (sn * fwd + cs * side) * sp;
-        // in small pieces, so fast moves don't skip a thin room
         const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / (PLAYER.radius / 2)));
         for (let i = 0; i < n; i++) tryMove(dx / n, dy / n);
         if (st.sector < 0) return;
@@ -830,12 +1264,32 @@ void main() {
         if (jump && st.onGround) { st.vz = PLAYER.jump * 16; st.onGround = false; }
         st.vz -= PLAYER.gravity * 16 * dt;
         st.z += st.vz * dt;
-        if (st.z <= fl) { st.z = fl; st.vz = 0; st.onGround = true; } // landed, or stepped up
+        if (st.z <= fl) { st.z = fl; st.vz = 0; st.onGround = true; }
         else if (st.onGround && st.z - fl > 4 && st.vz <= 0) st.onGround = false;
         if (st.z + PLAYER.height > cl) { st.z = Math.max(fl, cl - PLAYER.height); if (st.vz > 0) st.vz = 0; }
       },
       eye() { return [st.x, st.z + PLAYER.eye, st.y]; },
     };
+  }
+
+  // a door or lift moving towards where it's going; the time is in ms
+  function runMovers(prj, hts, walker, now, dtMs) {
+    let changed = false;
+    prj.rooms.forEach((r, s) => {
+      if (r.kind === 'room') return;
+      const x = hts.st[s];
+      if (x.open === 1 && x.target === 1 && r.wait > 0 && x.waitUntil && now >= x.waitUntil) { x.target = 0; x.waitUntil = 0; }
+      if (x.open === x.target) return;
+      const step = dtMs / Math.max(100, r.speed * 100);
+      let next = x.target > x.open ? Math.min(1, x.open + step) : Math.max(0, x.open - step);
+      // a shutting door or a lift going up doesn't squash the player: it waits
+      if (walker && walker.st.sector === s) {
+        if (r.kind === 'door' && next < x.open && r.floor + r.height * next < walker.st.z + PLAYER.height) next = x.open;
+      }
+      if (next !== x.open) { x.open = next; changed = true; }
+      if (x.open === 1 && x.target === 1 && r.wait > 0) x.waitUntil = now + r.wait * 100;
+    });
+    return changed;
   }
 
   // ---- the viewer ------------------------------------------------------------------------------------
@@ -844,45 +1298,52 @@ void main() {
 <canvas class="v3d"></canvas>
 <div class="v3d-top"><button data-m="orbit">Look around</button><button data-m="walk">Walk</button><span class="v3d-info"></span><button data-m="close" class="on">Close</button></div>
 <div class="v3d-stick"><div class="v3d-knob"></div></div>
-<button class="v3d-jump">Jump</button><button class="v3d-run">Run</button>
+<button class="v3d-use">Use</button><button class="v3d-jump">Jump</button><button class="v3d-run">Run</button>
+<div class="v3d-msg"></div>
 <div class="v3d-help"></div>`;
     overlay.classList.add('open');
     const cv = overlay.querySelector('canvas');
-    let r;
+    let r = null;
     try { r = makeGL(cv); } catch (e) { r = null; }
-    const info = overlay.querySelector('.v3d-info'), help = overlay.querySelector('.v3d-help');
-    if (!r) { help.textContent = 'This browser has no WebGL, so there is no 3D view.'; }
-    const mesh = buildMesh(prj);
-    if (r) upload(r, mesh);
-    const walker = Walker(prj, mesh.map);
-    // orbit camera around the middle of the map
+    const info = overlay.querySelector('.v3d-info'), help = overlay.querySelector('.v3d-help'), msgEl = overlay.querySelector('.v3d-msg');
+    if (!r) help.textContent = 'This browser has no WebGL, so there is no 3D view.';
+    const textured = !!(r && gameTextures(r));
+    const hts = Heights(prj);
+    const hidden = new Set(); // keys picked up
+    let mesh = buildMesh(prj, hts, { textured, hide: hidden });
+    if (r) uploadInto(r, r.level, flatten(mesh.batches));
+    const walker = Walker(prj, mesh.map, hts);
+    const keysHeld = new Set(), secretsFound = new Set();
+    const nSecrets = prj.rooms.filter((x) => x.secret).length;
     let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity, top = 0;
     prj.rooms.forEach((rm) => { rm.pts.forEach((p) => { x1 = Math.min(x1, p[0]); y1 = Math.min(y1, p[1]); x2 = Math.max(x2, p[0]); y2 = Math.max(y2, p[1]); }); top = Math.max(top, rm.floor + rm.height); });
     if (!isFinite(x1)) { x1 = y1 = 0; x2 = y2 = 4096; }
     const orbit = { cx: (x1 + x2) / 2, cy: top / 2, cz: (y1 + y2) / 2, yaw: 0.7, pitch: 0.75, dist: Math.max(x2 - x1, y2 - y1) * 1.2 + 3000 };
-    let mode = 'orbit', running = true, last = performance.now(), run = false;
+    let mode = 'orbit', running = true, last = performance.now(), run = false, usePressed = false, jumpPressed = false;
     const keys = {}, stick = { x: 0, y: 0, id: null }, look = { id: null, x: 0, y: 0 };
-    let jumpPressed = false;
 
+    function message(t) { msgEl.textContent = t; msgEl.classList.add('show'); clearTimeout(message.t); message.t = setTimeout(() => msgEl.classList.remove('show'), 2500); }
     function setMode(m) {
       mode = m;
       overlay.querySelectorAll('[data-m]').forEach((b) => b.classList.toggle('on', b.dataset.m === m || b.dataset.m === 'close'));
       overlay.classList.toggle('walking', m === 'walk');
-      help.textContent = m === 'walk'
-        ? 'Left: move. Right: look. Keyboard: WASD or arrows, mouse drag, Space jumps, Shift runs. Sizes are close to Blood\'s, not exact.'
-        : 'Drag to turn the map, pinch or scroll to zoom. Ceilings are left out here; Walk shows them.';
-      help.classList.remove('gone'); clearTimeout(help.t); help.t = setTimeout(() => help.classList.add('gone'), 7000);
+      help.textContent = (m === 'walk'
+        ? 'Left: move. Right: look. Use opens doors and starts lifts. Keyboard: WASD, mouse drag, E use, Space jump, Shift run. Sizes are close to Blood\'s, not exact.'
+        : 'Drag to turn the map, pinch or scroll to zoom. Ceilings are left out here; Walk shows them.')
+        + (textured ? '' : ' (Load your Blood files in ☰ for the real textures.)');
+      help.classList.remove('gone'); clearTimeout(help.t); help.t = setTimeout(() => help.classList.add('gone'), 8000);
       if (m === 'walk' && walker.st.sector < 0) info.textContent = 'No start inside a room';
     }
+    const kd = (e) => { keys[e.code] = true; if (e.code === 'Space') e.preventDefault(); if (e.code === 'KeyE' || e.code === 'Enter') usePressed = true; };
+    const ku = (e) => { keys[e.code] = false; };
     overlay.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => {
       if (b.dataset.m === 'close') { running = false; overlay.classList.remove('open', 'walking'); overlay.innerHTML = ''; window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); return; }
       setMode(b.dataset.m);
     });
-    const jumpBtn = overlay.querySelector('.v3d-jump'), runBtn = overlay.querySelector('.v3d-run');
-    jumpBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); jumpPressed = true; });
+    overlay.querySelector('.v3d-jump').addEventListener('pointerdown', (e) => { e.preventDefault(); jumpPressed = true; });
+    overlay.querySelector('.v3d-use').addEventListener('pointerdown', (e) => { e.preventDefault(); usePressed = true; });
+    const runBtn = overlay.querySelector('.v3d-run');
     runBtn.onclick = () => { run = !run; runBtn.classList.toggle('on', run); };
-    const kd = (e) => { keys[e.code] = true; if (e.code === 'Space') e.preventDefault(); };
-    const ku = (e) => { keys[e.code] = false; };
     window.addEventListener('keydown', kd); window.addEventListener('keyup', ku);
 
     const stickEl = overlay.querySelector('.v3d-stick'), knob = overlay.querySelector('.v3d-knob');
@@ -892,7 +1353,7 @@ void main() {
       cv.setPointerCapture(e.pointerId);
       if (mode === 'walk') {
         const half = cv.getBoundingClientRect().width / 2;
-        if (e.offsetX < half && stick.id === null) { stick.id = e.pointerId; stick.ox = e.offsetX; stick.oy = e.offsetY; stick.x = stick.y = 0; stickEl.style.left = (e.offsetX - 60) + 'px'; stickEl.style.top = (e.offsetY - 60) + 'px'; stickEl.classList.add('on'); }
+        if (e.offsetX < half && stick.id === null && e.pointerType !== 'mouse') { stick.id = e.pointerId; stick.ox = e.offsetX; stick.oy = e.offsetY; stick.x = stick.y = 0; stickEl.style.left = (e.offsetX - 60) + 'px'; stickEl.style.top = (e.offsetY - 60) + 'px'; stickEl.classList.add('on'); }
         else if (look.id === null) { look.id = e.pointerId; look.x = e.offsetX; look.y = e.offsetY; }
       } else {
         pinch.set(e.pointerId, [e.offsetX, e.offsetY]);
@@ -906,7 +1367,7 @@ void main() {
           if (l > 50) { dx *= 50 / l; dy *= 50 / l; }
           stick.x = dx / 50; stick.y = dy / 50;
           knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
-        } else if (e.pointerId === look.id || (e.pointerType === 'mouse' && e.buttons)) {
+        } else if (e.pointerId === look.id) {
           const dx = e.offsetX - look.x, dy = e.offsetY - look.y; look.x = e.offsetX; look.y = e.offsetY;
           walker.st.ang += dx * 0.006; walker.st.pitch = Math.max(-1.2, Math.min(1.2, walker.st.pitch - dy * 0.005));
         }
@@ -933,50 +1394,152 @@ void main() {
     cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
     cv.addEventListener('wheel', (e) => { e.preventDefault(); orbit.dist = Math.max(800, Math.min(200000, orbit.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
 
+    function doUse() {
+      const s = walker.useTarget();
+      if (s < 0) return;
+      const rm = prj.rooms[s], x = hts.st[s];
+      if (rm.kind === 'door' && rm.key && !keysHeld.has(rm.key)) { message('You need the ' + M.KEY_NAMES[rm.key]); return; }
+      x.target = x.target > 0.5 ? 0 : 1;
+      x.waitUntil = 0;
+    }
+    function gameplay(now) {
+      const st = walker.st;
+      // keys: walk over them
+      prj.things.forEach((t, i) => {
+        if (t.type < 100 || t.type > 105 || hidden.has(i)) return;
+        if (Math.hypot(t.x - st.x, t.y - st.y) < 220 && M.roomAt([t.x, t.y], prj.rooms) === st.sector) {
+          hidden.add(i); keysHeld.add(t.type - 99); message('Picked up the ' + M.KEY_NAMES[t.type - 99]); rebuild = true;
+        }
+      });
+      if (st.sector >= 0 && prj.rooms[st.sector].secret && !secretsFound.has(st.sector)) {
+        secretsFound.add(st.sector);
+        message('A secret is revealed! (' + secretsFound.size + ' of ' + nSecrets + ')');
+      }
+    }
+
+    // sprites facing the viewer: items, weapons, enemies (with Blood's pictures)
+    function spriteBatches(eye) {
+      if (!textured) return [];
+      const out = new Map();
+      prj.things.forEach((t, i) => {
+        const inf = M.THING_BY_TYPE[t.type];
+        if (!inf || inf.start || hidden.has(i)) return;
+        const tile = G().tile(inf.pic);
+        const s = M.roomAt([t.x, t.y], prj.rooms);
+        if (!tile || s < 0) return;
+        const w = tile.w * (inf.xr || 48) / 4, h = tile.h * (inf.yr || 48) / 4;
+        const dx = eye[0] - t.x, dz = eye[2] - t.y, l = Math.hypot(dx, dz) || 1;
+        const rx = -dz / l * w / 2, rz = dx / l * w / 2;
+        const y0 = hts.floorOf(s), y1 = y0 + h;
+        let b = out.get(inf.pic);
+        if (!b) out.set(inf.pic, b = { pic: inf.pic, sprite: true, pos: [], uv: [], col: [], shade: [] });
+        const q = [[t.x - rx, y0, t.y - rz, 0, tile.h - 0.01], [t.x + rx, y0, t.y + rz, tile.w - 0.01, tile.h - 0.01], [t.x + rx, y1, t.y + rz, tile.w - 0.01, 0], [t.x - rx, y1, t.y - rz, 0, 0]];
+        for (const k of [0, 1, 2, 0, 2, 3]) { const v = q[k]; b.pos.push(v[0], v[1], v[2]); b.uv.push(v[3], v[4]); b.col.push(1, 1, 1); b.shade.push(prj.rooms[s].light || 0); }
+      });
+      let first = 0;
+      const list = [...out.values()];
+      for (const b of list) { b.count = b.pos.length / 3; b.first = first; first += b.count; }
+      return list;
+    }
+    // the sky: a ring of tiles around the viewer (Build's parallax sky: 16 tiles, the sky tile and those after it)
+    function skyBatches(eye) {
+      if (!textured || !prj.rooms.some((x) => x.sky)) return [];
+      const out = [];
+      const R = 60000, n = 16, base = prj.skyPic;
+      for (let i = 0; i < n; i++) {
+        const pic = G().tile(base + i) ? base + i : base, tile = G().tile(pic);
+        if (!tile) continue;
+        const a1 = (i / n) * Math.PI * 2, a2 = ((i + 1) / n) * Math.PI * 2, hh = R * 0.9;
+        const p1 = [eye[0] + Math.cos(a1) * R, eye[2] + Math.sin(a1) * R], p2 = [eye[0] + Math.cos(a2) * R, eye[2] + Math.sin(a2) * R];
+        const yb = eye[1] - hh * 0.35, yt = eye[1] + hh;
+        const b = { pic, sky: true, pos: [], uv: [], col: [], shade: [] };
+        const q = [[p1, yb, 0, tile.h - 0.01], [p2, yb, tile.w - 0.01, tile.h - 0.01], [p2, yt, tile.w - 0.01, 0], [p1, yt, 0, 0]];
+        for (const k of [0, 1, 2, 0, 2, 3]) { const [p, y, u, v] = q[k]; b.pos.push(p[0], y, p[1]); b.uv.push(u, v); b.col.push(0, 0, 0); b.shade.push(0); }
+        out.push(b);
+      }
+      let first = 0;
+      for (const b of out) { b.count = 6; b.first = first; first += 6; }
+      return out;
+    }
+
+    function drawBatches(list, bufs, uploadData, skipCeil) {
+      const gl = r.gl;
+      if (uploadData) uploadInto(r, bufs, flatten(list));
+      bindBuffers(r, bufs);
+      for (const b of list) {
+        if (!b.count || (skipCeil && b.ceil)) continue;
+        const t = textured && b.pic >= 0 ? tileTexture(r, b.pic) : null;
+        if (t) {
+          gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, t.tex);
+          gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, r.palTex);
+          if (r.lookTex) { gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, r.lookTex); }
+          gl.uniform1i(r.u.mode, r.lookTex ? 1 : 2);
+          gl.uniform2f(r.u.size, t.w, t.h);
+          gl.uniform1f(r.u.see, b.sprite || b.sky ? 1 : 0);
+        } else gl.uniform1i(r.u.mode, 0);
+        gl.drawArrays(gl.TRIANGLES, b.first, b.count);
+      }
+    }
+
+    let rebuild = false;
     function frame(now) {
       if (!running) return;
-      const dt = Math.min(3, (now - last) / (1000 / 60)); last = now;
-      const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+      const dtMs = Math.min(50, now - last), dt = dtMs / (1000 / 60); last = now;
+      const dpr = Math.min(2, window.devicePixelRatio || 1), w = cv.clientWidth, h = cv.clientHeight;
       if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
       let eye, at;
       if (mode === 'walk') {
+        if (usePressed) doUse();
         const fwd = -stick.y + ((keys.KeyW || keys.ArrowUp) ? 1 : 0) - ((keys.KeyS || keys.ArrowDown) ? 1 : 0);
         const side = stick.x + (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
         if (keys.ArrowLeft) walker.st.ang -= 0.04 * dt;
         if (keys.ArrowRight) walker.st.ang += 0.04 * dt;
         walker.step(Math.max(-1, Math.min(1, fwd)), Math.max(-1, Math.min(1, side)), run || keys.ShiftLeft || keys.ShiftRight, jumpPressed || keys.Space, dt);
-        jumpPressed = false;
+        gameplay(now);
         eye = walker.eye();
         const st = walker.st;
         at = [eye[0] + Math.cos(st.ang) * Math.cos(st.pitch) * 100, eye[1] + Math.sin(st.pitch) * 100, eye[2] + Math.sin(st.ang) * Math.cos(st.pitch) * 100];
-        info.textContent = st.sector >= 0 ? 'Room ' + (st.sector + 1) : '';
+        info.textContent = st.sector >= 0 ? (prj.rooms[st.sector].kind === 'lift' ? 'Lift ' : 'Room ') + (st.sector + 1) + (nSecrets ? '  secrets ' + secretsFound.size + '/' + nSecrets : '') : '';
       } else {
         eye = [orbit.cx + Math.cos(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist, orbit.cy + Math.sin(orbit.pitch) * orbit.dist, orbit.cz + Math.sin(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist];
         at = [orbit.cx, orbit.cy, orbit.cz];
         info.textContent = prj.rooms.length + ' rooms';
+      }
+      usePressed = jumpPressed = false;
+      if (runMovers(prj, hts, walker, now, dtMs) || rebuild) {
+        rebuild = false;
+        mesh = buildMesh(prj, hts, { textured, hide: hidden });
+        if (r) uploadInto(r, r.level, flatten(mesh.batches));
       }
       if (r) {
         const gl = r.gl;
         gl.viewport(0, 0, cv.width, cv.height);
         gl.clearColor(0.09, 0.05, 0.06, 1);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-        gl.enable(gl.DEPTH_TEST);
         gl.disable(gl.CULL_FACE);
         const proj = perspective(mode === 'walk' ? 1.25 : 0.9, cv.width / Math.max(1, cv.height), mode === 'walk' ? 16 : 64, 400000);
-        gl.uniformMatrix4fv(r.uMVP, false, mul(proj, lookAt(eye, at, [0, 1, 0])));
-        gl.uniform3fv(r.uEye, eye);
-        gl.uniform3fv(r.uFog, mode === 'walk' ? [0.09, 0.05, 0.06] : [0.12, 0.07, 0.07]);
-        gl.uniform1f(r.uFogDist, mode === 'walk' ? 14000 : orbit.dist * 4);
-        gl.drawArrays(gl.TRIANGLES, 0, mode === 'walk' ? r.count : r.ceilStart); // the overview looks in from above
+        gl.uniformMatrix4fv(r.u.mvp, false, mul(proj, lookAt(eye, at, [0, 1, 0])));
+        gl.uniform3fv(r.u.eye, eye);
+        gl.uniform3fv(r.u.fog, mode === 'walk' ? [0.09, 0.05, 0.06] : [0.12, 0.07, 0.07]);
+        gl.uniform1f(r.u.fogDist, mode === 'walk' ? 14000 : orbit.dist * 4);
+        // Blood's darkness with distance (the map's visibility); none in the overview
+        gl.uniform1f(r.u.vis, mode === 'walk' ? (prj.visibility || 0) / 327680 : 0);
+        if (mode === 'walk') {
+          gl.disable(gl.DEPTH_TEST);
+          drawBatches(skyBatches(eye), r.dyn, true, false);
+        }
+        gl.enable(gl.DEPTH_TEST);
+        drawBatches(mesh.batches, r.level, false, mode !== 'walk');
+        drawBatches(spriteBatches(eye), r.dyn, true, false);
       }
       requestAnimationFrame(frame);
     }
     setMode('orbit');
     requestAnimationFrame(frame);
-    return { setMode, walker, close: () => overlay.querySelector('[data-m=close]').click() };
+    return { setMode, walker, heights: hts, textured, close: () => overlay.querySelector('[data-m=close]').click() };
   }
 
-  root.View3D = { open, buildMesh, triangulate, Walker, PLAYER };
+  root.View3D = { open, buildMesh, triangulate, Walker, Heights, runMovers, PLAYER };
 })(typeof window !== 'undefined' ? window : this);
 
 </script>
@@ -988,7 +1551,7 @@ void main() {
   const cv = $('cv'), ctx = cv.getContext('2d');
   const STORE = 'bloodmapmaker.project';
 
-  let prj = load() || M.newProject();
+  let prj = M.upgradeProject(load() || M.newProject());
   let tool = 'rect', grid = 256;
   let view = { x: 0, y: 0, scale: 0.08 }; // map units -> css px
   let sel = null; // {kind:'room'|'thing', i}
@@ -1030,7 +1593,7 @@ void main() {
     const hue = 20 - h * 40, light = 22 + h * 10;
     return 'hsla(' + hue + ',55%,' + light + '%,' + alpha + ')';
   }
-  const THING_MARK = { Starts: '#6fbf73', Weapons: '#f0a24a', Ammo: '#d9c36a', Health: '#ef5b4b', Armor: '#6fa8dc', 'Power-ups': '#c27ba0', Keys: '#ffffff' };
+  const THING_MARK = { Starts: '#6fbf73', Weapons: '#f0a24a', Ammo: '#d9c36a', Health: '#ef5b4b', Armor: '#6fa8dc', 'Power-ups': '#c27ba0', Keys: '#ffffff', Enemies: '#d33' };
 
   function draw() {
     const w = W(), h = H();
@@ -1055,8 +1618,14 @@ void main() {
       ctx.beginPath();
       r.pts.forEach((p, k) => { const s = toScreen(p); k ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); });
       ctx.closePath();
-      ctx.fillStyle = r.sky ? 'hsla(210,35%,22%,.85)' : roomColor(r, 0.85);
+      ctx.fillStyle = r.kind === 'door' ? 'hsla(30,60%,30%,.9)' : r.kind === 'lift' ? 'hsla(190,40%,25%,.9)' : r.sky ? 'hsla(210,35%,22%,.85)' : roomColor(r, 0.85);
       ctx.fill();
+      if (r.kind !== 'room' || r.secret) { // hatching
+        ctx.save(); ctx.clip();
+        ctx.strokeStyle = r.secret ? '#c27ba055' : '#ffffff22'; ctx.lineWidth = 1;
+        for (let k = -h; k < w + h; k += 10) { ctx.beginPath(); ctx.moveTo(k, 0); ctx.lineTo(k + h, h); ctx.stroke(); }
+        ctx.restore();
+      }
       const isSel = sel && sel.kind === 'room' && sel.i === i;
       ctx.lineWidth = isSel ? 3 : 1.5;
       ctx.strokeStyle = isSel ? '#f0a24a' : '#c9a49a';
@@ -1065,7 +1634,8 @@ void main() {
       if (c && view.scale > 0.03) {
         const s = toScreen(c);
         ctx.fillStyle = '#eee2dcb0'; ctx.font = '12px system-ui'; ctx.textAlign = 'center';
-        ctx.fillText((i + 1) + (r.sky ? ' sky' : '') + (r.floor ? ' ▲' + r.floor : ''), s[0], s[1]);
+        const tag = r.kind === 'door' ? ' DOOR' + (r.key ? ' 🔑' : '') : r.kind === 'lift' ? ' LIFT ↑' + r.rise : '';
+        ctx.fillText((i + 1) + tag + (r.secret ? ' secret' : '') + (r.sky ? ' sky' : '') + (r.floor ? ' ▲' + r.floor : ''), s[0], s[1]);
       }
     });
     // openings between rooms
@@ -1086,7 +1656,7 @@ void main() {
       if (info.start) { counts[t.type]++; label = (t.type === 1 ? 'S' : 'B') + counts[t.type]; }
       ctx.fillStyle = '#000'; ctx.font = 'bold ' + Math.round(r * 0.95) + 'px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(label, s[0], s[1] + 0.5); ctx.textBaseline = 'alphabetic';
-      if (info.start) {
+      if (info.start || info.enemy) {
         const a = ((t.ang || 0) / 2048) * Math.PI * 2;
         ctx.strokeStyle = '#6fbf73'; ctx.lineWidth = 2; ctx.beginPath();
         ctx.moveTo(s[0] + Math.cos(a) * r, s[1] + Math.sin(a) * r); ctx.lineTo(s[0] + Math.cos(a) * r * 2.2, s[1] + Math.sin(a) * r * 2.2); ctx.stroke();
@@ -1143,43 +1713,121 @@ void main() {
     return vals.map((v) => '<option' + (v === cur ? ' selected' : '') + '>' + v + '</option>').join('') + '<option value="other">other…</option>';
   }
 
+  // a texture field: a picture of the tile (with the player's Blood files), its number, and a picker
+  function picField(id, label, cur) {
+    return '<div class="row"><label>' + label + '</label><div class="picrow"><canvas class="tileprev" id="' + id + 'Img" width="40" height="40"></canvas>'
+      + '<input id="' + id + '" type="number" min="0" max="30719" value="' + cur + '" style="flex:1"><button id="' + id + 'Pick" class="small">Pick</button></div></div>';
+  }
+  function hookPic(id, obj, f, list, after) {
+    const show = () => drawTile($(id + 'Img'), obj[f]);
+    show();
+    const set = (v) => {
+      v = parseInt(v, 10);
+      if (!(v >= 0 && v < 30720)) { toast('Tile numbers go from 0 to 30719'); $(id).value = obj[f]; return; }
+      snapshot(); obj[f] = v; $(id).value = v; show(); changed(); if (after) after();
+    };
+    $(id).addEventListener('change', (e) => set(e.target.value));
+    $(id + 'Pick').onclick = () => openTiles(obj[f], list, set);
+  }
+  function drawTile(cv, n) {
+    if (!cv) return;
+    const c = cv.getContext('2d');
+    c.clearRect(0, 0, cv.width, cv.height);
+    const img = window.GameFiles && window.GameFiles.tileImage(n, 128);
+    if (!img) { c.fillStyle = '#555'; c.font = '10px system-ui'; c.textAlign = 'center'; c.fillText(n, cv.width / 2, cv.height / 2 + 3); return; }
+    const tmp = document.createElement('canvas'); tmp.width = img.width; tmp.height = img.height; tmp.getContext('2d').putImageData(img, 0, 0);
+    const k = Math.min(cv.width / img.width, cv.height / img.height);
+    c.imageSmoothingEnabled = false;
+    c.drawImage(tmp, (cv.width - img.width * k) / 2, (cv.height - img.height * k) / 2, img.width * k, img.height * k);
+  }
+
+  // the tile picker: Blood's tiles as pictures (or numbers without the files), the common ones first
+  let tilePage = 0, tileSet = null, tileList = [];
+  function openTiles(cur, common, set) {
+    tileSet = set; tileList = common || [];
+    tilePage = common && common.includes(cur) ? -1 : Math.floor(cur / 60);
+    $('tiles').classList.add('open'); fillTiles();
+  }
+  function fillTiles() {
+    const g = $('tileGrid'); g.innerHTML = '';
+    const nums = tilePage < 0 ? tileList : Array.from({ length: 60 }, (_, k) => tilePage * 60 + k).filter((n) => n < 30720);
+    const have = window.GameFiles && window.GameFiles.tileCount() > 0;
+    for (const n of nums) {
+      if (have && tilePage >= 0 && !window.GameFiles.tile(n)) continue;
+      const b = document.createElement('button');
+      const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64; b.appendChild(cv);
+      b.appendChild(document.createTextNode(n));
+      b.onclick = () => { $('tiles').classList.remove('open'); tileSet(n); };
+      g.appendChild(b); drawTile(cv, n);
+    }
+    if (!g.children.length) g.innerHTML = '<p style="color:var(--dim)">No tiles here. ' + (have ? 'Try the arrows.' : 'Load your Blood files (☰) to see the pictures.') + '</p>';
+    $('tileGo').placeholder = tilePage < 0 ? 'Common ones; or a number' : 'Tiles ' + tilePage * 60 + '–' + (tilePage * 60 + 59);
+  }
+  $('tilePrev').onclick = () => { tilePage = Math.max(-1, tilePage - 1); fillTiles(); };
+  $('tileNext').onclick = () => { tilePage = Math.min(511, tilePage + 1); fillTiles(); };
+  $('tileGo').onchange = (e) => { const n = parseInt(e.target.value, 10); if (n >= 0 && n < 30720) { tilePage = Math.floor(n / 60); fillTiles(); } };
+  $('tileClose').onclick = () => $('tiles').classList.remove('open');
+
   function roomPanel(i) {
     const r = prj.rooms[i];
-    openSheet('<h3>Room ' + (i + 1) + '</h3>'
+    const opt = (v, n, cur) => '<option value="' + v + '"' + (String(cur) === String(v) ? ' selected' : '') + '>' + n + '</option>';
+    const title = r.kind === 'door' ? 'Door ' : r.kind === 'lift' ? 'Lift ' : 'Room ';
+    openSheet('<h3>' + title + (i + 1) + '</h3>'
+      + '<div class="row"><label>This is</label><select id="pKind">' + opt('room', 'a room', r.kind) + opt('door', 'a door (opens up when used)', r.kind) + opt('lift', 'a lift (floor goes up when used)', r.kind) + '</select></div>'
+      + (r.kind === 'room' ? '<div class="row"><label>Secret</label><select id="pSecret">' + opt(0, 'No', +r.secret) + opt(1, 'Yes: walking in finds a secret', +r.secret) + '</select></div>' : '')
       + '<div class="row"><label>Floor height</label><input id="pFloor" type="number" step="16" value="' + r.floor + '"></div>'
-      + '<div class="row"><label>Room height</label><input id="pHeight" type="number" step="64" min="64" value="' + r.height + '"></div>'
-      + '<div class="row"><label>Sky (no ceiling)</label><select id="pSky"><option value="0">No</option><option value="1"' + (r.sky ? ' selected' : '') + '>Yes</option></select></div>'
-      + '<div class="row"><label>Light</label><select id="pLight">' + [[-8, 'Bright'], [0, 'Normal'], [8, 'Dim'], [16, 'Dark'], [24, 'Very dark']].map(([v, n]) => '<option value="' + v + '"' + (r.light === v ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div>'
-      + '<div class="row"><label>Floor texture</label><select id="pFloorPic">' + tileOptions(M.COMMON_TILES.floor, r.floorPic) + '</select></div>'
-      + '<div class="row"><label>Ceiling texture</label><select id="pCeilPic">' + tileOptions(M.COMMON_TILES.ceiling, r.ceilPic) + '</select></div>'
-      + '<div class="row"><label>Wall texture</label><select id="pWallPic">' + tileOptions(M.COMMON_TILES.wall, r.wallPic) + '</select></div>'
-      + '<div class="btns"><button id="pCopy" class="small">Use for new rooms</button><button id="pDel" class="small">Delete room</button><button id="pClose" class="small on">Done</button></div>'
-      + '<p><small>Heights are in map units (a room is usually 1536–2560 high). Up is more.</small></p>');
-    const num = (id, f, min) => $(id).addEventListener('change', (e) => { snapshot(); r[f] = Math.max(min, parseInt(e.target.value, 10) || 0); changed(); });
-    num('pFloor', 'floor', -8192); num('pHeight', 'height', 64);
-    $('pSky').addEventListener('change', (e) => { snapshot(); r.sky = e.target.value === '1'; changed(); });
-    $('pLight').addEventListener('change', (e) => { snapshot(); r.light = parseInt(e.target.value, 10); changed(); });
-    const pic = (id, f) => $(id).addEventListener('change', (e) => {
-      let v = e.target.value;
-      if (v === 'other') { v = prompt('Tile number (0-30719)', r[f]); if (v === null) { roomPanel(i); return; } }
-      v = parseInt(v, 10);
-      if (!(v >= 0 && v < 30720)) { toast('Tile numbers go from 0 to 30719'); roomPanel(i); return; }
-      snapshot(); r[f] = v; changed(); roomPanel(i);
-    });
-    pic('pFloorPic', 'floorPic'); pic('pCeilPic', 'ceilPic'); pic('pWallPic', 'wallPic');
+      + '<div class="row"><label>' + (r.kind === 'door' ? 'Height when open' : 'Room height') + '</label><input id="pHeight" type="number" step="64" min="64" value="' + r.height + '"></div>'
+      + (r.kind === 'lift' ? '<div class="row"><label>Goes up by</label><input id="pRise" type="number" step="32" min="16" value="' + r.rise + '"></div>' : '')
+      + (r.kind !== 'room' ? '<div class="row"><label>Speed</label><select id="pSpeed">' + [[5, 'Fast (½ s)'], [10, 'Normal (1 s)'], [20, 'Slow (2 s)'], [40, 'Very slow (4 s)']].map(([v, n]) => opt(v, n, r.speed)).join('') + '</select></div>'
+        + '<div class="row"><label>Goes back after</label><select id="pWait">' + [[0, 'Never (stays)'], [20, '2 seconds'], [30, '3 seconds'], [50, '5 seconds'], [100, '10 seconds']].map(([v, n]) => opt(v, n, r.wait)).join('') + '</select></div>' : '')
+      + (r.kind === 'door' ? '<div class="row"><label>Needs</label><select id="pKey">' + M.KEY_NAMES.map((n, k) => opt(k, k ? 'the ' + n : 'no key', r.key)).join('') + '</select></div>' + picField('pDoorPic', 'Door texture', r.doorPic) : '')
+      + (r.kind !== 'door' ? '<div class="row"><label>Sky (no ceiling)</label><select id="pSky">' + opt(0, 'No', +r.sky) + opt(1, 'Yes', +r.sky) + '</select></div>' : '')
+      + '<div class="row"><label>Light</label><select id="pLight">' + [[-8, 'Bright'], [0, 'Normal'], [8, 'Dim'], [16, 'Dark'], [24, 'Very dark']].map(([v, n]) => opt(v, n, r.light)).join('') + '</select></div>'
+      + picField('pFloorPic', 'Floor texture', r.floorPic)
+      + (r.sky ? '' : picField('pCeilPic', 'Ceiling texture', r.ceilPic))
+      + picField('pWallPic', 'Wall texture', r.wallPic)
+      + '<div class="btns"><button id="pCopy" class="small">Use for new rooms</button><button id="pDel" class="small">Delete</button><button id="pClose" class="small on">Done</button></div>'
+      + '<p><small>Heights are in map units (a room is usually 1536–2560 high). Up is more. '
+      + (r.kind === 'door' ? 'Draw a door as a thin room between two rooms; players open it by using its face.' : r.kind === 'lift' ? 'Players use it while standing on it, or use its side from below.' : '') + '</small></p>');
+    const num = (id, f, min) => $(id) && $(id).addEventListener('change', (e) => { snapshot(); r[f] = Math.max(min, parseInt(e.target.value, 10) || 0); changed(); });
+    num('pFloor', 'floor', -8192); num('pHeight', 'height', 64); num('pRise', 'rise', 16);
+    const sel2 = (id, f, conv, again) => $(id) && $(id).addEventListener('change', (e) => { snapshot(); r[f] = conv(e.target.value); changed(); if (again) roomPanel(i); });
+    sel2('pKind', 'kind', (v) => v, true);
+    sel2('pSecret', 'secret', (v) => v === '1');
+    sel2('pSky', 'sky', (v) => v === '1', true);
+    sel2('pLight', 'light', (v) => parseInt(v, 10));
+    sel2('pSpeed', 'speed', (v) => parseInt(v, 10));
+    sel2('pWait', 'wait', (v) => parseInt(v, 10));
+    sel2('pKey', 'key', (v) => parseInt(v, 10));
+    if ($('pKind')) $('pKind').addEventListener('change', () => { if (r.kind !== 'room') r.secret = false; if (r.kind === 'door') r.sky = false; store(); });
+    hookPic('pFloorPic', r, 'floorPic', M.COMMON_TILES.floor);
+    if ($('pCeilPic')) hookPic('pCeilPic', r, 'ceilPic', M.COMMON_TILES.ceiling);
+    hookPic('pWallPic', r, 'wallPic', M.COMMON_TILES.wall);
+    if ($('pDoorPic')) hookPic('pDoorPic', r, 'doorPic', M.COMMON_TILES.door);
     $('pCopy').onclick = () => { roomDefaults = { floor: r.floor, height: r.height, floorPic: r.floorPic, ceilPic: r.ceilPic, wallPic: r.wallPic, sky: r.sky, light: r.light }; toast('New rooms will look like this one'); };
     $('pDel').onclick = () => { deleteRoom(i); closeSheet(); };
     $('pClose').onclick = () => { sel = null; closeSheet(); draw(); };
+  }
+
+  function mapPanel() {
+    const opt = (v, n, cur) => '<option value="' + v + '"' + (String(cur) === String(v) ? ' selected' : '') + '>' + n + '</option>';
+    openSheet('<h3>Map settings</h3>'
+      + '<div class="row"><label>Darker with distance</label><select id="mVis">' + [[0, 'No'], [400, 'A little'], [800, 'Normal (like Blood)'], [1600, 'A lot']].map(([v, n]) => opt(v, n, prj.visibility)).join('') + '</select></div>'
+      + picField('mSky', 'Sky texture', prj.skyPic)
+      + '<div class="btns"><button id="mClose" class="small on">Done</button></div>');
+    $('mVis').onchange = (e) => { snapshot(); prj.visibility = parseInt(e.target.value, 10); changed(); };
+    hookPic('mSky', prj, 'skyPic', M.COMMON_TILES.sky);
+    $('mClose').onclick = closeSheet;
   }
   let roomDefaults = {};
 
   function thingPanel(i) {
     const t = prj.things[i], info = M.THING_BY_TYPE[t.type];
     openSheet('<h3>' + info.name + '</h3>'
-      + (info.start ? '<div class="row"><label>Facing</label><div class="btns" style="margin:0"><button id="tL" class="small">⟲ Turn</button><button id="tR" class="small">Turn ⟳</button></div></div>' : '')
+      + (info.start || info.enemy ? '<div class="row"><label>Facing</label><div class="btns" style="margin:0"><button id="tL" class="small">⟲ Turn</button><button id="tR" class="small">Turn ⟳</button></div></div>' : '')
       + '<div class="btns"><button id="tDel" class="small">Delete</button><button id="tClose" class="small on">Done</button></div>'
       + '<p><small>Tap elsewhere in Select to pick something else. To move it, delete it and place it again.</small></p>');
-    if (info.start) {
+    if (info.start || info.enemy) {
       $('tL').onclick = () => { snapshot(); t.ang = ((t.ang || 0) - 256 + 2048) & 2047; changed(); };
       $('tR').onclick = () => { snapshot(); t.ang = ((t.ang || 0) + 256) & 2047; changed(); };
     }
@@ -1360,7 +2008,7 @@ void main() {
     try {
       const p = JSON.parse(await f.text());
       if (!p || !Array.isArray(p.rooms) || !Array.isArray(p.things)) throw new Error();
-      snapshot(); prj = Object.assign(M.newProject(), p); $('name').value = prj.name; changed(); fit();
+      snapshot(); prj = M.upgradeProject(Object.assign(M.newProject(), p)); $('name').value = prj.name; changed(); fit();
     } catch (err) { toast('That is not a map project file'); }
   };
   $('newBtn').onclick = () => {
@@ -1370,6 +2018,28 @@ void main() {
   };
   $('gridSel').onchange = (e) => { grid = +e.target.value; draw(); };
   $('menuBtn').onclick = () => $('menu').classList.toggle('open');
+  $('mapSetBtn').onclick = () => { $('menu').classList.remove('open'); mapPanel(); };
+  $('artBtn').onclick = () => {
+    $('menu').classList.remove('open');
+    const have = window.GameFiles.ready();
+    openSheet('<h3>Blood files for textures</h3><p><small>Pick <b>TILES000.ART</b> to <b>TILES017.ART</b> and <b>BLOOD.RFF</b> from your Blood (NotBlood) folder; on a phone, long-press to select several. '
+      + 'They stay in this browser and are never sent anywhere. Then the tile picker and the 3D view show Blood\'s real textures.</small></p>'
+      + '<p>' + (have ? '✓ ' + window.GameFiles.tileCount() + ' tiles and the palette are loaded.' : 'Not loaded yet.') + '</p>'
+      + '<div class="btns"><button id="aPick" class="on small">Pick files…</button>' + (have ? '<button id="aForget" class="small">Forget them</button>' : '') + '<button id="aClose" class="small">Close</button></div>');
+    $('aPick').onclick = () => $('artIn').click();
+    if ($('aForget')) $('aForget').onclick = async () => { await window.GameFiles.forget(); toast('Forgotten'); closeSheet(); };
+    $('aClose').onclick = closeSheet;
+  };
+  $('artIn').onchange = async (e) => {
+    const files = [...e.target.files]; e.target.value = ''; // (clearing the input empties its list)
+    if (!files || !files.length) return;
+    toast('Reading ' + files.length + ' files…');
+    const rep = await window.GameFiles.load(files);
+    closeSheet();
+    toast(rep.tiles + ' tiles' + (rep.palette ? ' and the palette' : '') + ' loaded' + (rep.problems.length ? '. ' + rep.problems[0] : '') + (!window.GameFiles.palette() ? '. BLOOD.RFF is needed too (for the colours).' : ''));
+    draw();
+  };
+  window.GameFiles.restore();
   $('helpBtn').onclick = () => { $('menu').classList.remove('open'); $('help').classList.add('open'); };
   $('helpClose').onclick = () => { $('help').classList.remove('open'); try { localStorage.setItem(STORE + '.help', '1'); } catch (e) {} };
   $('badge').onclick = problemsPanel;
