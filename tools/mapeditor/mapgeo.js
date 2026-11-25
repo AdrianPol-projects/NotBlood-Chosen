@@ -169,7 +169,8 @@
     });
     // what each wall pointed at in the file (some maps have a stale nextsector; kept while the link stays)
     W.forEach((o, i) => { o.origOther = o.other; o.origSector = map.walls[i].nextsector >= 0 ? S[map.walls[i].nextsector] || null : null; });
-    const P = map.sprites.map((p) => ({ f: p, sector: S[p.sectnum] || null }));
+    const P = map.sprites.map((p, i) => ({ f: p, sector: S[p.sectnum] || null, old: i }));
+    S.forEach((o, i) => { o.old = i; });
     return { map, sectors: S, sprites: P };
   }
   function s0(map, i) { return map.sectors[i].wallptr; }
@@ -193,9 +194,42 @@
       return w.f;
     });
     map.sectors = sectors;
-    map.sprites = g.sprites.filter((p) => p.sector && sIndex.has(p.sector)).map((p) => { p.f.sectnum = sIndex.get(p.sector); return p.f; });
+    const kept = g.sprites.filter((p) => p.sector && sIndex.has(p.sector));
+    map.sprites = kept.map((p) => { p.f.sectnum = sIndex.get(p.sector); return p.f; });
+    // numbers that point at sprites and sectors follow their new places
+    const spriteMap = new Map(), sectorMap = new Map();
+    kept.forEach((p, i) => { if (p.old !== undefined) spriteMap.set(p.old, i); });
+    g.sectors.forEach((o, i) => { if (o.old !== undefined) sectorMap.set(o.old, i); });
+    renumber(map, spriteMap, sectorMap);
     return map;
   }
+  // Sliding and rotating sectors name their marker sprites by number (XSECTOR marker0/1, 65535 for
+  // none), and the markers (types 3-8) name their sector in "owner". After sprites or sectors move
+  // to other numbers, these follow (a deleted one becomes "none").
+  const NONE16 = 65535;
+  function isMarker(sp) { return sp.type >= 3 && sp.type <= 8; }
+  function renumber(map, spriteMap, sectorMap) {
+    const sameSprites = [...spriteMap].every(([a, b]) => a === b), sameSectors = [...sectorMap].every(([a, b]) => a === b);
+    if (sameSprites && sameSectors && spriteMap.size === map.sprites.length) return;
+    for (const sec of map.sectors) {
+      if (!sec.ext) continue;
+      for (const k of ['marker0', 'marker1']) {
+        const v = sec.ext[k];
+        if (v === NONE16 || v === undefined) continue;
+        sec.ext[k] = spriteMap.has(v) ? spriteMap.get(v) : (v === 0 && !spriteMap.has(0) ? 0 : NONE16);
+      }
+    }
+    for (const sp of map.sprites) if (isMarker(sp) && sp.owner >= 0) sp.owner = sectorMap.has(sp.owner) ? sectorMap.get(sp.owner) : -1;
+  }
+  function deleteSprite(map, i) {
+    const n = map.sprites.length;
+    map.sprites.splice(i, 1);
+    const spriteMap = new Map(), sectorMap = new Map();
+    for (let k = 0; k < n; k++) if (k !== i) spriteMap.set(k, k < i ? k : k - 1);
+    map.sectors.forEach((_, k) => sectorMap.set(k, k));
+    renumber(map, spriteMap, sectorMap);
+  }
+
   function relink(loop) { loop.forEach((w, i) => { w.next = loop[(i + 1) % loop.length]; }); }
 
   // ---- edits -----------------------------------------------------------------------------------------
@@ -382,6 +416,15 @@
       if (w.picnum < 0 || w.picnum >= 30720) out.push('Wall ' + i + ' has a bad tile.');
     });
     map.sprites.forEach((p, i) => { if (p.sectnum < 0 || p.sectnum >= ns) out.push('Sprite ' + i + ' is in no sector.'); });
+    // sliding/rotating sectors whose marker sprites are gone or aren't markers
+    map.sectors.forEach((s, i) => {
+      if (!s.ext || ![604, 613, 614, 615, 616, 617].includes(s.type)) return;
+      for (const k of ['marker0', 'marker1']) {
+        const v = s.ext[k];
+        if (k === 'marker1' && (s.type === 604 || s.type === 613 || s.type === 615 || s.type === 617)) continue; // rotating ones use one marker
+        if (v === NONE16 || v >= map.sprites.length || !isMarker(map.sprites[v])) warnings.push('Sector ' + i + ' (' + (s.type === 604 ? 'teleporter' : 'sliding/rotating door') + ') lost its ' + k + ' sprite.');
+      }
+    });
     if (map.sectors.length > 4096 || map.walls.length > 16384 || map.sprites.length > 16384) out.push('The map is too big for the game.');
     return out;
   }
@@ -396,6 +439,6 @@
   }
 
   root.MapGeo = { emptyMap, loopsOf, inside, sectorAt, slopeZ, triangulateSector, area2, pointInPoly, toGraph, fromGraph,
-    addSector, deleteSector, splitWall, moveCorner, deleteCorner, newSectorPlace, problems, DEFAULT_SECTOR, DEFAULT_WALL };
+    addSector, deleteSector, deleteSprite, splitWall, moveCorner, deleteCorner, newSectorPlace, problems, DEFAULT_SECTOR, DEFAULT_WALL };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.MapGeo;
 })(typeof window !== 'undefined' ? window : this);

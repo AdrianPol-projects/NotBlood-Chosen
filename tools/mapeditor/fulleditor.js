@@ -475,7 +475,7 @@
     if (st.tool === 'select' || st.tool === 'erase') {
       const sp = spriteAt(p);
       if (sp >= 0) {
-        if (st.tool === 'erase') { snapshot(); m.sprites.splice(sp, 1); st.sel = null; closeSheet(); changed(); return; }
+        if (st.tool === 'erase') { snapshot(); G().deleteSprite(m, sp); st.sel = null; closeSheet(); changed(); return; }
         st.sel = { kind: 'sprite', i: sp }; spritePanel(sp); draw(); return;
       }
       const wl = st.tool === 'select' ? wallAt(p) : -1;
@@ -713,7 +713,7 @@
     $('feTurnR').onclick = () => { snapshot(); sp.ang = (sp.ang + 256) & 2047; changed(); };
     $('feFloor').onclick = () => { snapshot(); sp.z = Math.round(G().slopeZ(st.map, sp.sectnum, sp.x, sp.y, false)); changed(); spritePanel(i); };
     $('feDup').onclick = () => { snapshot(); const c = JSON.parse(JSON.stringify(sp)); c.x += 128; c.extra = -1; st.map.sprites.push(c); st.sel = { kind: 'sprite', i: st.map.sprites.length - 1 }; changed(); spritePanel(st.sel.i); };
-    $('feDelP').onclick = () => { snapshot(); st.map.sprites.splice(i, 1); st.sel = null; closeSheet(); changed(); };
+    $('feDelP').onclick = () => { snapshot(); G().deleteSprite(st.map, i); st.sel = null; closeSheet(); changed(); };
     $('feDone').onclick = () => { st.sel = null; closeSheet(); draw(); };
   }
   function cornerPanel() {

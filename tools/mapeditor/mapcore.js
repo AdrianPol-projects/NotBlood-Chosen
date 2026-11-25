@@ -590,7 +590,7 @@
     return (s || 'MYMAP') + '.MAP';
   }
 
-  const VERSION = '0.5';
+  const VERSION = '0.5.1';
 
   const api = {
     VERSION, THINGS, KEY_NAMES, upgradeProject, sectorExtra, THING_BY_TYPE, COMMON_TILES, Z_PER_UNIT, LIMITS,

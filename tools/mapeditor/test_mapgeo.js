@@ -46,5 +46,26 @@ for (const path of process.argv.slice(2)) {
   G.deleteSector(map, map.sectors.length - 1);
   expect(G.problems(map).length === 0, path + ': still whole after a split and a delete');
 }
+// sliding doors keep their marker sprites when other sprites and sectors are deleted
+for (const path of process.argv.slice(2)) {
+  const map = F.parseMap(new Uint8Array(fs.readFileSync(path)));
+  const markers = () => map.sectors.map((s) => s.ext && s.ext.marker0 !== 65535 && [616, 614].includes(s.type) ? map.sprites[s.ext.marker0] : null);
+  const before = markers().map((sp) => sp && sp.x + ',' + sp.y + ',' + sp.type);
+  if (!before.some(Boolean)) continue;
+  // markers whose owner isn't the sector that uses them (a few official maps have some)
+  const oddOwners = (m) => m.sprites.filter((sp, i) => sp.type >= 3 && sp.type <= 5 && sp.owner >= 0 && !(m.sectors[sp.owner] && m.sectors[sp.owner].ext && (m.sectors[sp.owner].ext.marker0 === i || m.sectors[sp.owner].ext.marker1 === i))).length;
+  const odd0 = oddOwners(map);
+  const w0 = []; G.problems(map, w0);
+  // delete the first sprite that isn't a marker, and a sector without markers in it
+  G.deleteSprite(map, map.sprites.findIndex((sp) => sp.type < 3 || sp.type > 8));
+  const victim = map.sectors.findIndex((s, i) => !(s.ext && s.ext.marker0 !== 65535) && !map.sprites.some((sp) => sp.sectnum === i && sp.type >= 3 && sp.type <= 8) && !map.sectors.some((o) => o.ext && map.sprites[o.ext.marker0] && map.sprites[o.ext.marker0].sectnum === i));
+  const nb = before.slice(0, victim).concat(before.slice(victim + 1));
+  G.deleteSector(map, victim);
+  const after = markers().map((sp) => sp && sp.x + ',' + sp.y + ',' + sp.type);
+  expect(JSON.stringify(after) === JSON.stringify(nb), path + ': sliding doors keep their markers after deletions');
+  expect(oddOwners(map) === odd0, path + ': markers still name their sectors (' + odd0 + ' odd in the original, ' + oddOwners(map) + ' now)');
+  const w1 = []; G.problems(map, w1);
+  expect(w1.filter((t) => /marker/.test(t)).length === w0.filter((t) => /marker/.test(t)).length, path + ': no markers lost');
+}
 console.log(failed ? failed + ' geometry checks failed' : 'geometry checks passed');
 process.exit(failed ? 1 : 0);
