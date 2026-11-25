@@ -23,6 +23,9 @@ and the 3D view uses Blood's tiles, palette and shading table, sprites and the p
   pick it under `< USER MAP >` or MULTIPLAYER > USER MAP. Online, the other players get it from the
   server by themselves.
 
+**Maps made by an AI:** [AI_PROMPT.md](AI_PROMPT.md) is a prompt for Claude (or another AI) that writes
+a level as a project file; open it with ☰ → *Open project (.json)*, check it in 3D / Walk, fix and save.
+
 Files: `mapcore.js` (map model, checks, the `.MAP` writer, the same format the game saves),
 `index.html` (the touch interface), `view3d.js` (3D view and walkthrough, WebGL), `gamefiles.js` (reads ART and RFF files), `build.py` (makes the one-file `BloodMapMaker.html` and the
 relay's copy), `test_mapcore.js` + `check_structure.py` + `test_walk.js` (tests: `node test_mapcore.js /tmp/out &&

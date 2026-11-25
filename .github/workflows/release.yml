@@ -316,10 +316,10 @@ jobs:
           TAG="mapeditor-v$version"
           TITLE="Blood Map Maker $version (map editor for NotBlood Chosen)"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" BloodMapMaker.html --clobber
+            gh release upload "$TAG" BloodMapMaker.html tools/mapeditor/AI_PROMPT.md --clobber
             gh release edit "$TAG" --title "$TITLE" --notes-file tools/mapeditor/README.md
           else
-            gh release create "$TAG" BloodMapMaker.html --prerelease --latest=false --target "$GITHUB_SHA" --title "$TITLE" --notes-file tools/mapeditor/README.md
+            gh release create "$TAG" BloodMapMaker.html tools/mapeditor/AI_PROMPT.md --prerelease --latest=false --target "$GITHUB_SHA" --title "$TITLE" --notes-file tools/mapeditor/README.md
           fi
 
   # a draft beta from earlier builds made public, without building again

@@ -262,7 +262,13 @@ small { color: var(--dim); }
   // rooms from older projects get the fields added since
   function upgradeProject(prj) {
     const base = newRoom([]);
-    prj.rooms.forEach((r) => { for (const k in base) if (r[k] === undefined && k !== 'pts') r[k] = base[k]; });
+    prj.rooms.forEach((r) => {
+      for (const k in base) if (r[k] === undefined && k !== 'pts') r[k] = base[k];
+      // outlines from elsewhere (an AI, a hand-written file): whole numbers, no repeats, Build's order
+      if (Array.isArray(r.pts)) r.pts = cleanPoly(r.pts.filter((p) => Array.isArray(p) && p.length >= 2).map((p) => [Math.round(+p[0] || 0), Math.round(+p[1] || 0)]));
+      else r.pts = [];
+    });
+    prj.things = (prj.things || []).filter((t) => t && THING_BY_TYPE[t.type]).map((t) => ({ type: t.type, x: Math.round(+t.x || 0), y: Math.round(+t.y || 0), ang: ((+t.ang || 0) & 2047) }));
     if (prj.visibility === undefined) prj.visibility = 0;
     return prj;
   }
@@ -713,7 +719,7 @@ small { color: var(--dim); }
     return (s || 'MYMAP') + '.MAP';
   }
 
-  const VERSION = '0.3';
+  const VERSION = '0.4';
 
   const api = {
     VERSION, THINGS, KEY_NAMES, upgradeProject, sectorExtra, THING_BY_TYPE, COMMON_TILES, Z_PER_UNIT, LIMITS,
