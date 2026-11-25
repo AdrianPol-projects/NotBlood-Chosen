@@ -4,10 +4,13 @@ Also refreshes the copy the relay serves at /mapmaker (server/static/mapmaker.ht
 import os, re, sys
 here = os.path.dirname(os.path.abspath(__file__))
 html = open(os.path.join(here, "index.html"), encoding="utf-8").read()
+one = html
+for name in ("mapcore.js", "view3d.js"):
+    js = open(os.path.join(here, name), encoding="utf-8").read()
+    tag = '<script src="%s"></script>' % name
+    assert tag in one, tag
+    one = one.replace(tag, "<script>\n" + js.replace("</script", "<\\/script") + "\n</script>")
 core = open(os.path.join(here, "mapcore.js"), encoding="utf-8").read()
-tag = '<script src="mapcore.js"></script>'
-assert tag in html
-one = html.replace(tag, "<script>\n" + core.replace("</script", "<\\/script") + "\n</script>")
 version = re.search(r"VERSION = '([^']+)'", core).group(1)
 outs = sys.argv[1:] or []
 outs.append(os.path.join(here, "..", "..", "server", "static", "mapmaker.html"))

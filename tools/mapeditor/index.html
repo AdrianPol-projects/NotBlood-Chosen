@@ -47,6 +47,19 @@ h3 { margin: 2px 0 6px; font-size: 16px; color: var(--accent2); }
 #help .box { max-width: 640px; margin: 20px auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
 #help li { margin: 4px 0; }
 small { color: var(--dim); }
+#v3d { position: fixed; inset: 0; z-index: 8; background: #000; display: none; }
+#v3d.open { display: block; }
+#v3d canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.v3d-top { position: absolute; left: 0; right: 0; top: 0; display: flex; gap: 8px; align-items: center; padding: 8px; padding-top: max(8px, env(safe-area-inset-top)); background: linear-gradient(#000a, #0000); }
+.v3d-info { flex: 1; color: var(--dim); font-size: 14px; }
+.v3d-help { position: absolute; left: 10px; right: 100px; top: 64px; transition: opacity .6s; color: var(--dim); font-size: 13px; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.v3d-stick { position: absolute; width: 120px; height: 120px; border-radius: 50%; border: 2px solid #fff4; display: none; pointer-events: none; }
+.v3d-stick.on { display: block; }
+.v3d-knob { position: absolute; left: 40px; top: 40px; width: 40px; height: 40px; border-radius: 50%; background: #fff5; }
+.v3d-jump, .v3d-run { position: absolute; right: 16px; display: none; width: 76px; height: 56px; border-radius: 16px; background: #0008; }
+.v3d-jump { bottom: 110px; } .v3d-run { bottom: 44px; }
+.v3d-help.gone { opacity: 0; }
+#v3d.walking .v3d-jump, #v3d.walking .v3d-run { display: block; }
 </style>
 </head>
 <body>
@@ -71,6 +84,7 @@ small { color: var(--dim); }
     <button data-tool="erase">Delete</button>
     <button id="undoBtn">Undo</button>
     <button id="fitBtn">Fit</button>
+    <button id="v3dBtn">3D / Walk</button>
   </div>
 </div>
 <div id="menu">
@@ -90,6 +104,7 @@ small { color: var(--dim); }
     <li><b>▭ Room</b>: tap two corners. <b>✎ Shape</b>: tap the corners one by one, then tap the first corner again (or <i>Finish</i>).</li>
     <li>Draw rooms <b>touching</b> each other to join them: where their edges meet you can walk through. Rooms can't overlap.</li>
     <li><b>Select</b> a room to set its floor height, ceiling height, textures, light and sky. A small floor difference is a step, a big one needs a jump.</li>
+    <li><b>3D / Walk</b>: look at the map from above, or walk through it from the single player start to try steps, openings and heights (sizes are close to Blood's, not exact).</li>
     <li><b>+ Thing</b>: pick what to place (starts, weapons, ammo, health, armor, power-ups, keys) and tap in a room. Select a start to turn it.</li>
     <li>A map needs a <b>single player start</b>. Bloodbath uses the <b>bloodbath starts</b> (put 8, one per player); co-op uses one single player start per player.</li>
     <li>☰ → <b>Save .MAP for the game</b>. Put the file in the game folder (Android: the <i>NotBlood</i> folder of the main storage) and pick it under <i>&lt; USER MAP &gt;</i> when you choose an episode, or MULTIPLAYER → USER MAP. In online games the others get the map from the server by themselves.</li>
@@ -98,7 +113,9 @@ small { color: var(--dim); }
   <div class="btns"><button id="helpClose" class="on">Got it</button></div>
 </div></div>
 <div id="toast"></div>
+<div id="v3d"></div>
 <script src="mapcore.js"></script>
+<script src="view3d.js"></script>
 <script>
 (function () {
   'use strict';
@@ -115,6 +132,7 @@ small { color: var(--dim); }
   let thingType = 1;
   let undo = [];
   let problems = [];
+  let viewer = null;
 
   function load() { try { const s = localStorage.getItem(STORE); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
   function store() { try { localStorage.setItem(STORE, JSON.stringify(prj)); } catch (e) {} }
@@ -493,6 +511,10 @@ small { color: var(--dim); }
   $('badge').onclick = problemsPanel;
   $('undoBtn').onclick = () => { if (!undo.length) { toast('Nothing to undo'); return; } prj = JSON.parse(undo.pop()); $('name').value = prj.name; sel = null; drawPts = []; closeSheet(); changed(); };
   $('fitBtn').onclick = fit;
+  $('v3dBtn').onclick = () => {
+    if (!prj.rooms.length) { toast('Draw a room first'); return; }
+    viewer = window.View3D.open(prj, $('v3d'));
+  };
   $('name').value = prj.name;
   $('name').addEventListener('input', (e) => { prj.name = e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8); store(); });
   $('name').addEventListener('change', (e) => { e.target.value = prj.name || 'MYMAP'; prj.name = e.target.value; store(); });
@@ -500,7 +522,7 @@ small { color: var(--dim); }
   window.addEventListener('resize', resize);
 
   // for tests and the curious: where a map point is on the screen right now
-  window.MapMaker = { toScreen: (x, y) => { const r = cv.getBoundingClientRect(), s = toScreen([x, y]); return [r.left + s[0], r.top + s[1]]; }, project: () => prj };
+  window.MapMaker = { toScreen: (x, y) => { const r = cv.getBoundingClientRect(), s = toScreen([x, y]); return [r.left + s[0], r.top + s[1]]; }, project: () => prj, viewer: () => viewer };
   resize();
   setTool('rect');
   fit();

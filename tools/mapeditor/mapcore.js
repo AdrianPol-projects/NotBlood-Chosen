@@ -451,7 +451,7 @@
     return (s || 'MYMAP') + '.MAP';
   }
 
-  const VERSION = '0.1';
+  const VERSION = '0.2';
 
   const api = {
     VERSION, THINGS, THING_BY_TYPE, COMMON_TILES, Z_PER_UNIT, LIMITS,
