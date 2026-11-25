@@ -307,6 +307,10 @@ jobs:
           python3 tools/mapeditor/check_structure.py /tmp/maps/*.MAP
           node tools/mapeditor/test_walk.js
           node tools/mapeditor/test_gamefiles.js
+          # every Blood test map that comes with NotBlood: read and written back byte for byte, and edited
+          mkdir -p /tmp/bloodmaps && unzip -q -j -o notblood.pk3 'validatedemos/*' -d /tmp/bloodmaps
+          node tools/mapeditor/test_mapfile.js /tmp/bloodmaps/*.MAP /tmp/bloodmaps/*.map
+          node tools/mapeditor/test_mapgeo.js /tmp/bloodmaps/*.MAP /tmp/bloodmaps/*.map
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

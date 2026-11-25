@@ -1,79 +1,112 @@
-// node test_walk.js: the walkthrough's rules (openings, steps, walls) on small maps
+// node test_walk.js: the walkthrough (walking, doors, lifts, keys, switches, secrets) on small maps
 global.window = global;
 global.MapCore = require('./mapcore.js');
+global.MapFile = require('./mapfile.js');
+global.MapGeo = require('./mapgeo.js');
 require('./view3d.js');
-const M = global.MapCore, V = global.View3D;
+const M = global.MapCore, F = global.MapFile, V = global.View3D;
 let failed = 0;
 const expect = (c, what) => { if (!c) { failed++; console.log('FAIL: ' + what); } };
 const rect = (x1, y1, x2, y2) => M.cleanPoly([[x1, y1], [x2, y1], [x2, y2], [x1, y2]]);
-function world(second) {
+function world(second, third) {
   const p = M.newProject();
   p.rooms.push(M.newRoom(rect(0, 0, 2048, 2048)));
   if (second) p.rooms.push(Object.assign(M.newRoom(rect(2048, 512, 4096, 1536)), second));
-  p.things.push({ type: 1, x: 1024, y: 1024, ang: 0 }); // facing +x, towards room 2
+  if (third) p.rooms.push(Object.assign(M.newRoom(rect(4096, 512, 6144, 1536)), third));
+  p.things.push({ type: 1, x: 1024, y: 1024, ang: 0 }); // facing +x
   return p;
 }
-function walk(p, frames) {
-  const w = V.Walker(p, M.buildMap(p, false));
-  for (let i = 0; i < frames; i++) w.step(1, 0, false, false, 1);
-  return w.st;
+const mapOf = (p) => F.parseMap(M.exportMap(p, true));
+function setup(p) {
+  const map = mapOf(p), w = V.Walker(map), says = [];
+  const t = V.Triggers(map, { say: (s) => says.push(s) });
+  t.start();
+  return { map, w, t, says };
 }
-let st = walk(world({}), 120);
-expect(st.sector === 1 && st.x > 2048, 'walks through an opening into the next room (x=' + Math.round(st.x) + ')');
-st = walk(world({ floor: 128 }), 120);
-expect(st.sector === 1 && st.z === 128, 'climbs a small step');
-st = walk(world({ floor: 600 }), 120);
-expect(st.sector === 0 && st.x < 2048 - 100, 'stopped by a high step (x=' + Math.round(st.x) + ')');
-st = walk(world({ height: 400 }), 120);
-expect(st.sector === 0, 'stopped by a low opening');
-st = walk(world(null), 120);
-expect(st.sector === 0 && st.x <= 2048 - V.PLAYER.radius + 1, 'stopped by a wall (x=' + Math.round(st.x) + ')');
-st = walk(world({ floor: -800 }), 200);
-expect(st.sector === 1 && st.z === -800, 'falls down into a lower room');
-// a jump gets up a step that's too high to walk
-const p = world({ floor: 340 });
-const w = V.Walker(p, M.buildMap(p, false));
-for (let i = 0; i < 40; i++) w.step(1, 0, false, false, 1);
-for (let i = 0; i < 60; i++) w.step(1, 0, false, i === 0, 1);
-expect(w.st.sector === 1, 'jumps up a 340 step');
-const tris = V.triangulate(M.cleanPoly([[0, 0], [2048, 0], [2048, 2048], [1024, 2048], [1024, 1024], [0, 1024]]));
-expect(tris.length === 4, 'L-shaped room makes 4 triangles (' + tris.length + ')');
-const mesh = V.buildMesh(world({ floor: 128 }));
-expect(mesh.count > 0 && mesh.count % 3 === 0 && mesh.batches.every((b) => b.pos.length === b.count * 3 && b.uv.length === b.count * 2), 'mesh has whole triangles');
+function walk(env, frames, fwd, opts) {
+  for (let i = 0; i < frames; i++) {
+    const was = env.w.st.sector;
+    env.t.tick(16); env.w.step(fwd === undefined ? 1 : fwd, 0, false, opts && opts.jump && i === 0, 1);
+    if (env.w.st.sector !== was) env.t.moved(was, env.w.st.sector);
+  }
+  return env.w.st;
+}
+// use, like the viewer does (walls and the sector behind them, or the sector it stands in)
+function use(env) {
+  const ray = env.w.useRay(), map = env.map;
+  if (ray.wall >= 0) {
+    const n = map.walls[ray.wall].nextsector;
+    if (n >= 0 && map.sectors[n].ext && map.sectors[n].ext.Wallpush) return env.t.trigger({ kind: 'sector', i: n }, 40);
+  }
+  const s = env.w.st.sector;
+  if (s >= 0 && map.sectors[s].ext && map.sectors[s].ext.Push) return env.t.trigger({ kind: 'sector', i: s }, 40);
+  return false;
+}
+let e = setup(world({}));
+walk(e, 120);
+expect(e.w.st.sector === 1 && e.w.st.x > 2048, 'walks through an opening (x=' + Math.round(e.w.st.x) + ')');
+e = setup(world({ floor: 128 })); walk(e, 120);
+expect(e.w.st.sector === 1 && Math.abs(e.w.st.z - 128) < 1, 'climbs a small step');
+e = setup(world({ floor: 600 })); walk(e, 120);
+expect(e.w.st.sector === 0 && e.w.st.x < 2048 - 100, 'stopped by a high step');
+e = setup(world({ height: 400 })); walk(e, 120);
+expect(e.w.st.sector === 0, 'stopped by a low opening');
+e = setup(world(null)); walk(e, 120);
+expect(e.w.st.sector === 0 && e.w.st.x <= 2048 - V.PLAYER.radius + 1, 'stopped by a wall');
+e = setup(world({ floor: -800 })); walk(e, 200);
+expect(e.w.st.sector === 1 && Math.abs(e.w.st.z + 800) < 1, 'falls into a lower room');
+e = setup(world({ floor: 340 })); walk(e, 40); walk(e, 60, 1, { jump: true });
+expect(e.w.st.sector === 1, 'jumps up a 340 step');
 
-// a door: shut it stops the player, used it opens and lets them through, then shuts again
-{
-  const p = world({ kind: 'door', wait: 10, speed: 5 });
-  p.rooms.push(Object.assign(M.newRoom(rect(4096, 512, 6144, 1536))));
-  const hts = V.Heights(p), w = V.Walker(p, M.buildMap(p, false), hts);
-  for (let i = 0; i < 90; i++) w.step(1, 0, false, false, 1);
-  expect(w.st.sector === 0, 'a shut door stops the player');
-  expect(w.useTarget() === 1, 'use reaches the door ahead');
-  hts.st[1].target = 1;
-  let t = 0;
-  for (let i = 0; i < 60; i++) { t += 16; V.runMovers(p, hts, w, t, 16); }
-  expect(hts.st[1].open === 1, 'the door opened');
-  for (let i = 0; i < 200; i++) { t += 16; V.runMovers(p, hts, w, t, 16); w.step(1, 0, false, false, 1); }
-  expect(w.st.sector === 2, 'walked through the open door into the room behind (' + w.st.sector + ')');
-  for (let i = 0; i < 200; i++) { t += 16; V.runMovers(p, hts, w, t, 16); }
-  expect(hts.st[1].open === 0, 'the door shut again after its wait');
-}
-// a lift: standing on it and using it lifts the player to the upper room
-{
-  const p = world({ kind: 'lift', rise: 600, wait: 0 });
-  p.rooms.push(Object.assign(M.newRoom(rect(4096, 512, 6144, 1536)), { floor: 600 }));
-  const hts = V.Heights(p), w = V.Walker(p, M.buildMap(p, false), hts);
-  for (let i = 0; i < 60; i++) w.step(1, 0, false, false, 1);
-  expect(w.st.sector === 1, 'walked onto the lift');
-  for (let i = 0; i < 200; i++) w.step(1, 0, false, false, 1);
-  expect(w.st.sector === 1, 'the upper room is out of reach before the lift goes up');
-  expect(w.useTarget() === 1, 'use on the lift it stands on');
-  hts.st[1].target = 1;
-  let t = 0;
-  for (let i = 0; i < 120; i++) { t += 16; V.runMovers(p, hts, w, t, 16); w.step(0, 0, false, false, 1); }
-  expect(Math.abs(w.st.z - 600) < 1, 'the lift carried the player up (z=' + Math.round(w.st.z) + ')');
-  for (let i = 0; i < 120; i++) w.step(1, 0, false, false, 1);
-  expect(w.st.sector === 2, 'stepped off the lift into the upper room');
-}
+// a door: shut it stops the player; used, it opens, lets them through and shuts again
+e = setup(world({ kind: 'door', wait: 10, speed: 5 }, {}));
+walk(e, 90);
+expect(e.w.st.sector === 0, 'a shut door stops the player');
+expect(use(e), 'use reaches the door');
+walk(e, 40, 0);
+walk(e, 200);
+expect(e.w.st.sector === 2, 'walked through the opened door (' + e.w.st.sector + ')');
+walk(e, 200, 0);
+expect(e.map.sectors[1].ceilingz === e.map.sectors[1].floorz, 'the door shut again after its wait');
+
+// a locked door
+e = setup(world({ kind: 'door', key: 1 }, {}));
+walk(e, 90); use(e); walk(e, 40, 0);
+expect(e.says.some((s) => /skull/.test(s)) && e.map.sectors[1].ceilingz === e.map.sectors[1].floorz, 'a locked door says which key it needs');
+e.t.keys.add(1); use(e); walk(e, 60, 0);
+expect(e.map.sectors[1].ceilingz < e.map.sectors[1].floorz, 'with the key it opens');
+
+// a lift carries the player up to the room above
+e = setup(world({ kind: 'lift', rise: 600, wait: 0 }, { floor: 600 }));
+walk(e, 60);
+expect(e.w.st.sector === 1, 'walked onto the lift');
+walk(e, 150);
+expect(e.w.st.sector === 1, 'the upper room is out of reach before the lift goes up');
+expect(use(e), 'use on the lift');
+walk(e, 150, 0);
+expect(Math.abs(e.w.st.z - 600) < 1, 'the lift carried the player up (z=' + Math.round(e.w.st.z) + ')');
+walk(e, 150);
+expect(e.w.st.sector === 2, 'stepped off the lift into the upper room');
+
+// a secret room says so, once
+e = setup(world({ secret: true }));
+walk(e, 150);
+expect(e.says.filter((s) => /secret/.test(s)).length === 1 && /1 of 1/.test(e.says[0]), 'a secret room counts (' + e.says + ')');
+
+// a switch (sprite with Push) opens a door elsewhere through a channel
+e = setup(world({ kind: 'door', wait: 0 }, {}));
+const door = e.map.sectors[1];
+door.ext.Wallpush = 0; door.ext.rxID = 100;
+e.map.sprites.push({ ...e.map.sprites[0], type: 20, picnum: 1072, x: 1500, y: 1024, ext: { state: 0, txID: 100, command: 3, triggerOn: 1, triggerOff: 1, Push: 1 } });
+const t2 = V.Triggers(e.map, { say: (s) => e.says.push(s) });
+t2.trigger({ kind: 'sprite', i: e.map.sprites.length - 1 }, 30);
+for (let i = 0; i < 100; i++) t2.tick(16);
+expect(door.ceilingz < door.floorz, 'a switch opened the door through channel 100');
+t2.trigger({ kind: 'sprite', i: e.map.sprites.length - 1 }, 30);
+for (let i = 0; i < 100; i++) t2.tick(16);
+expect(door.ceilingz === door.floorz, 'and shut it again');
+
+const mesh = V.buildMesh(mapOf(world({ floor: 128 })));
+expect(mesh.count > 0 && mesh.count % 3 === 0 && mesh.batches.every((b) => b.pos.length === b.count * 3 && b.uv.length === b.count * 2), 'mesh has whole triangles');
 console.log(failed ? failed + ' walk checks failed' : 'walk checks passed');
 process.exit(failed ? 1 : 0);

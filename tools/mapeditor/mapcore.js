@@ -471,9 +471,16 @@
   }
 
   // the .MAP bytes (Uint8Array); throws an Error saying what's wrong when it can't
-  function exportMap(prj) {
-    const problems = checkProject(prj).filter((p) => p.level === 'error');
-    if (problems.length) throw new Error(problems.map((p) => p.text).join('\n'));
+  function exportMap(prj, lenient) {
+    if (lenient) {
+      // for looking at it (3D view): whatever can be written, even with problems left
+      prj = { ...prj, rooms: prj.rooms.filter((r, i) => !roomProblem(r.pts, prj.rooms, i)) };
+      prj.things = prj.things.filter((t) => THING_BY_TYPE[t.type] && roomAt([t.x, t.y], prj.rooms) >= 0);
+      if (!prj.rooms.length) throw new Error('Draw a room first');
+    } else {
+      const problems = checkProject(prj).filter((p) => p.level === 'error');
+      if (problems.length) throw new Error(problems.map((p) => p.text).join('\n'));
+    }
     const { sectors, walls, sprites } = buildMap(prj, false);
     const rev = 1;
     const out = new Out();
@@ -583,7 +590,7 @@
     return (s || 'MYMAP') + '.MAP';
   }
 
-  const VERSION = '0.4';
+  const VERSION = '0.5';
 
   const api = {
     VERSION, THINGS, KEY_NAMES, upgradeProject, sectorExtra, THING_BY_TYPE, COMMON_TILES, Z_PER_UNIT, LIMITS,

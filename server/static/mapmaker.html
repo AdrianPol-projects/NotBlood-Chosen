@@ -24,7 +24,7 @@ header { display: flex; gap: 8px; align-items: center; padding: 8px 10px; paddin
 header .title { font-weight: 700; color: var(--accent2); white-space: nowrap; }
 header input { flex: 1; min-width: 0; text-transform: uppercase; }
 #wrap { position: relative; flex: 1; min-height: 0; }
-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+#wrap > canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
 #hint { position: absolute; left: 10px; right: 10px; top: 8px; pointer-events: none; color: var(--dim); font-size: 13px; text-shadow: 0 1px 2px #000; }
 #badge { position: absolute; right: 10px; top: 8px; }
 #tools { display: flex; gap: 6px; padding: 8px; overflow-x: auto; background: var(--panel); border-top: 1px solid var(--line); }
@@ -53,13 +53,32 @@ small { color: var(--dim); }
 #tiles .grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; padding: 8px; align-content: start; }
 #tiles .grid button { padding: 2px; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--dim); }
 #tiles canvas { width: 64px; height: 64px; image-rendering: pixelated; background: #000; }
-.tileprev { width: 40px; height: 40px; image-rendering: pixelated; background: #000; border-radius: 4px; vertical-align: middle; }
+.tileprev { position: static; flex: 0 0 auto; width: 40px; height: 40px; image-rendering: pixelated; background: #000; border-radius: 4px; vertical-align: middle; }
 .picrow { display: flex; gap: 6px; align-items: center; }
 .picrow button { flex: 0 0 auto; }
 .v3d-use { position: absolute; right: 16px; display: none; width: 76px; height: 56px; border-radius: 16px; background: #0008; bottom: 176px; }
 #v3d.walking .v3d-use { display: block; }
 .v3d-msg { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); color: #f0a24a; font-weight: 700; font-size: 20px; text-shadow: 0 2px 4px #000; opacity: 0; transition: opacity .3s; pointer-events: none; text-align: center; }
 .v3d-msg.show { opacity: 1; }
+#full { position: fixed; inset: 0; z-index: 7; background: var(--bg); display: none; flex-direction: column; }
+#full.open { display: flex; }
+#full header { display: flex; gap: 8px; align-items: center; padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); background: var(--panel); border-bottom: 1px solid var(--line); }
+#full header .title { font-weight: 700; color: var(--accent2); white-space: nowrap; }
+#full header input { flex: 1; min-width: 0; text-transform: uppercase; }
+#full .wrap { position: relative; flex: 1; min-height: 0; }
+#full .wrap > canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+#full .hint { position: absolute; left: 10px; right: 120px; top: 8px; pointer-events: none; color: var(--dim); font-size: 13px; text-shadow: 0 1px 2px #000; }
+#full .badge { position: absolute; right: 10px; top: 8px; }
+#full .tools { display: flex; gap: 6px; padding: 8px; overflow-x: auto; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+#full .tools button { flex: 0 0 auto; }
+#full .sheet { background: var(--panel); border-top: 1px solid var(--line); max-height: 52vh; overflow-y: auto; padding: 10px 12px; display: none; }
+#full .sheet.open { display: block; }
+#full .menu { position: fixed; right: 8px; top: 56px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px; display: none; flex-direction: column; gap: 6px; z-index: 9; min-width: 230px; }
+#full .menu.open { display: flex; }
+#full details { border-top: 1px solid var(--line); padding: 4px 0; }
+#full summary { color: var(--accent2); padding: 6px 0; cursor: pointer; }
+#full .chk { display: inline-flex; gap: 4px; align-items: center; font-size: 14px; margin-right: 10px; }
+#full .row input[type=checkbox] { width: 22px; height: 22px; justify-self: start; }
 #v3d { position: fixed; inset: 0; z-index: 8; background: #000; display: none; }
 #v3d.open { display: block; }
 #v3d canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
@@ -105,6 +124,9 @@ small { color: var(--dim); }
   <button id="newBtn">New map</button>
   <button id="saveBtn">Save project (.json)</button>
   <button id="openBtn">Open project (.json)</button>
+  <button id="fullOpenBtn">Open a .MAP (full editor)…</button>
+  <button id="fullConvBtn">This map in the full editor</button>
+  <button id="fullLastBtn">Full editor (the last map)</button>
   <button id="artBtn">Blood files for textures…</button>
   <button id="mapSetBtn">Map settings</button>
   <label class="row" style="margin:0"><span>Grid</span>
@@ -132,7 +154,9 @@ small { color: var(--dim); }
 </div></div>
 <div id="toast"></div>
 <div id="tiles"><div class="bar"><button id="tilePrev" class="small">◀</button><input id="tileGo" type="number" min="0" max="30719" placeholder="Tile number" style="flex:1"><button id="tileNext" class="small">▶</button><button id="tileClose" class="small on">Cancel</button></div><div class="grid" id="tileGrid"></div></div>
+<div id="full"></div>
 <div id="v3d"></div>
+<input id="mapIn" type="file" accept=".map,.MAP" hidden>
 <script>
 // NotBlood Chosen map editor: the map model, its checks and the Blood .MAP writer.
 // Works in a browser (window.MapCore) and in Node (require), so the tests can run it too.
@@ -607,9 +631,16 @@ small { color: var(--dim); }
   }
 
   // the .MAP bytes (Uint8Array); throws an Error saying what's wrong when it can't
-  function exportMap(prj) {
-    const problems = checkProject(prj).filter((p) => p.level === 'error');
-    if (problems.length) throw new Error(problems.map((p) => p.text).join('\n'));
+  function exportMap(prj, lenient) {
+    if (lenient) {
+      // for looking at it (3D view): whatever can be written, even with problems left
+      prj = { ...prj, rooms: prj.rooms.filter((r, i) => !roomProblem(r.pts, prj.rooms, i)) };
+      prj.things = prj.things.filter((t) => THING_BY_TYPE[t.type] && roomAt([t.x, t.y], prj.rooms) >= 0);
+      if (!prj.rooms.length) throw new Error('Draw a room first');
+    } else {
+      const problems = checkProject(prj).filter((p) => p.level === 'error');
+      if (problems.length) throw new Error(problems.map((p) => p.text).join('\n'));
+    }
     const { sectors, walls, sprites } = buildMap(prj, false);
     const rev = 1;
     const out = new Out();
@@ -719,7 +750,7 @@ small { color: var(--dim); }
     return (s || 'MYMAP') + '.MAP';
   }
 
-  const VERSION = '0.4';
+  const VERSION = '0.5';
 
   const api = {
     VERSION, THINGS, KEY_NAMES, upgradeProject, sectorExtra, THING_BY_TYPE, COMMON_TILES, Z_PER_UNIT, LIMITS,
@@ -728,6 +759,685 @@ small { color: var(--dim); }
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.MapCore = api;
+})(typeof window !== 'undefined' ? window : this);
+
+</script>
+<script>
+// Blood Map Maker: any Blood .MAP file, read and written without losing anything.
+//
+// The map is kept the way the game keeps it (source/blood/src/db.cpp, dbLoadMap/dbSaveMap):
+// sectors, walls and sprites with every field, and their extra data (XSECTOR, XWALL, XSPRITE)
+// unpacked field by field in Blood's bit order (as .ext). Reading a map and writing it again gives the same
+// bytes, so editing one thing never changes the rest. Versions 6 (plain) and 7 (encrypted) both work.
+(function (root) {
+  'use strict';
+
+  const HEADER_NEW = 0x7474614d, HEADER_OLD = 0x4d617474;
+  const LIMITS = { sectors: 4096, walls: 16384, sprites: 16384, tiles: 30720, status: 1024 };
+
+  // ---- the structures, field by field ([name, type]; types: i8 u8 i16 u16 i32 u32) ------------
+  const SECTOR = [['wallptr', 'i16'], ['wallnum', 'i16'], ['ceilingz', 'i32'], ['floorz', 'i32'], ['ceilingstat', 'u16'], ['floorstat', 'u16'],
+    ['ceilingpicnum', 'i16'], ['ceilingheinum', 'i16'], ['ceilingshade', 'i8'], ['ceilingpal', 'u8'], ['ceilingxpanning', 'u8'], ['ceilingypanning', 'u8'],
+    ['floorpicnum', 'i16'], ['floorheinum', 'i16'], ['floorshade', 'i8'], ['floorpal', 'u8'], ['floorxpanning', 'u8'], ['floorypanning', 'u8'],
+    ['visibility', 'u8'], ['fogpal', 'u8'], ['type', 'i16'], ['hitag', 'i16'], ['extra', 'i16']];
+  const WALL = [['x', 'i32'], ['y', 'i32'], ['point2', 'i16'], ['nextwall', 'i16'], ['nextsector', 'i16'], ['cstat', 'u16'], ['picnum', 'i16'], ['overpicnum', 'i16'],
+    ['shade', 'i8'], ['pal', 'u8'], ['xrepeat', 'u8'], ['yrepeat', 'u8'], ['xpanning', 'u8'], ['ypanning', 'u8'], ['type', 'i16'], ['hitag', 'i16'], ['extra', 'i16']];
+  const SPRITE = [['x', 'i32'], ['y', 'i32'], ['z', 'i32'], ['cstat', 'u16'], ['picnum', 'i16'], ['shade', 'i8'], ['pal', 'u8'], ['clipdist', 'u8'], ['blend', 'u8'],
+    ['xrepeat', 'u8'], ['yrepeat', 'u8'], ['xoffset', 'i8'], ['yoffset', 'i8'], ['sectnum', 'i16'], ['statnum', 'i16'], ['ang', 'i16'], ['owner', 'i16'],
+    ['xvel', 'i16'], ['yvel', 'i16'], ['zvel', 'i16'], ['type', 'i16'], ['flags', 'i16'], ['extra', 'i16']];
+  const SIZE = { i8: 1, u8: 1, i16: 2, u16: 2, i32: 4, u32: 4 };
+
+  // bit fields in dbSaveMap()'s order; whatever bits follow the last field are kept as they are
+  const XSECTOR = [['reference', 14], ['state', 1], ['busy', 17], ['data', 16], ['txID', 10], ['busyWaveA', 3], ['busyWaveB', 3], ['rxID', 10], ['command', 8],
+    ['triggerOn', 1], ['triggerOff', 1], ['busyTimeA', 12], ['waitTimeA', 12], ['restState', 1], ['interruptable', 1], ['amplitude', 8, true], ['freq', 8],
+    ['reTriggerA', 1], ['reTriggerB', 1], ['phase', 8], ['wave', 4], ['shadeAlways', 1], ['shadeFloor', 1], ['shadeCeiling', 1], ['shadeWalls', 1],
+    ['shade', 8, true], ['panAlways', 1], ['panFloor', 1], ['panCeiling', 1], ['Drag', 1], ['Underwater', 1], ['Depth', 3], ['panVel', 8], ['panAngle', 11],
+    ['unused1', 1], ['decoupled', 1], ['triggerOnce', 1], ['isTriggered', 1], ['Key', 3], ['Push', 1], ['Vector', 1], ['Reserved', 1], ['Enter', 1],
+    ['Exit', 1], ['Wallpush', 1], ['color', 1], ['unused2', 1], ['busyTimeB', 12], ['waitTimeB', 12], ['stopOn', 1], ['stopOff', 1], ['ceilpal', 4],
+    ['offCeilZ', 32, true], ['onCeilZ', 32, true], ['offFloorZ', 32, true], ['onFloorZ', 32, true], ['marker0', 16], ['marker1', 16], ['Crush', 1],
+    ['ceilXPanFrac', 8], ['ceilYPanFrac', 8], ['floorXPanFrac', 8], ['damageType', 3], ['floorpal', 4], ['floorYPanFrac', 8], ['locked', 1],
+    ['windVel', 10], ['windAng', 11], ['windAlways', 1], ['dudeLockout', 1], ['bobTheta', 11], ['bobZRange', 5], ['bobSpeed', 12, true],
+    ['bobAlways', 1], ['bobFloor', 1], ['bobCeiling', 1], ['bobRotate', 1]];
+  const XWALL = [['reference', 14], ['state', 1], ['busy', 17], ['data', 16, true], ['txID', 10], ['unused1', 6], ['rxID', 10], ['command', 8], ['triggerOn', 1],
+    ['triggerOff', 1], ['busyTime', 12], ['waitTime', 12], ['restState', 1], ['interruptable', 1], ['panAlways', 1], ['panXVel', 8, true], ['panYVel', 8, true],
+    ['decoupled', 1], ['triggerOnce', 1], ['isTriggered', 1], ['key', 3], ['triggerPush', 1], ['triggerVector', 1], ['triggerTouch', 1], ['unused2', 2],
+    ['xpanFrac', 8], ['ypanFrac', 8], ['locked', 1], ['dudeLockout', 1], ['unused3', 4], ['unused4', 32]];
+  const XSPRITE = [['reference', 14], ['state', 1], ['busy', 17], ['txID', 10], ['rxID', 10], ['command', 8], ['triggerOn', 1], ['triggerOff', 1], ['wave', 2],
+    ['busyTime', 12], ['waitTime', 12], ['restState', 1], ['Interrutable', 1], ['unused1', 2], ['respawnPending', 2], ['unused2', 1], ['lT', 1],
+    ['dropMsg', 8], ['Decoupled', 1], ['triggerOnce', 1], ['isTriggered', 1], ['key', 3], ['Push', 1], ['Vector', 1], ['Impact', 1], ['Pickup', 1],
+    ['Touch', 1], ['Sight', 1], ['Proximity', 1], ['unused3', 2], ['lSkill', 5], ['lS', 1], ['lB', 1], ['lC', 1], ['DudeLockout', 1],
+    ['data1', 16, true], ['data2', 16, true], ['data3', 16, true], ['goalAng', 11], ['dodgeDir', 2, true], ['locked', 1], ['medium', 2], ['respawn', 2],
+    ['data4', 16], ['unused4', 6], ['lockMsg', 8], ['health', 12], ['dudeDeaf', 1], ['dudeAmbush', 1], ['dudeGuard', 1], ['dudeFlag4', 1],
+    ['target', 16, true], ['targetX', 32, true], ['targetY', 32, true], ['targetZ', 32, true], ['burnTime', 16], ['burnSource', 16, true],
+    ['height', 16], ['stateTimer', 16]];
+  const XSIZE = { sector: 60, wall: 24, sprite: 56 };
+
+  // ---- bytes -------------------------------------------------------------------------------------
+  function crypt(bytes, key) { // dbCrypt(): xor with the key's low byte, the key counting up
+    for (let i = 0; i < bytes.length; i++) bytes[i] ^= (key + i) & 0xff;
+    return bytes;
+  }
+
+  function readStruct(dv, o, spec) {
+    const r = {};
+    for (const [k, t] of spec) {
+      switch (t) {
+        case 'i8': r[k] = dv.getInt8(o); break;
+        case 'u8': r[k] = dv.getUint8(o); break;
+        case 'i16': r[k] = dv.getInt16(o, true); break;
+        case 'u16': r[k] = dv.getUint16(o, true); break;
+        case 'i32': r[k] = dv.getInt32(o, true); break;
+        case 'u32': r[k] = dv.getUint32(o, true); break;
+      }
+      o += SIZE[t];
+    }
+    return r;
+  }
+  function writeStruct(obj, spec) {
+    const size = spec.reduce((s, [, t]) => s + SIZE[t], 0);
+    const b = new Uint8Array(size), dv = new DataView(b.buffer);
+    let o = 0;
+    for (const [k, t] of spec) {
+      const v = Math.trunc(+obj[k] || 0);
+      switch (t) {
+        case 'i8': dv.setInt8(o, clampInt(v, -128, 127)); break;
+        case 'u8': dv.setUint8(o, clampInt(v, 0, 255)); break;
+        case 'i16': dv.setInt16(o, clampInt(v, -32768, 32767), true); break;
+        case 'u16': dv.setUint16(o, clampInt(v, 0, 65535), true); break;
+        case 'i32': dv.setInt32(o, clampInt(v, -2147483648, 2147483647), true); break;
+        case 'u32': dv.setUint32(o, clampInt(v, 0, 4294967295), true); break;
+      }
+      o += SIZE[t];
+    }
+    return b;
+  }
+  function clampInt(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+  // packed x-structures: lowest bit first (BitReader/BitWriter in common_game.h)
+  function unpackBits(bytes, spec) {
+    let v = 0n;
+    for (let i = bytes.length - 1; i >= 0; i--) v = (v << 8n) | BigInt(bytes[i]);
+    const r = {};
+    let pos = 0n;
+    for (const [k, bits, signed] of spec) {
+      const n = BigInt(bits);
+      let x = (v >> pos) & ((1n << n) - 1n);
+      if (signed && (x >> (n - 1n)) & 1n) x -= 1n << n;
+      r[k] = Number(x);
+      pos += n;
+    }
+    const rest = v >> pos; // bits after the last known field (normally 0): kept untouched
+    if (rest) r._rest = rest.toString();
+    return r;
+  }
+  function packBits(obj, spec, size) {
+    let v = 0n, pos = 0n;
+    for (const [k, bits] of spec) {
+      const n = BigInt(bits);
+      const x = BigInt.asUintN(bits, BigInt(Math.trunc(+obj[k] || 0)));
+      v |= x << pos;
+      pos += n;
+    }
+    if (obj._rest) v |= BigInt(obj._rest) << pos;
+    const b = new Uint8Array(size);
+    for (let i = 0; i < size; i++) { b[i] = Number(v & 0xffn); v >>= 8n; }
+    return b;
+  }
+
+  // ---- reading -------------------------------------------------------------------------------------
+  class MapError extends Error {}
+
+  function parseMap(input) {
+    const data = input instanceof Uint8Array ? input : new Uint8Array(input);
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    let pos = 0;
+    const need = (n) => { if (n < 0 || pos + n > data.length) throw new MapError('the file ends too early'); };
+    const take = (n) => { need(n); const b = data.slice(pos, pos + n); pos += n; return b; };
+    if (data.length < 47 || data[0] !== 0x42 || data[1] !== 0x4c || data[2] !== 0x4d || data[3] !== 0x1a) throw new MapError('not a Blood map');
+    const version = dv.getUint16(4, true);
+    const v7 = (version & 0xff00) === 0x700;
+    if (!v7 && (version & 0xff00) !== 0x600) throw new MapError('unknown map version ' + version.toString(16));
+    pos = 6;
+    let head = take(37);
+    let encrypted = false;
+    const song0 = new DataView(head.buffer).getUint32(22, true);
+    if (song0 !== 0 && song0 !== HEADER_NEW && song0 !== HEADER_OLD) { crypt(head, HEADER_NEW); encrypted = true; }
+    const h = readStruct(new DataView(head.buffer), 0, [['startX', 'i32'], ['startY', 'i32'], ['startZ', 'i32'], ['startAng', 'i16'], ['startSector', 'i16'],
+      ['skyBits', 'i16'], ['visibility', 'i32'], ['songId', 'u32'], ['parallaxType', 'u8'], ['mapRev', 'i32'], ['numSectors', 'i16'], ['numWalls', 'i16'], ['numSprites', 'i16']]);
+    if (!(h.numSectors > 0 && h.numSectors <= LIMITS.sectors && h.numWalls > 0 && h.numWalls <= LIMITS.walls && h.numSprites >= 0 && h.numSprites <= LIMITS.sprites && h.skyBits >= 0 && h.skyBits <= 8))
+      throw new MapError('damaged header');
+    const map = { version, encrypted, header: h, header2: null, xsize: { ...XSIZE }, skyOffsets: [], sectors: [], walls: [], sprites: [] };
+    if (v7) {
+      const h2 = crypt(take(128), h.numWalls);
+      const d2 = new DataView(h2.buffer);
+      map.xsize = { sprite: d2.getInt32(0x40, true), wall: d2.getInt32(0x44, true), sector: d2.getInt32(0x48, true) };
+      if (!(map.xsize.sprite >= 0 && map.xsize.sprite <= 56 && map.xsize.wall >= 0 && map.xsize.wall <= 24 && map.xsize.sector >= 0 && map.xsize.sector <= 60))
+        throw new MapError('damaged header (extra data sizes)');
+      map.header2 = Array.from(h2);
+    }
+    const sky = take(2 << h.skyBits);
+    if (v7) crypt(sky, (1 << h.skyBits) * 2);
+    const sdv = new DataView(sky.buffer);
+    for (let i = 0; i < 1 << h.skyBits; i++) map.skyOffsets.push(sdv.getInt16(i * 2, true));
+    const xs = (bytes, full) => { const b = new Uint8Array(full); b.set(bytes); return b; };
+    for (let i = 0; i < h.numSectors; i++) {
+      const b = take(40);
+      if (v7) crypt(b, h.mapRev * 40);
+      const s = readStruct(new DataView(b.buffer), 0, SECTOR);
+      if (s.extra > 0) s.ext = unpackBits(xs(take(map.xsize.sector), 60), XSECTOR);
+      map.sectors.push(s);
+    }
+    for (let i = 0; i < h.numWalls; i++) {
+      const b = take(32);
+      if (v7) crypt(b, (h.mapRev * 40) | HEADER_NEW);
+      const w = readStruct(new DataView(b.buffer), 0, WALL);
+      if (w.extra > 0) w.ext = unpackBits(xs(take(map.xsize.wall), 24), XWALL);
+      map.walls.push(w);
+    }
+    for (let i = 0; i < h.numSprites; i++) {
+      const b = take(44);
+      if (v7) crypt(b, (h.mapRev * 44) | HEADER_NEW);
+      const s = readStruct(new DataView(b.buffer), 0, SPRITE);
+      if (s.extra > 0) s.ext = unpackBits(xs(take(map.xsize.sprite), 56), XSPRITE);
+      map.sprites.push(s);
+    }
+    need(4);
+    const crc = dv.getUint32(pos, true);
+    map.crcOk = crc32(data, pos) === crc;
+    pos += 4;
+    map.trailing = pos < data.length ? Array.from(data.slice(pos)) : null; // anything after the CRC (rare)
+    return map;
+  }
+
+  // ---- writing ------------------------------------------------------------------------------------
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+    return t;
+  })();
+  function crc32(bytes, n) {
+    let c = 0xffffffff;
+    for (let i = 0; i < n; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+
+  // the counts and links that follow from the arrays; call before writing after edits
+  function finish(map) {
+    const h = map.header;
+    h.numSectors = map.sectors.length; h.numWalls = map.walls.length; h.numSprites = map.sprites.length;
+    let nx = 0;
+    for (const list of [map.sectors, map.walls, map.sprites]) for (const o of list) { if (o.ext) { if (!(o.extra > 0)) o.extra = ++nx; } else if (o.extra > 0) o.extra = -1; }
+  }
+
+  function writeMap(map) {
+    const h = map.header, v7 = (map.version & 0xff00) === 0x700;
+    const parts = [];
+    const sig = new Uint8Array(6); sig.set([0x42, 0x4c, 0x4d, 0x1a]); new DataView(sig.buffer).setUint16(4, map.version, true);
+    parts.push(sig);
+    const head = writeStruct({ ...h, numSectors: map.sectors.length, numWalls: map.walls.length, numSprites: map.sprites.length },
+      [['startX', 'i32'], ['startY', 'i32'], ['startZ', 'i32'], ['startAng', 'i16'], ['startSector', 'i16'], ['skyBits', 'i16'], ['visibility', 'i32'],
+        ['songId', 'u32'], ['parallaxType', 'u8'], ['mapRev', 'i32'], ['numSectors', 'i16'], ['numWalls', 'i16'], ['numSprites', 'i16']]);
+    parts.push(map.encrypted ? crypt(head, HEADER_NEW) : head);
+    const xsize = v7 ? map.xsize : XSIZE;
+    if (v7) {
+      const h2 = new Uint8Array(map.header2 || new Array(128).fill(0));
+      const d2 = new DataView(h2.buffer);
+      d2.setInt32(0x40, xsize.sprite, true); d2.setInt32(0x44, xsize.wall, true); d2.setInt32(0x48, xsize.sector, true);
+      parts.push(crypt(h2, map.walls.length));
+    }
+    const sky = new Uint8Array(2 << h.skyBits), sdv = new DataView(sky.buffer);
+    for (let i = 0; i < 1 << h.skyBits; i++) sdv.setInt16(i * 2, map.skyOffsets[i] || 0, true);
+    parts.push(v7 ? crypt(sky, (1 << h.skyBits) * 2) : sky);
+    for (const s of map.sectors) {
+      const b = writeStruct(s, SECTOR);
+      parts.push(v7 ? crypt(b, h.mapRev * 40) : b);
+      if (s.extra > 0) parts.push(packBits(s.ext || {}, XSECTOR, 60).slice(0, xsize.sector));
+    }
+    for (const w of map.walls) {
+      const b = writeStruct(w, WALL);
+      parts.push(v7 ? crypt(b, (h.mapRev * 40) | HEADER_NEW) : b);
+      if (w.extra > 0) parts.push(packBits(w.ext || {}, XWALL, 24).slice(0, xsize.wall));
+    }
+    for (const s of map.sprites) {
+      const b = writeStruct(s, SPRITE);
+      parts.push(v7 ? crypt(b, (h.mapRev * 44) | HEADER_NEW) : b);
+      if (s.extra > 0) parts.push(packBits(s.ext || {}, XSPRITE, 56).slice(0, xsize.sprite));
+    }
+    const n = parts.reduce((s, p) => s + p.length, 0);
+    const trailing = map.trailing || [];
+    const out = new Uint8Array(n + 4 + trailing.length);
+    let o = 0;
+    for (const p of parts) { out.set(p, o); o += p.length; }
+    new DataView(out.buffer).setUint32(o, crc32(out, o), true);
+    out.set(trailing, o + 4);
+    return out;
+  }
+
+  root.MapFile = { parseMap, writeMap, finish, MapError, SECTOR, WALL, SPRITE, XSECTOR, XWALL, XSPRITE, LIMITS, crc32 };
+  if (typeof module !== 'undefined' && module.exports) module.exports = root.MapFile;
+})(typeof window !== 'undefined' ? window : this);
+
+</script>
+<script>
+// Blood Map Maker: geometry of a full Blood map (MapFile's model) and the edits on it.
+//
+// Build keeps a sector's walls together (wallptr, wallnum), each wall pointing at the next corner
+// (point2) and, for an opening, at the wall on the other side (nextwall, nextsector). Edits are done
+// on a graph of objects (sectors with loops of walls, walls pointing at walls) and written back to
+// those numbers, so nothing gets out of step. A sector has one outer loop and any number of inner
+// loops (pillars, or the edges of sectors inside it).
+(function (root) {
+  'use strict';
+
+  // ---- reading the geometry ---------------------------------------------------------------------
+  function loopsOf(map, s) {
+    const sec = map.sectors[s], loops = [], seen = new Set();
+    for (let w = sec.wallptr; w < sec.wallptr + sec.wallnum; w++) {
+      if (seen.has(w)) continue;
+      const loop = [];
+      let i = w, guard = 0;
+      while (!seen.has(i) && guard++ < 65536) {
+        seen.add(i); loop.push(i);
+        i = map.walls[i].point2;
+        if (i < sec.wallptr || i >= sec.wallptr + sec.wallnum) break;
+      }
+      loops.push(loop);
+    }
+    return loops;
+  }
+
+  function area2(pts) {
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1]; }
+    return a;
+  }
+
+  // like Build's inside(): crossings over every wall of the sector, so holes count
+  function inside(map, s, x, y) {
+    const sec = map.sectors[s];
+    let c = false;
+    for (let w = sec.wallptr; w < sec.wallptr + sec.wallnum; w++) {
+      const a = map.walls[w], b = map.walls[a.point2];
+      if (!b) continue;
+      if ((a.y < y) !== (b.y < y) && a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y) < x) c = !c;
+    }
+    return c;
+  }
+  function sectorAt(map, x, y, hint) {
+    if (hint >= 0 && hint < map.sectors.length && inside(map, hint, x, y)) return hint;
+    if (hint >= 0 && hint < map.sectors.length) {
+      const sec = map.sectors[hint];
+      for (let w = sec.wallptr; w < sec.wallptr + sec.wallnum; w++) {
+        const n = map.walls[w].nextsector;
+        if (n >= 0 && inside(map, n, x, y)) return n;
+      }
+    }
+    for (let s = 0; s < map.sectors.length; s++) if (inside(map, s, x, y)) return s;
+    return -1;
+  }
+
+  // floor and ceiling height at a point (Build's getflorzofslope/getcielzofslope), in z units (down is more)
+  function slopeZ(map, s, x, y, ceil) {
+    const sec = map.sectors[s];
+    const z = ceil ? sec.ceilingz : sec.floorz;
+    if (!((ceil ? sec.ceilingstat : sec.floorstat) & 2)) return z;
+    const heinum = ceil ? sec.ceilingheinum : sec.floorheinum;
+    if (!heinum) return z;
+    const a = map.walls[sec.wallptr], b = map.walls[a.point2];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.sqrt(dx * dx + dy * dy) * 32;
+    if (!len) return z;
+    const j = (dx * (y - a.y) - dy * (x - a.x)) / 8;
+    return z + heinum * j / len;
+  }
+
+  // ---- triangles for a sector (holes joined into the outline first) -----------------------------
+  function triangulateSector(map, s) {
+    const loops = loopsOf(map, s).map((l) => l.map((w) => [map.walls[w].x, map.walls[w].y]));
+    const outers = [], holes = [];
+    for (const l of loops) { if (l.length < 3) continue; (area2(l) > 0 ? outers : holes).push(l); }
+    const tris = [];
+    for (const outer of outers) {
+      let poly = outer.slice();
+      // the holes inside this outline, rightmost first, each joined by a cut to a visible corner
+      const mine = holes.filter((h) => pointInPoly(h[0], outer)).sort((a, b) => Math.max(...b.map((p) => p[0])) - Math.max(...a.map((p) => p[0])));
+      for (const h of mine) poly = bridge(poly, h);
+      tris.push(...earClip(poly));
+    }
+    return tris; // [[x,y],[x,y],[x,y]]...
+  }
+  function pointInPoly(p, pts) {
+    let c = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const a = pts[i], b = pts[j];
+      if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1])) c = !c;
+    }
+    return c;
+  }
+  function segCross(a, b, c, d) {
+    const cr = (o, u, v) => (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0]);
+    const d1 = cr(c, d, a), d2 = cr(c, d, b), d3 = cr(a, b, c), d4 = cr(a, b, d);
+    return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+  }
+  function bridge(poly, hole) {
+    // the hole's rightmost corner, joined to the nearest outline corner the cut doesn't cross anything on the way
+    let hi = 0;
+    hole.forEach((p, i) => { if (p[0] > hole[hi][0]) hi = i; });
+    const h = hole[hi];
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i], d = (p[0] - h[0]) ** 2 + (p[1] - h[1]) ** 2;
+      if (d >= bd) continue;
+      let ok = true;
+      for (let k = 0; k < poly.length && ok; k++) { const a = poly[k], b = poly[(k + 1) % poly.length]; if (segCross(h, p, a, b)) ok = false; }
+      for (let k = 0; k < hole.length && ok; k++) { const a = hole[k], b = hole[(k + 1) % hole.length]; if (segCross(h, p, a, b)) ok = false; }
+      if (ok) { bd = d; best = i; }
+    }
+    if (best < 0) return poly; // shouldn't happen; leave the hole out
+    const ring = hole.slice(hi).concat(hole.slice(0, hi)); // starts at h; holes go the other way round already
+    return poly.slice(0, best + 1).concat(ring, [h], poly.slice(best));
+  }
+  function earClip(pts) {
+    const idx = pts.map((_, i) => i), tris = [];
+    const cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    const inTri = (p, a, b, c) => cross(a, b, p) >= 0 && cross(b, c, p) >= 0 && cross(c, a, p) >= 0;
+    let guard = 0;
+    while (idx.length > 3 && guard++ < 100000) {
+      let cut = false;
+      for (let k = 0; k < idx.length; k++) {
+        const ia = idx[(k + idx.length - 1) % idx.length], ib = idx[k], ic = idx[(k + 1) % idx.length];
+        const a = pts[ia], b = pts[ib], c = pts[ic];
+        if (cross(a, b, c) <= 0) continue;
+        let ok = true;
+        for (const j of idx) {
+          if (j === ia || j === ib || j === ic) continue;
+          const p = pts[j];
+          if ((p[0] === a[0] && p[1] === a[1]) || (p[0] === b[0] && p[1] === b[1]) || (p[0] === c[0] && p[1] === c[1])) continue;
+          if (inTri(p, a, b, c)) { ok = false; break; }
+        }
+        if (!ok) continue;
+        tris.push([a, b, c]);
+        idx.splice(k, 1);
+        cut = true;
+        break;
+      }
+      if (!cut) { // a degenerate corner: drop the flattest one and go on
+        let worst = 0, wv = Infinity;
+        for (let k = 0; k < idx.length; k++) {
+          const v = Math.abs(cross(pts[idx[(k + idx.length - 1) % idx.length]], pts[idx[k]], pts[idx[(k + 1) % idx.length]]));
+          if (v < wv) { wv = v; worst = k; }
+        }
+        idx.splice(worst, 1);
+      }
+    }
+    if (idx.length === 3) tris.push([pts[idx[0]], pts[idx[1]], pts[idx[2]]]);
+    return tris;
+  }
+
+  // ---- the graph -------------------------------------------------------------------------------------
+  // sectors: { f: sector fields (without wallptr/wallnum), loops: [[wall]] }
+  // walls: { f: wall fields, next: wall (point2), other: wall|null (nextwall), sector }
+  // sprites: { f: sprite fields, sector }
+  function toGraph(map) {
+    const W = map.walls.map((w) => ({ f: w, next: null, other: null, sector: null }));
+    W.forEach((o, i) => { o.next = W[map.walls[i].point2] || null; o.other = map.walls[i].nextwall >= 0 ? W[map.walls[i].nextwall] || null : null; });
+    const S = map.sectors.map((s, i) => ({ f: s, loops: [], order: [] }));
+    S.forEach((o, i) => {
+      o.loops = loopsOf(map, i).map((l) => l.map((w) => W[w]));
+      // the walls as the file has them; kept for sectors an edit doesn't change, so their numbers stay
+      for (let w = s0(map, i); w < s0(map, i) + map.sectors[i].wallnum; w++) o.order.push(W[w]);
+      for (const l of o.loops) for (const w of l) w.sector = o;
+    });
+    // what each wall pointed at in the file (some maps have a stale nextsector; kept while the link stays)
+    W.forEach((o, i) => { o.origOther = o.other; o.origSector = map.walls[i].nextsector >= 0 ? S[map.walls[i].nextsector] || null : null; });
+    const P = map.sprites.map((p) => ({ f: p, sector: S[p.sectnum] || null }));
+    return { map, sectors: S, sprites: P };
+  }
+  function s0(map, i) { return map.sectors[i].wallptr; }
+  function fromGraph(g) {
+    const map = g.map;
+    const walls = [], sectors = [], sIndex = new Map(), wIndex = new Map();
+    g.sectors.forEach((s, i) => sIndex.set(s, i));
+    for (const s of g.sectors) {
+      const first = walls.length;
+      const flat = s.loops.flat();
+      const same = s.order && s.order.length === flat.length && flat.every((w) => s.order.includes(w));
+      for (const w of same ? s.order : flat) { wIndex.set(w, walls.length); walls.push(w); }
+      s.f.wallptr = first; s.f.wallnum = walls.length - first;
+      sectors.push(s.f);
+    }
+    map.walls = walls.map((w) => {
+      // point2 is the next corner of the same loop
+      w.f.point2 = wIndex.get(w.next);
+      w.f.nextwall = w.other && wIndex.has(w.other) ? wIndex.get(w.other) : -1;
+      w.f.nextsector = w.f.nextwall < 0 ? -1 : w.other === w.origOther && w.origSector && sIndex.has(w.origSector) ? sIndex.get(w.origSector) : sIndex.get(w.other.sector);
+      return w.f;
+    });
+    map.sectors = sectors;
+    map.sprites = g.sprites.filter((p) => p.sector && sIndex.has(p.sector)).map((p) => { p.f.sectnum = sIndex.get(p.sector); return p.f; });
+    return map;
+  }
+  function relink(loop) { loop.forEach((w, i) => { w.next = loop[(i + 1) % loop.length]; }); }
+
+  // ---- edits -----------------------------------------------------------------------------------------
+  const DEFAULT_SECTOR = { ceilingz: -32768, floorz: 0, ceilingstat: 0, floorstat: 0, ceilingpicnum: 568, ceilingheinum: 0, ceilingshade: 0, ceilingpal: 0,
+    ceilingxpanning: 0, ceilingypanning: 0, floorpicnum: 270, floorheinum: 0, floorshade: 0, floorpal: 0, floorxpanning: 0, floorypanning: 0,
+    visibility: 0, fogpal: 0, type: 0, hitag: 0, extra: -1 };
+  const DEFAULT_WALL = { cstat: 0, picnum: 449, overpicnum: 449, shade: 0, pal: 0, xrepeat: 8, yrepeat: 8, xpanning: 0, ypanning: 0, type: 0, hitag: 0, extra: -1 };
+
+  function onSegment(p, a, b) {
+    const cr = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+    return cr === 0 && Math.min(a[0], b[0]) <= p[0] && p[0] <= Math.max(a[0], b[0]) && Math.min(a[1], b[1]) <= p[1] && p[1] <= Math.max(a[1], b[1]);
+  }
+  function fixRepeat(w) {
+    const n = w.next, len = Math.hypot(n.f.x - w.f.x, n.f.y - w.f.y);
+    w.f.xrepeat = Math.max(1, Math.min(255, Math.round(len / 128)));
+  }
+  // put a corner at p into wall w (and the wall on its other side)
+  function splitAt(g, w, p) {
+    const loop = w.sector.loops.find((l) => l.includes(w));
+    const nw = { f: { ...w.f, x: p[0], y: p[1], extra: -1 }, next: null, other: null, sector: w.sector };
+    delete nw.f.ext;
+    loop.splice(loop.indexOf(w) + 1, 0, nw);
+    relink(loop);
+    if (w.other) {
+      const o = w.other, oloop = o.sector.loops.find((l) => l.includes(o));
+      const no = { f: { ...o.f, x: p[0], y: p[1], extra: -1 }, next: null, other: null, sector: o.sector };
+      delete no.f.ext;
+      oloop.splice(oloop.indexOf(o) + 1, 0, no);
+      relink(oloop);
+      // w: a->p, nw: p->b ; o: b->p, no: p->a
+      w.other = no; no.other = w; nw.other = o; o.other = nw;
+    }
+    fixRepeat(w); fixRepeat(nw);
+    return nw;
+  }
+
+  // why a new sector with this outline can't go in ("" when it can), and which sector it's inside (-1: none)
+  function newSectorPlace(map, pts) {
+    if (pts.length < 3 || area2(pts) === 0) return { why: 'A sector needs at least 3 corners and some area' };
+    const n = pts.length;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      if (j === i + 1 || (i === 0 && j === n - 1)) continue;
+      if (segCross(pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n])) return { why: 'The outline crosses itself' };
+    }
+    // no wall of the map may cross the new outline
+    for (let w = 0; w < map.walls.length; w++) {
+      const a = map.walls[w], b = map.walls[a.point2];
+      for (let i = 0; i < n; i++) if (segCross([a.x, a.y], [b.x, b.y], pts[i], pts[(i + 1) % n])) return { why: 'It crosses an existing wall' };
+    }
+    // inside a sector, or outside all of them (probe the middle of each edge, a little inwards)
+    const probes = [];
+    for (let i = 0; i < n; i++) {
+      const a = pts[i], b = pts[(i + 1) % n], mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      // clockwise on screen: the inside is to the right of a->b, i.e. (-dy, dx)
+      probes.push([mx - (b[1] - a[1]) / len * 2, my + (b[0] - a[0]) / len * 2]);
+    }
+    const holders = new Set(probes.map((p) => sectorAt(map, p[0], p[1], -1)));
+    if (holders.size > 1) return { why: 'It overlaps more than one sector' };
+    const host = [...holders][0];
+    // an existing sector completely inside the new one is not allowed either
+    for (let s = 0; s < map.sectors.length; s++) {
+      if (s === host) continue;
+      const sec = map.sectors[s];
+      for (let w = sec.wallptr; w < sec.wallptr + sec.wallnum; w++) {
+        const c = map.walls[w];
+        if (pointInPoly([c.x, c.y], pts) && !onAnyEdge([c.x, c.y], pts)) return { why: 'Another sector would be inside it' };
+      }
+    }
+    return { why: '', host };
+  }
+  function onAnyEdge(p, pts) { for (let i = 0; i < pts.length; i++) if (onSegment(p, pts[i], pts[(i + 1) % pts.length])) return true; return false; }
+
+  // a new sector; it opens onto every wall of other sectors that lies along its outline, and inside
+  // another sector it becomes a sector within it (the outer one gets an inner loop around it)
+  function addSector(map, ptsIn, fields, wallFields) {
+    let pts = ptsIn.map((p) => [Math.round(p[0]), Math.round(p[1])]);
+    if (area2(pts) < 0) pts = pts.reverse();
+    const place = newSectorPlace(map, pts);
+    if (place.why) throw new Error(place.why);
+    const g = toGraph(map);
+    const sec = { f: { ...DEFAULT_SECTOR, ...(fields || {}) }, loops: [] };
+    delete sec.f.ext; sec.f.extra = -1;
+    const loop = pts.map((p) => ({ f: { ...DEFAULT_WALL, ...(wallFields || {}), x: p[0], y: p[1] }, next: null, other: null, sector: sec }));
+    relink(loop);
+    sec.loops.push(loop);
+    g.sectors.push(sec);
+    if (place.host >= 0) {
+      const host = g.sectors[place.host];
+      const inner = pts.slice().reverse().map((p) => ({ f: { ...DEFAULT_WALL, ...(wallFields || {}), picnum: host.loops[0][0].f.picnum, overpicnum: host.loops[0][0].f.picnum, x: p[0], y: p[1] }, next: null, other: null, sector: host }));
+      relink(inner);
+      host.loops.push(inner);
+    }
+    // split walls where corners of the other side lie on them, then join what matches
+    const all = () => g.sectors.flatMap((s) => s.loops.flat());
+    let changed = true, guard = 0;
+    while (changed && guard++ < 1000) {
+      changed = false;
+      const walls = all();
+      const corners = walls.map((w) => [w.f.x, w.f.y]);
+      for (const w of walls) {
+        if (w.other) continue;
+        const a = [w.f.x, w.f.y], b = [w.next.f.x, w.next.f.y];
+        const mid = corners.find((p) => !(p[0] === a[0] && p[1] === a[1]) && !(p[0] === b[0] && p[1] === b[1]) && onSegment(p, a, b));
+        if (mid && (loop.includes(w) || walls.some((o) => loop.includes(o) && ((o.f.x === mid[0] && o.f.y === mid[1]))))) { splitAt(g, w, mid); changed = true; break; }
+      }
+    }
+    const byEdge = new Map();
+    for (const w of all()) if (!w.other) byEdge.set(w.f.x + ',' + w.f.y + ',' + w.next.f.x + ',' + w.next.f.y, w);
+    for (const w of all()) {
+      if (w.other || w.sector !== sec) continue;
+      const o = byEdge.get(w.next.f.x + ',' + w.next.f.y + ',' + w.f.x + ',' + w.f.y);
+      if (o && o.sector !== sec && !o.other) { w.other = o; o.other = w; }
+    }
+    for (const w of sec.loops[0]) fixRepeat(w);
+    fromGraph(g);
+    return map.sectors.length - 1;
+  }
+
+  // remove a sector and its sprites; the walls that opened onto it become solid
+  function deleteSector(map, s) {
+    const g = toGraph(map);
+    const sec = g.sectors[s];
+    for (const l of sec.loops) for (const w of l) if (w.other) { w.other.other = null; }
+    g.sectors.splice(s, 1);
+    g.sprites = g.sprites.filter((p) => p.sector !== sec);
+    fromGraph(g);
+  }
+
+  function splitWall(map, w, p) {
+    const g = toGraph(map);
+    const wall = g.sectors.flatMap((s) => s.loops.flat()).find((o) => o.f === map.walls[w]);
+    if (!p) p = [Math.round((wall.f.x + wall.next.f.x) / 2), Math.round((wall.f.y + wall.next.f.y) / 2)];
+    splitAt(g, wall, p);
+    fromGraph(g);
+  }
+
+  // move a corner: every wall starting there (both sides of openings) moves with it
+  function moveCorner(map, x, y, nx, ny) {
+    for (const w of map.walls) if (w.x === x && w.y === y) { w.x = nx; w.y = ny; }
+  }
+
+  // remove a corner (if its loops keep at least 3 corners); an opening through it closes up
+  function deleteCorner(map, x, y) {
+    const g = toGraph(map);
+    const at = g.sectors.flatMap((s) => s.loops.flat()).filter((w) => w.f.x === x && w.f.y === y);
+    for (const w of at) {
+      const loop = w.sector.loops.find((l) => l.includes(w));
+      if (loop.length <= 3) throw new Error('A loop of walls needs at least 3 corners');
+    }
+    for (const w of at) {
+      const loop = w.sector.loops.find((l) => l.includes(w));
+      const prev = loop[(loop.indexOf(w) + loop.length - 1) % loop.length];
+      // prev (a->x) and w (x->b) become one wall a->b; the opening of either is lost
+      if (prev.other) { prev.other.other = null; prev.other = null; }
+      if (w.other) { w.other.other = null; w.other = null; }
+      loop.splice(loop.indexOf(w), 1);
+      relink(loop);
+      fixRepeat(prev);
+    }
+    // what's now the same edge on both sides opens again
+    const byEdge = new Map();
+    const all = g.sectors.flatMap((s) => s.loops.flat());
+    for (const w of all) if (!w.other) byEdge.set(w.f.x + ',' + w.f.y + ',' + w.next.f.x + ',' + w.next.f.y, w);
+    for (const w of all) {
+      if (w.other) continue;
+      const o = byEdge.get(w.next.f.x + ',' + w.next.f.y + ',' + w.f.x + ',' + w.f.y);
+      if (o && o.sector !== w.sector && !o.other) { w.other = o; o.other = w; }
+    }
+    fromGraph(g);
+  }
+
+  // what's wrong with the map's structure (the game refuses such a map, or would crash)
+  function problems(map, warnings) {
+    const out = [];
+    warnings = warnings || [];
+    const ns = map.sectors.length, nw = map.walls.length;
+    if (!ns) out.push('The map has no sectors.');
+    map.sectors.forEach((s, i) => { if (s.wallptr < 0 || s.wallnum < 3 || s.wallptr + s.wallnum > nw) out.push('Sector ' + i + ' has broken walls.'); });
+    map.walls.forEach((w, i) => {
+      if (!(w.point2 >= 0 && w.point2 < nw)) out.push('Wall ' + i + ' has no next corner.');
+      if (w.nextwall >= nw || w.nextsector >= ns) out.push('Wall ' + i + ' opens onto nothing.');
+      if (w.nextwall >= 0 && map.walls[w.nextwall] && map.walls[w.nextwall].nextwall !== i) warnings.push('Wall ' + i + ' and its other side don\'t point at each other (the game copes).');
+      if (w.picnum < 0 || w.picnum >= 30720) out.push('Wall ' + i + ' has a bad tile.');
+    });
+    map.sprites.forEach((p, i) => { if (p.sectnum < 0 || p.sectnum >= ns) out.push('Sprite ' + i + ' is in no sector.'); });
+    if (map.sectors.length > 4096 || map.walls.length > 16384 || map.sprites.length > 16384) out.push('The map is too big for the game.');
+    return out;
+  }
+
+  // a map with nothing in it yet (version 7, like the game saves)
+  function emptyMap() {
+    const header2 = new Array(128).fill(0);
+    'Blood Map Maker'.split('').forEach((ch, i) => { header2[i] = ch.charCodeAt(0); });
+    return { version: 0x700, encrypted: true, header: { startX: 0, startY: 0, startZ: 0, startAng: 0, startSector: 0, skyBits: 4, visibility: 800,
+      songId: 0x7474614d, parallaxType: 2, mapRev: 1, numSectors: 0, numWalls: 0, numSprites: 0 }, header2, xsize: { sprite: 56, wall: 24, sector: 60 },
+      skyOffsets: Array.from({ length: 16 }, (_, i) => i), sectors: [], walls: [], sprites: [], crcOk: true, trailing: null };
+  }
+
+  root.MapGeo = { emptyMap, loopsOf, inside, sectorAt, slopeZ, triangulateSector, area2, pointInPoly, toGraph, fromGraph,
+    addSector, deleteSector, splitWall, moveCorner, deleteCorner, newSectorPlace, problems, DEFAULT_SECTOR, DEFAULT_WALL };
+  if (typeof module !== 'undefined' && module.exports) module.exports = root.MapGeo;
+})(typeof window !== 'undefined' ? window : this);
+
+</script>
+<script>
+// Blood object types: names, captions and what their data fields mean, with default tiles and sizes.
+// Made from OBJTYPES.INI of XMAPEDIT (https://github.com/NoOneBlood/xmapedit, by nuke.YKT and NoOne)
+// by tools/mapeditor/mkblooddata.py; the command and channel names are from source/blood/src/eventq.h.
+(function (root) {
+  root.BloodData = {"sprite":{"0":{"name":"Decoration","caption":"Decorate"},"1":{"name":"Player Start","data":["Player","","",""],"tile":2522,"xr":56,"yr":56,"pal":0,"group":"Marker"},"2":{"name":"Bloodbath Start","data":["Player","*Team","",""],"tile":2522,"xr":56,"yr":56,"pal":5,"group":"Marker"},"6":{"name":"Lower link","data":["Upper ID","","",""],"tile":2331,"xr":64,"yr":64,"pal":6,"group":"None"},"7":{"name":"Upper link","data":["Lower ID","","",""],"tile":2332,"xr":64,"yr":64,"pal":6,"group":"Marker"},"10":{"name":"Lower water","data":["Upper ID","","",""],"tile":2331,"xr":64,"yr":64,"pal":0,"group":"None"},"9":{"name":"Upper water","data":["Lower ID","Palette","",""],"tile":2332,"xr":64,"yr":64,"pal":0,"group":"Marker"},"12":{"name":"Lower stack","data":["Upper ID","","",""],"tile":2331,"xr":64,"yr":64,"pal":2,"group":"None"},"11":{"name":"Upper stack","data":["Lower ID","","",""],"tile":2332,"xr":64,"yr":64,"pal":2,"group":"Marker"},"14":{"name":"Lower goo","data":["Upper ID","","",""],"tile":2331,"xr":64,"yr":64,"pal":5,"group":"None"},"13":{"name":"Upper goo","data":["Lower ID","Palette","",""],"tile":2332,"xr":64,"yr":64,"pal":5,"group":"Marker"},"15":{"name":"Path marker","caption":"P","data":["Id","Next Id","",""],"tile":2319,"xr":144,"yr":144,"pal":0,"group":"Marker"},"18":{"name":"Dude Spawn","data":["Enemy","*Enemy","*Enemy","*Enemy"],"tile":2077,"xr":40,"yr":40,"group":"Marker"},"19":{"name":"Earthquake","data":["Strength","","",""],"tile":2072,"xr":40,"yr":40,"pal":0,"group":"Marker"},"20":{"name":"Toggle Switch","caption":"TG Swch","data":["On Snd","Off Snd","",""],"tile":1072,"xr":40,"yr":40,"group":"Misc"},"21":{"name":"1-Way Switch","caption":"1W Swch","data":["On Snd","Off Snd","",""],"tile":1072,"xr":40,"yr":40,"group":"None"},"22":{"name":"Combination Switch","caption":"CM Swch","data":["Current","Goal","Max","Sound"],"tile":1161,"xr":40,"yr":40,"group":"Misc"},"23":{"name":"Padlock","tile":948,"xr":64,"yr":64,"group":"Misc"},"8":{"name":"Teleport target","caption":"Teleport","data":["Player","*Angle","*Velocity","*Sound"],"tile":3193,"xr":255,"yr":255,"pal":9,"group":"Modern"},"254":{"name":"Custom Dude","data":["","","","*Health"],"tile":2925,"group":"Enemy"},"24":{"name":"Custom Dude Spawn","data":["","","","*Health"],"tile":2077,"group":"Modern"},"36":{"name":"Damager","data":["TargetID","DamageType","Damage",""]},"704":{"name":"Missile Gen","data":["Missile","*Velocity","Slope","Burst time"],"tile":226,"group":"Hazard"},"500":{"name":"Player Control","caption":"Player Ctrl","data":["Player","~","~","~"]},"28":{"name":"Properties Changer","caption":"CHG Properties","data":["Data1","Data2","Data3","Data4"]},"35":{"name":"Data Changer","caption":"CHG Data","data":["New data1","New data2","New data3","New data4"]},"37":{"name":"Inc - Dec","data":["For data","Start","End","Step"]},"29":{"name":"Picture Changer","caption":"CHG Picture","data":["Data1","Data2","Data3","Data4"]},"34":{"name":"Sector Lighting Changer","caption":"Sector Lighting","data":["FX Wave","Amplitude","Frequency","Phase"]},"38":{"name":"Effect Gen","data":["Rand Mul","Effect","Range","Where"]},"39":{"name":"Sector Wind Gen","caption":"Wind Gen","data":["Randomness","*Velocity","Enable pan",""]},"501":{"name":"IF","data":["Condition","Argument1","Argument2","Argument3"],"tile":4127,"xr":160,"yr":160,"pal":10,"group":"Modern"},"502":{"name":"IF NOT","data":["Condition","Argument1","Argument2","Argument3"],"tile":4127,"xr":160,"yr":160,"pal":7,"group":"Modern"},"25":{"name":"RandomTX","data":["TXID","TXID","TXID","TXID"]},"26":{"name":"SequentialTX","caption":"Seq TX","data":["TXID","TXID","TXID","TXID"]},"504":{"name":"Slope Changer","caption":"CHG Slope","data":["Where","Slope","",""]},"505":{"name":"Laser","caption":"Laser","data":["Color","Thickness","Distance",""]},"506":{"name":"Velocity Changer","caption":"CHG Velocity","data":["XVelocity","YVelocity","ZVelocity","Range"]},"507":{"name":"Camera","data":["Player","Slope","RollAng",""]},"508":{"name":"Music Changer","caption":"CHG Music","data":["Player","Music ID","",""]},"16":{"name":"Patrol region","caption":"Patrol","data":["Radius","Hear val","See val",""],"tile":3193,"xr":128,"yr":128,"group":"Modern"},"4":{"name":"Marker"},"27":{"name":"SEQ Spawner","caption":"Spawn SEQ","data":["Rand Mul","SEQ ID","Where","Sound"]},"31":{"name":"Resizer","caption":"Resize","data":["Data1","Data2","Data3","Data4"]},"33":{"name":"Enemy Target Changer","caption":"AI Fight","data":["Trgt data1","Fight mode","Force trgt","Behavior"]},"129":{"name":"Grow shroom","tile":842,"xr":48,"yr":48,"group":"Item"},"130":{"name":"Shrink shroom","tile":843,"xr":48,"yr":48,"group":"Item"},"40":{"name":"Random Item","data":["Item","Item","Item","Item"],"tile":832,"xr":40,"yr":40,"group":"Item"},"150":{"name":"Map","tile":833,"xr":40,"yr":40,"group":"Item"},"30":{"name":"Torch","tile":550,"group":"Misc"},"32":{"name":"Candle","tile":938,"group":"Misc"},"43":{"name":"Flare Pistol","data":["*Ammo","","",""],"tile":524,"xr":48,"yr":48,"group":"Weapon"},"41":{"name":"Sawed-off","data":["*Ammo","","",""],"tile":559,"xr":48,"yr":48,"group":"Weapon"},"42":{"name":"Tommy Gun","data":["*Ammo","","",""],"tile":558,"xr":48,"yr":48,"group":"Weapon"},"46":{"name":"Napalm Launcher","data":["*Ammo","","",""],"tile":526,"xr":48,"yr":48,"group":"Weapon"},"45":{"name":"Tesla Cannon","data":["*Ammo","","",""],"tile":539,"xr":48,"yr":48,"group":"Weapon"},"50":{"name":"Life Leech","data":["*Ammo","","",""],"tile":800,"xr":48,"yr":48,"group":"Weapon"},"60":{"name":"Spray Can","data":["*Ammo","","",""],"tile":618,"xr":40,"yr":40,"group":"Mixed ammo"},"62":{"name":"Bundle of TNT","caption":"TNT Bundle","data":["*Ammo","","",""],"tile":589,"xr":48,"yr":48,"group":"Mixed ammo"},"63":{"name":"Case of TNT","caption":"TNT Case","data":["*Ammo","","",""],"tile":809,"xr":48,"yr":48,"group":"Mixed ammo"},"64":{"name":"Proximity Detonator","caption":"Prox Bomb","data":["*Ammo","","",""],"tile":811,"xr":40,"yr":40,"group":"Mixed ammo"},"65":{"name":"Remote Detonator","caption":"Remote Bomb","data":["*Ammo","","",""],"tile":810,"xr":40,"yr":40,"group":"Mixed ammo"},"67":{"name":"4 shotgun shells","caption":"4 Shells","data":["*Ammo","","",""],"tile":619,"xr":48,"yr":48,"group":"Ammo"},"68":{"name":"Box of shotgun shells","caption":"Box of shells","data":["*Ammo","","",""],"tile":812,"xr":48,"yr":48,"group":"Ammo"},"69":{"name":"A few bullets","data":["*Ammo","","",""],"tile":813,"xr":48,"yr":48,"group":"Ammo"},"70":{"name":"Voodoo Doll","data":["*Ammo","","",""],"tile":525,"xr":48,"yr":48,"group":"Mixed ammo"},"72":{"name":"Full drum of bullets","caption":"Drum of bullets","data":["*Ammo","","",""],"tile":817,"xr":48,"yr":48,"group":"Ammo"},"73":{"name":"Tesla Charge","data":["*Ammo","","",""],"tile":548,"xr":24,"yr":24,"group":"Ammo"},"76":{"name":"Flares","data":["*Ammo","","",""],"tile":816,"xr":48,"yr":48,"group":"Ammo"},"79":{"name":"Gasoline Can","data":["*Ammo","","",""],"tile":801,"xr":48,"yr":48,"group":"Ammo"},"66":{"name":"Trapped Soul","data":["*Ammo","","",""],"tile":820,"xr":24,"yr":24,"group":"Ammo"},"100":{"name":"Skull key","tile":2552,"xr":32,"yr":32,"group":"Item"},"101":{"name":"Eye key","tile":2553,"xr":32,"yr":32,"group":"Item"},"102":{"name":"Fire key","tile":2554,"xr":32,"yr":32,"group":"Item"},"103":{"name":"Dagger key","tile":2555,"xr":32,"yr":32,"group":"Item"},"104":{"name":"Spider key","tile":2556,"xr":32,"yr":32,"group":"Item"},"105":{"name":"Moon key","tile":2557,"xr":32,"yr":32,"group":"Item"},"106":{"name":"key 7","tile":2558,"xr":32,"yr":32,"group":"Item"},"107":{"name":"Doctor's Bag","tile":519,"xr":48,"yr":48,"group":"Item"},"108":{"name":"Medicine Pouch","caption":"Pouch","data":["*Amount","","",""],"tile":822,"xr":40,"yr":40,"group":"Item"},"109":{"name":"Life Essence","data":["*Amount","","",""],"tile":2169,"xr":40,"yr":40,"group":"Item"},"110":{"name":"Life Seed","data":["*Amount","","",""],"tile":2433,"xr":40,"yr":40,"group":"Item"},"111":{"name":"Red Potion","caption":"Potion","data":["*Amount","","",""],"tile":517,"xr":40,"yr":40,"pal":2,"group":"Item"},"112":{"name":"Feather Fall","tile":783,"xr":40,"yr":40,"group":"Item"},"113":{"name":"Invisibility","tile":896,"xr":40,"yr":40,"group":"Item"},"114":{"name":"Invulnerability","tile":825,"xr":40,"yr":40,"group":"Item"},"115":{"name":"Boots of Jumping","tile":827,"xr":40,"yr":40,"group":"Item"},"117":{"name":"Guns Akimbo","tile":829,"xr":40,"yr":40,"group":"Item"},"118":{"name":"Diving Suit","tile":830,"xr":80,"yr":64,"group":"Item"},"119":{"name":"Gas mask","tile":831,"xr":56,"yr":56,"group":"Item"},"121":{"name":"Crystal Ball","tile":760,"xr":40,"yr":40,"group":"Item"},"123":{"name":"Doppleganger","tile":853,"xr":56,"yr":56,"group":"Item"},"124":{"name":"Reflective shots","tile":2428,"xr":40,"yr":40,"group":"Item"},"125":{"name":"Beast Vision","tile":839,"xr":40,"yr":40,"group":"Item"},"128":{"name":"Delirium Shroom","tile":841,"xr":48,"yr":48,"group":"Item"},"136":{"name":"Tome","tile":518,"xr":40,"yr":40,"group":"Item"},"137":{"name":"Black Chest","tile":522,"xr":40,"yr":40,"group":"Item"},"138":{"name":"Wooden Chest","tile":523,"xr":40,"yr":40,"group":"Item"},"139":{"name":"Asbestos Armor","tile":837,"xr":72,"yr":72,"group":"Item"},"140":{"name":"Basic Armor","tile":2628,"xr":64,"yr":64,"group":"Item"},"141":{"name":"Body Armor","tile":2586,"xr":64,"yr":64,"group":"Item"},"142":{"name":"Fire Armor","tile":2578,"xr":64,"yr":64,"group":"Item"},"143":{"name":"Spirit Armor","tile":2602,"xr":64,"yr":64,"group":"Item"},"144":{"name":"Super Armor","tile":2594,"xr":64,"yr":64,"group":"Item"},"145":{"name":"Blue Team Base"},"146":{"name":"Red Team Base"},"202":{"name":"Cultist w/Shotgun","caption":"Shotgun Cultist","data":["","","","*Health"],"tile":2825,"xr":40,"yr":40,"group":"Enemy"},"246":{"name":"SCultist prone","data":["","","","*Health"],"tile":3375,"xr":40,"yr":40,"group":"Enemy"},"201":{"name":"Cultist w/Tommy","caption":"Tommy Cultist","data":["","","","*Health"],"tile":2820,"xr":40,"yr":40,"pal":3,"group":"Enemy"},"230":{"name":"TCultist prone","data":["","","","*Health"],"tile":3395,"xr":40,"yr":40,"pal":3,"group":"Enemy"},"247":{"name":"Cultist w/Tesla","caption":"Tesla Cultist","data":["","","","*Health"],"tile":2860,"xr":40,"yr":40,"pal":11,"group":"Enemy"},"248":{"name":"Cultist w/Dynamite","caption":"TNT Cultist","data":["","","","*Health"],"tile":2830,"xr":37,"yr":37,"pal":13,"group":"Enemy"},"203":{"name":"Axe Zombie","data":["","","","*Health"],"tile":1224,"xr":38,"yr":38,"group":"Enemy"},"205":{"name":"Earth Zombie","data":["","","","*Health"],"tile":3046,"xr":38,"yr":38,"group":"Enemy"},"244":{"name":"Sleep Zombie","data":["","","","*Health"],"tile":1209,"xr":38,"yr":38,"group":"Enemy"},"204":{"name":"Bloated Butcher","caption":"Butcher","data":["","","","*Health"],"tile":1370,"xr":48,"yr":48,"group":"Enemy"},"206":{"name":"Flesh Gargoyle","data":["","","","*Health"],"tile":1470,"xr":32,"yr":32,"group":"Enemy"},"208":{"name":"Flesh Statue","data":["","","","*Health"],"tile":1530,"xr":32,"yr":32,"group":"Enemy"},"210":{"name":"Phantasm","data":["","","","*Health"],"tile":3060,"xr":40,"yr":40,"group":"Enemy"},"211":{"name":"Hell Hound","caption":"Hound","data":["","","","*Health"],"tile":1270,"xr":40,"yr":40,"group":"Enemy"},"217":{"name":"GillBeast","data":["","","","*Health"],"tile":1570,"xr":48,"yr":48,"group":"Enemy"},"221":{"name":"Green Pod","data":["","","","*Health"],"tile":1792,"xr":32,"yr":32,"group":"Enemy"},"222":{"name":"Green Tentacle","data":["","","","*Health"],"tile":1797,"xr":32,"yr":32,"group":"Enemy"},"223":{"name":"Fire Pod","data":["","","","*Health"],"tile":1796,"xr":48,"yr":48,"pal":2,"group":"Enemy"},"224":{"name":"Fire Tentacle","data":["","","","*Health"],"tile":1809,"xr":48,"yr":48,"pal":2,"group":"Enemy"},"212":{"name":"Hand","data":["","","","*Health"],"tile":2000,"xr":32,"yr":32,"group":"Enemy"},"220":{"name":"Rat","data":["","","","*Health"],"tile":1745,"xr":24,"yr":24,"group":"Enemy"},"218":{"name":"Eel","data":["","","","*Health"],"tile":1870,"xr":32,"yr":32,"group":"Enemy"},"219":{"name":"Bat","data":["","","","*Health"],"tile":1950,"xr":32,"yr":32,"group":"Enemy"},"213":{"name":"Brown Spider","data":["","","","*Health"],"tile":1910,"xr":24,"yr":24,"pal":7,"group":"Enemy"},"214":{"name":"Red Spider","data":["","","","*Health"],"tile":1920,"xr":32,"yr":32,"pal":4,"group":"Enemy"},"215":{"name":"Black Spider","data":["","","","*Health"],"tile":1943,"xr":64,"yr":64,"group":"Enemy"},"245":{"name":"Innocent","data":["","","","*Health"],"tile":3798,"xr":40,"yr":40,"group":"Enemy"},"250":{"name":"Tiny Caleb","data":["","","","*Health"],"tile":3870,"xr":12,"yr":12,"group":"Enemy"},"209":{"name":"Stone Statue","data":["","","","*Health"],"tile":1530,"xr":64,"yr":64,"pal":5,"group":"Enemy"},"207":{"name":"Stone Gargoyle","data":["","","","*Health"],"tile":1470,"xr":64,"yr":64,"pal":5,"group":"Enemy"},"216":{"name":"Mother Spider","data":["","","","*Health"],"tile":1920,"xr":64,"yr":64,"group":"Enemy"},"227":{"name":"Cerberus","data":["","","","*Health"],"tile":2675,"xr":64,"yr":64,"group":"Enemy"},"228":{"name":"1 Head Cerberus","data":["","","","*Health"],"tile":2749,"xr":64,"yr":64,"group":"Enemy"},"229":{"name":"Tchernobog","data":["","","","*Health"],"tile":3140,"group":"Enemy"},"249":{"name":"Beast Cultist","data":["","","","*Health"],"tile":2825,"xr":43,"yr":43,"pal":12,"group":"Enemy"},"251":{"name":"Beast","data":["","","","*Health"],"tile":2960,"xr":48,"yr":48,"pal":12,"group":"Enemy"},"225":{"name":"Fake Dude","data":["","","","*Health"],"tile":3949,"group":"Enemy"},"400":{"name":"TNT Barrel","tile":907,"group":"Hazard"},"418":{"name":"Armed TNT Stick","caption":"Armed TNT S","tile":3422,"xr":32,"yr":32,"group":"Hazard"},"419":{"name":"Armed TNT Bundle","caption":"Armed TNT B","tile":3433,"xr":32,"yr":32,"group":"Hazard"},"420":{"name":"Armed Spray","tile":3467,"xr":32,"yr":32,"group":"Hazard"},"401":{"name":"Armed Prox Bomb","caption":"Armed Prox","tile":3444,"xr":40,"yr":40,"group":"Hazard"},"402":{"name":"Armed Remote","tile":3457,"xr":40,"yr":40,"group":"Hazard"},"405":{"name":"Crate Face","tile":462,"group":"Misc"},"407":{"name":"Fluorescent Light","caption":"Flr Light","tile":796,"group":"Misc"},"408":{"name":"Wall Crack","caption":"Crack","tile":1127,"group":"Misc"},"409":{"name":"Wood Beam","caption":"Beam","tile":1142,"group":"Misc"},"410":{"name":"Spider's Web","caption":"Web","tile":1069,"group":"Misc"},"411":{"name":"Metal Grate","caption":"Grate","tile":483,"group":"Misc"},"412":{"name":"Flammable Tree","caption":"Tree","data":["Burn anim","","","Sound"],"tile":3355,"group":"Misc"},"413":{"name":"Machine Gun","data":["Ammo max","Ammo","",""],"tile":2178,"group":"Hazard"},"414":{"name":"Falling Rock","caption":"Rock","group":"None"},"415":{"name":"Kickable Pail","caption":"Pail","group":"None"},"416":{"name":"Gib Object","caption":"G-Obj","data":["Gib1","Gib2","Gib3","Sound"],"group":"None"},"417":{"name":"Explode Object","caption":"E-Obj","data":["Gib1","Gib2","Gib3","Sound"],"group":"None"},"426":{"name":"Falling Gib","data":["Gib1","Gib2","Gib3","Sound"]},"427":{"name":"Zombie Head","caption":"Head","data":["Kick times","","","Sound"],"group":"None"},"428":{"name":"Napalm Trap","data":["","","","Divisions"],"tile":3295,"xr":40,"yr":40,"group":"Hazard"},"430":{"name":"Acid Trap","tile":3633,"xr":40,"yr":40,"group":"Hazard"},"431":{"name":"Armed Life Leech","caption":"Armed Leech","data":["","","Ammo",""],"tile":3317,"xr":24,"yr":24,"group":"Hazard"},"452":{"name":"Flame Trap","caption":"Flamer","data":["Flame Dist","","",""],"tile":2184,"group":"Hazard"},"454":{"name":"Saw Blade","caption":"Saw","data":["Saw anim","","",""],"tile":655,"group":"Hazard"},"456":{"name":"Switched Zap","caption":"Zap","tile":1156,"group":"Hazard"},"457":{"name":"Pendulum","tile":1080,"group":"Hazard"},"458":{"name":"Guillotine","tile":835,"group":"Hazard"},"459":{"name":"Hidden Exploder","caption":"Exploder","data":["*Explosion","*SEQ Id","*Sound","*Radius"],"tile":908,"xr":4,"group":"Hazard"},"700":{"name":"Trigger Gen","caption":"Trigger","data":["Rand Mul","","",""]},"701":{"name":"WaterDrip Gen","caption":"Water Drip","data":["Rand Mul","","",""],"tile":2028,"pal":10,"group":"Marker"},"702":{"name":"BloodDrip Gen","caption":"Blood Drip","data":["Rand Mul","","",""],"tile":2028,"pal":2,"group":"Marker"},"703":{"name":"Fireball Gen","caption":"Fireball","data":["Rand Mul","Fire anim","",""],"tile":249,"group":"Hazard"},"706":{"name":"Bubble Gen","caption":"Bubble","data":["Rand Mul","","",""],"tile":1128,"xr":40,"yr":40,"group":"Marker"},"707":{"name":"Multi-Bubble Gen","caption":"Bubbles","data":["Rand Mul","","",""],"tile":1132,"xr":40,"yr":40,"group":"Marker"},"708":{"name":"SFX Gen","caption":"SFX","data":["Rand Mul","Sound","*Volume","*Pitch"],"tile":2519,"xr":32,"yr":24,"pal":6,"group":"Marker"},"709":{"name":"Sector SFX","caption":"SectorSFX","data":["Off->On","Stopping","On->Off","Stopping"],"tile":2520,"xr":32,"yr":24,"pal":9,"group":"Marker"},"710":{"name":"Ambient SFX","data":["Radius1","Radius2","Sound","Volume"],"tile":2521,"xr":32,"yr":24,"pal":0,"group":"Marker"},"711":{"name":"Player SFX","data":["Sound","","",""],"tile":2519,"xr":32,"yr":24,"pal":5,"group":"Marker"},"131":{"name":"Death Mask","tile":683,"xr":40,"yr":40,"group":"Item"},"403":{"name":"Blue Vase","tile":739,"group":"Misc"},"404":{"name":"Brown Vase","tile":642,"group":"Misc"},"239":{"name":"Burning Innocent","data":["","","","*Health"],"tile":3321,"xr":36,"yr":36,"group":"Respawn"},"240":{"name":"Burning Cultist","data":["","","","*Health"],"tile":3321,"xr":34,"yr":34,"group":"Respawn"},"241":{"name":"Burning Axe Zombie","data":["","","","*Health"],"tile":3321,"xr":40,"yr":40,"group":"Respawn"},"242":{"name":"Burning Butcher","data":["","","","*Health"],"tile":3321,"xr":48,"yr":38,"group":"Respawn"},"252":{"name":"Burning Tiny Caleb","data":["","","","*Health"],"tile":3321,"xr":12,"yr":12,"group":"Respawn"},"253":{"name":"Burning Beast","data":["","","","*Health"],"tile":3321,"xr":48,"yr":48,"group":"Respawn"}},"wall":{"0":{"name":"Normal","caption":"NML"},"20":{"name":"Toggle Switch","caption":"TG Swch"},"21":{"name":"1-Way Switch","caption":"1W Swch"},"501":{"name":"Wall Stack","caption":"Stack","data":["Stack ID","","",""]},"511":{"name":"Gib Wall","caption":"Gib","data":["Gib ID","","",""]}},"sector":{"0":{"name":"Normal","caption":"NML"},"600":{"name":"Z-Motion"},"602":{"name":"Z-Motion SPRITE","caption":"Z-Motion SPR"},"604":{"name":"Teleporter"},"611":{"name":"Path Sector SPRITE","caption":"Path SPR","data":["Path ID","","",""]},"612":{"name":"Path Sector","caption":"Path","data":["Path ID","","",""]},"613":{"name":"Step Rotate"},"614":{"name":"Slide Marked"},"615":{"name":"Rotate Marked"},"616":{"name":"Slide"},"617":{"name":"Rotate"},"618":{"name":"Damage Sector","caption":"Damage","data":["Damage","","",""]},"619":{"name":"Counter Sector","caption":"Counter","data":["Sprite type","","",""]}}};
+  root.BloodData.commands = { 0: 'Off', 1: 'On', 2: 'State', 3: 'Toggle', 4: 'Not state', 5: 'Link', 6: 'Lock', 7: 'Unlock', 8: 'Toggle lock',
+    9: 'Stop off', 10: 'Stop on', 11: 'Stop next', 12: 'Counter sector', 20: 'Callback', 21: 'Repeat', 30: 'Sprite push', 31: 'Sprite impact',
+    32: 'Sprite pickup', 33: 'Sprite touch', 34: 'Sprite sight', 35: 'Sprite proximity', 36: 'Sprite explode', 40: 'Sector push', 41: 'Sector impact',
+    42: 'Sector enter', 43: 'Sector exit', 50: 'Wall push', 51: 'Wall impact', 52: 'Wall touch' };
+  for (let i = 64; i < 256; i++) root.BloodData.commands[i] = 'Number ' + (i - 64);
+  root.BloodData.channels = { 1: 'set total secrets', 2: 'secret found', 3: 'text over', 4: 'level exit', 5: 'secret level exit', 6: 'custom level exit',
+    7: 'level start', 8: 'level start (bloodbath, teams)', 9: 'level start (co-op)', 10: 'level start (teams)', 15: 'player death (team A)',
+    16: 'player death (team B)', 90: 'remote bomb 0', 91: 'remote bomb 1', 92: 'remote bomb 2', 93: 'remote bomb 3', 94: 'remote bomb 4',
+    95: 'remote bomb 5', 96: 'remote bomb 6', 97: 'remote bomb 7' };
+  if (typeof module !== 'undefined' && module.exports) module.exports = root.BloodData;
 })(typeof window !== 'undefined' ? window : this);
 
 </script>
@@ -906,25 +1616,28 @@ small { color: var(--dim); }
 
 </script>
 <script>
-// Blood Map Maker: 3D view and walkthrough (WebGL 1, no libraries).
+// Blood Map Maker: 3D view and walkthrough of a full Blood map (MapFile's model), WebGL 1.
 //
-// The level is drawn from the same sectors and walls the .MAP export writes (MapCore.buildMap).
-// With the player's Blood files loaded (gamefiles.js) it looks like the game: Blood's tiles,
-// mapped the way Build maps them (walls: xrepeat/yrepeat, floors: 16 map units per pixel), Blood's
-// palette and its shading table (room light plus darkness with distance), sprites for items and
-// enemies, and the parallax sky. Without them every tile number gets a colour of its own.
+// Drawn like Build draws it: sectors with holes and slopes, each wall with its own tile, repeat,
+// panning and flags (lower/upper parts, masked walls, swapped bottoms, aligned to floor or ceiling),
+// floors and ceilings with their panning and flags, face/wall/floor sprites, and the parallax sky.
+// With the player's Blood files (gamefiles.js) it uses Blood's tiles, palette and shading table;
+// without them every tile number gets a colour of its own.
 //
-// Walking uses rough Blood-like player sizes (PLAYER). Doors and lifts work (Use), keys are picked
-// up, and entering a secret room says so; enemies stand still. A quick check of a map, not the
-// game's exact physics.
+// The walkthrough moves a Blood-sized player (sizes close to Blood's, not exact) and runs Blood's
+// triggers in a simplified form: using walls, sectors and sprites (switches), entering and leaving
+// sectors, picking things up, keys, locks, the tx/rx channels with their commands, Z motion doors
+// and lifts with their timing, secrets, messages and level exits. Enemies stand still; sliding,
+// rotating and path sectors only change state.
 (function (root) {
   'use strict';
-  const M = root.MapCore;
   const G = () => root.GameFiles;
+  const Geo = () => root.MapGeo;
 
-  const PLAYER = { radius: 128, height: 720, eye: 576, step: 256, jump: 5.3, gravity: 0.55, speed: 30, run: 56, reach: 900 }; // map units, per 1/60 s
+  const PLAYER = { radius: 128, height: 720, eye: 576, step: 256, jump: 5.3, gravity: 0.55, speed: 30, run: 56, reach: 1000 }; // map units, per 1/60 s
+  const Z = 16; // z units per map unit
 
-  // ---- matrices (column-major) -------------------------------------------------------------------
+  // ---- matrices -----------------------------------------------------------------------------------
   function perspective(fovy, aspect, near, far) {
     const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
     return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0]);
@@ -940,141 +1653,145 @@ small { color: var(--dim); }
   }
   function mul(a, b) {
     const o = new Float32Array(16);
-    for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
-      let s = 0;
-      for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
-      o[c * 4 + r] = s;
-    }
+    for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; }
     return o;
   }
 
-  // a colour for a tile number (no Blood files): the same tile always looks the same
   function tileColor(pic, kind) {
     const h = (pic * 2654435761) >>> 0;
     const hue = (h % 360) / 360, sat = 0.25 + ((h >> 9) % 30) / 100, val = kind === 'floor' ? 0.42 : kind === 'ceil' ? 0.3 : 0.52;
     const i = Math.floor(hue * 6), f = hue * 6 - i, p = val * (1 - sat), q = val * (1 - f * sat), t = val * (1 - (1 - f) * sat);
     return [[val, t, p], [q, val, p], [p, val, t], [p, q, val], [t, p, val], [val, p, q]][i % 6];
   }
-  const THING_COLORS = { Starts: [0.44, 0.75, 0.45], Weapons: [0.94, 0.64, 0.29], Ammo: [0.85, 0.76, 0.42], Health: [0.94, 0.36, 0.29], Armor: [0.44, 0.66, 0.86], 'Power-ups': [0.76, 0.48, 0.63], Keys: [1, 1, 1], Enemies: [0.8, 0.15, 0.12] };
+  const tileSize = (pic) => { const t = G() && G().tile(pic); return t ? [t.w, t.h] : [64, 64]; };
+  // sprites only the editor shows: markers, generators, sound sources
+  const editorOnly = (sp) => (sp.type >= 1 && sp.type <= 19) || (sp.type >= 700 && sp.type < 800) || (sp.cstat & 0x8000) || sp.statnum >= 1024;
 
-  // ear clipping for a room outline (MapCore keeps them clockwise on screen: positive area)
-  function triangulate(pts) {
-    const idx = pts.map((_, i) => i), tris = [];
-    const cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-    const inTri = (p, a, b, c) => cross(a, b, p) >= 0 && cross(b, c, p) >= 0 && cross(c, a, p) >= 0;
-    let guard = 0;
-    while (idx.length > 3 && guard++ < 10000) {
-      let cut = false;
-      for (let k = 0; k < idx.length; k++) {
-        const ia = idx[(k + idx.length - 1) % idx.length], ib = idx[k], ic = idx[(k + 1) % idx.length];
-        const a = pts[ia], b = pts[ib], c = pts[ic];
-        if (cross(a, b, c) <= 0) continue;
-        let ok = true;
-        for (const j of idx) {
-          if (j === ia || j === ib || j === ic) continue;
-          if (inTri(pts[j], a, b, c)) { ok = false; break; }
-        }
-        if (!ok) continue;
-        tris.push([ia, ib, ic]);
-        idx.splice(k, 1);
-        cut = true;
-        break;
-      }
-      if (!cut) break;
-    }
-    if (idx.length === 3) tris.push(idx.slice());
-    return tris;
-  }
-
-  // ---- doors and lifts: where floors and ceilings are right now -------------------------------------
-  function Heights(prj) {
-    const rooms = prj.rooms;
-    const st = rooms.map(() => ({ open: 0, target: 0, waitUntil: 0 }));
-    const floorOf = (s) => { const r = rooms[s]; return r.kind === 'lift' ? r.floor + r.rise * st[s].open : r.floor; };
-    const ceilOf = (s) => { const r = rooms[s]; return r.kind === 'door' ? r.floor + r.height * st[s].open : r.floor + r.height; };
-    return { st, floorOf, ceilOf, moving: () => st.some((x) => x.open !== x.target) };
-  }
-
-  // ---- the level as triangles, one batch per tile -------------------------------------------------
-  // world: X = map x, Y = height (up), Z = map y. uv in tile pixels.
-  function buildMesh(prj, hts, opts) {
+  // ---- the level as triangles ------------------------------------------------------------------------
+  // world: X = map x, Y = height up (map units), Z = map y. uv in tile pixels.
+  function buildMesh(map, opts) {
     opts = opts || {};
-    hts = hts || Heights(prj);
-    const batches = new Map(); // key -> { pic, ceil, pos, uv, col, shade }
-    const batch = (pic, ceil) => {
-      const key = pic + (ceil ? 'c' : '');
+    if (!opts.wallSector) opts.wallSector = wallSectors(map);
+    const geo = Geo();
+    const batches = new Map();
+    const batch = (pic, flags) => {
+      const key = pic + ':' + (flags || '');
       let b = batches.get(key);
-      if (!b) batches.set(key, b = { pic, ceil, pos: [], uv: [], col: [], shade: [] });
+      if (!b) batches.set(key, b = { pic, ceil: flags === 'c', see: flags === 'm', pos: [], uv: [], col: [], shade: [] });
       return b;
     };
-    const m = M.buildMap(prj, false);
-    const rooms = prj.rooms;
-    const { floorOf, ceilOf } = hts;
-    const shadeOf = (s) => rooms[s].light || 0;
-    function wallQuad(pic, a, b, y1, y2, top, s, c) {
-      if (y2 <= y1 + 0.01) return;
-      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      const xrep = Math.max(1, Math.min(255, Math.round(len / 128))); // as the export writes it
-      const u1 = xrep * 8;
-      // Build: yrepeat 8 is 256 z units (16 map units) per pixel, measured from the ceiling
-      const v = (y) => (top - y) / 16;
-      const q = [[a, y1, 0, v(y1)], [b, y1, u1, v(y1)], [b, y2, u1, v(y2)], [a, y2, 0, v(y2)]];
-      const bt = batch(pic, false);
-      for (const k of [0, 1, 2, 0, 2, 3]) {
-        const [p, y, u, vv] = q[k];
-        bt.pos.push(p[0], y, p[1]); bt.uv.push(u, vv); bt.col.push(...c); bt.shade.push(s);
-      }
+    const vis = (s) => map.sectors[s].visibility;
+    const push = (b, x, y, z, u, v, c, sh) => { b.pos.push(x, y, z); b.uv.push(u, v); b.col.push(c[0], c[1], c[2]); b.shade.push(sh); };
+    // a wall piece between heights (z units, per end: za1..za2 at a, zb1..zb2 at b), anchored at zref
+    function wallPiece(w, wall, a, b, za1, za2, zb1, zb2, pic, zref, flags, sh) {
+      if (za2 - za1 <= 0.5 && zb2 - zb1 <= 0.5) return;
+      if (za2 < za1) za2 = za1;
+      if (zb2 < zb1) zb2 = zb1;
+      const [tw, th] = tileSize(pic);
+      const ul = wall.xrepeat * 8;
+      let u0 = wall.xpanning, u1 = wall.xpanning + ul;
+      if (wall.cstat & 8) { u0 = -u0; u1 = u0 - ul; }
+      const yscale = wall.yrepeat / 2048 * (tw ? 1 : 1);
+      const vy = (z) => ((wall.cstat & 256) ? -1 : 1) * (z - zref) * yscale + wall.ypanning * th / 256;
+      const c = tileColor(pic, 'wall').map((x) => x * (0.78 + 0.22 * Math.cos(Math.atan2(b[1] - a[1], b[0] - a[0]) * 2)));
+      const bt = batch(pic, flags);
+      const q = [[a, za1, u0], [b, zb1, u1], [b, zb2, u1], [a, za2, u0]];
+      for (const k of [0, 1, 2, 0, 2, 3]) { const [p, z, u] = q[k]; push(bt, p[0], -z / Z, p[1], u, vy(z), c, sh); }
     }
-    m.walls.forEach((w) => {
-      const s = w.sector, o = m.walls[w.point2], a = [w.x, w.y], b = [o.x, o.y];
-      const r = rooms[s];
-      const next = w.nextsector >= 0 ? rooms[w.nextsector] : null;
-      const pic = next && next.kind === 'door' ? next.doorPic : r.wallPic; // a door's face, as exported
-      const dir = Math.atan2(b[1] - a[1], b[0] - a[0]);
-      const c = tileColor(pic, 'wall').map((x) => x * (0.78 + 0.22 * Math.cos(dir * 2)));
-      const sh = shadeOf(s) + Math.round(4 * Math.abs(Math.sin(dir))); // walls facing different ways a little different
-      const f = floorOf(s), cl = ceilOf(s);
-      if (w.nextsector < 0) { wallQuad(pic, a, b, f, cl, cl, sh, c); return; }
-      const n = w.nextsector;
-      if (floorOf(n) > f) wallQuad(pic, a, b, f, Math.min(floorOf(n), cl), cl, sh, c);
-      if (ceilOf(n) < cl && !(r.sky && rooms[n].sky)) wallQuad(pic, a, b, Math.max(ceilOf(n), f), cl, cl, sh, c);
-    });
-    rooms.forEach((r, s) => {
-      const tris = triangulate(r.pts);
-      const f = floorOf(s), cl = ceilOf(s);
-      const fb = batch(r.floorPic, false), cb = r.sky ? null : batch(r.ceilPic, true);
-      const cf = tileColor(r.floorPic, 'floor'), cc = tileColor(r.ceilPic, 'ceil');
-      for (const t of tris) {
-        for (const k of t) { const p = r.pts[k]; fb.pos.push(p[0], f, p[1]); fb.uv.push(p[0] / 16, p[1] / 16); fb.col.push(...cf); fb.shade.push(shadeOf(s)); }
-        if (cb && cl > f) for (const k of [t[0], t[2], t[1]]) { const p = r.pts[k]; cb.pos.push(p[0], cl, p[1]); cb.uv.push(p[0] / 16, p[1] / 16); cb.col.push(...cc); cb.shade.push(shadeOf(s)); }
-      }
-    });
-    // things without pictures (or the player starts, which are invisible in the game): little boxes
-    const boxes = batch(-1, false);
-    prj.things.forEach((t, i) => {
-      if (opts.hide && opts.hide.has(i)) return;
-      const info = M.THING_BY_TYPE[t.type] || { group: '' };
-      if (opts.textured && !info.start && G() && G().tile(info.pic)) return; // drawn as a sprite
-      const s = M.roomAt([t.x, t.y], rooms);
+    const sz = (s, x, y, ceil) => geo.slopeZ(map, s, x, y, ceil);
+    map.walls.forEach((wall, w) => {
+      const s = opts.wallSector[w];
       if (s < 0) return;
-      const c = THING_COLORS[info.group] || [0.7, 0.7, 0.7];
-      const big = info.start ? 96 : info.enemy ? 120 : 56, hgt = info.start ? 320 : info.enemy ? 560 : 112, y1 = floorOf(s), y2 = y1 + hgt;
-      const x1 = t.x - big, x2 = t.x + big, z1 = t.y - big, z2 = t.y + big;
-      const quad = (a, b, ya, yb, cc) => {
-        const v = [[a[0], ya, a[1]], [b[0], ya, b[1]], [b[0], yb, b[1]], [a[0], yb, a[1]]];
-        for (const k of [0, 1, 2, 0, 2, 3]) { boxes.pos.push(...v[k]); boxes.uv.push(0, 0); boxes.col.push(...cc); boxes.shade.push(0); }
-      };
-      [[[x1, z1], [x2, z1]], [[x2, z1], [x2, z2]], [[x2, z2], [x1, z2]], [[x1, z2], [x1, z1]]].forEach(([a, b], k) => quad(a, b, y1, y2, c.map((v) => v * (0.75 + 0.08 * k))));
-      for (const [x, z] of [[x1, z1], [x2, z1], [x2, z2], [x1, z1], [x2, z2], [x1, z2]]) { boxes.pos.push(x, y2, z); boxes.uv.push(0, 0); boxes.col.push(...c); boxes.shade.push(0); }
-      if (info.start) {
-        const a = ((t.ang || 0) / 2048) * Math.PI * 2;
-        quad([t.x - Math.sin(a) * 30, t.y + Math.cos(a) * 30], [t.x + Math.cos(a) * 220, t.y + Math.sin(a) * 220], y2 - 90, y2 - 30, [0.9, 1, 0.9]);
+      const sec = map.sectors[s], o = map.walls[wall.point2];
+      if (!o) return;
+      const a = [wall.x, wall.y], b = [o.x, o.y];
+      const sh = wall.shade + vis(s) * 0;
+      const cA = sz(s, a[0], a[1], true), cB = sz(s, b[0], b[1], true), fA = sz(s, a[0], a[1], false), fB = sz(s, b[0], b[1], false);
+      const n = wall.nextsector;
+      if (n < 0 || n >= map.sectors.length) {
+        wallPiece(w, wall, a, b, cA, fA, cB, fB, wall.picnum, (wall.cstat & 4) ? sec.floorz : sec.ceilingz, '', sh);
+        return;
+      }
+      const nsec = map.sectors[n];
+      const ncA = sz(n, a[0], a[1], true), ncB = sz(n, b[0], b[1], true), nfA = sz(n, a[0], a[1], false), nfB = sz(n, b[0], b[1], false);
+      // a step up ahead: the lower part (its tile from the other side with "swap bottom")
+      if (nfA < fA || nfB < fB) {
+        const lw = (wall.cstat & 2) && map.walls[wall.nextwall] ? map.walls[wall.nextwall] : wall;
+        wallPiece(w, lw === wall ? wall : { ...lw, cstat: wall.cstat }, a, b, Math.max(nfA, cA), fA, Math.max(nfB, cB), fB, lw.picnum,
+          (wall.cstat & 4) ? sec.ceilingz : nsec.floorz, '', sh);
+      }
+      // a lower ceiling ahead: the upper part (none between two skies)
+      const bothSky = (sec.ceilingstat & 1) && (nsec.ceilingstat & 1);
+      if (!bothSky && (ncA > cA || ncB > cB)) wallPiece(w, wall, a, b, cA, Math.min(ncA, fA), cB, Math.min(ncB, fB), wall.picnum, (wall.cstat & 4) ? sec.ceilingz : nsec.ceilingz, '', sh);
+      // a masked wall in the opening
+      if ((wall.cstat & 16) && wall.overpicnum >= 0 && wall.nextwall > w) {
+        wallPiece(w, wall, a, b, Math.max(cA, ncA), Math.min(fA, nfA), Math.max(cB, ncB), Math.min(fB, nfB), wall.overpicnum,
+          (wall.cstat & 4) ? Math.min(sec.floorz, nsec.floorz) : Math.max(sec.ceilingz, nsec.ceilingz), 'm', sh);
       }
     });
-    let ceilStart = 0, count = 0;
-    const list = [...batches.values()].sort((a, b) => (a.ceil - b.ceil));
-    for (const b of list) { b.first = count; b.count = b.pos.length / 3; count += b.count; if (!b.ceil) ceilStart = count; }
-    return { batches: list, map: m, count, ceilStart };
+    // floors and ceilings
+    map.sectors.forEach((sec, s) => {
+      let tris;
+      try { tris = geo.triangulateSector(map, s); } catch (e) { tris = []; }
+      for (const ceil of [false, true]) {
+        const stat = ceil ? sec.ceilingstat : sec.floorstat;
+        if (stat & 1) continue; // parallax sky
+        const pic = ceil ? sec.ceilingpicnum : sec.floorpicnum;
+        const [tw, th] = tileSize(pic);
+        const xp = ceil ? sec.ceilingxpanning : sec.floorxpanning, yp = ceil ? sec.ceilingypanning : sec.floorypanning;
+        const sh = ceil ? sec.ceilingshade : sec.floorshade;
+        const c = tileColor(pic, ceil ? 'ceil' : 'floor');
+        const scale = (stat & 8) ? 8 : 16;
+        let w0 = map.walls[sec.wallptr], w1 = w0 && map.walls[w0.point2], rel = (stat & 64) && w0 && w1;
+        let ca = 1, sa = 0;
+        if (rel) { const L = Math.hypot(w1.x - w0.x, w1.y - w0.y) || 1; ca = (w1.x - w0.x) / L; sa = (w1.y - w0.y) / L; }
+        const uv = (x, y) => {
+          let px = x, py = y;
+          if (rel) { const dx = x - w0.x, dy = y - w0.y; px = dx * ca + dy * sa; py = -dx * sa + dy * ca; }
+          let u = px / scale, v = py / scale;
+          if (stat & 4) { const t = u; u = v; v = t; }
+          if (stat & 16) u = -u;
+          if (stat & 32) v = -v;
+          return [u + xp * tw / 256, v + yp * th / 256];
+        };
+        const bt = batch(pic, ceil ? 'c' : '');
+        for (const t of tris) {
+          const order = ceil ? [t[0], t[2], t[1]] : t;
+          for (const p of order) { const [u, v] = uv(p[0], p[1]); push(bt, p[0], -sz(s, p[0], p[1], ceil) / Z, p[1], u, v, c, sh); }
+        }
+      }
+    });
+    // wall- and floor-aligned sprites (the ones facing the viewer are made each frame)
+    map.sprites.forEach((sp, i) => {
+      if (!(sp.cstat & 48) || editorOnly(sp) || (opts.hidden && opts.hidden.has(i))) return;
+      const t = G() && G().tile(sp.picnum);
+      if (!t) return;
+      const w = t.w * sp.xrepeat / 4, h = t.h * sp.yrepeat / 4;
+      const bt = batch(sp.picnum, 'm');
+      const a = (sp.ang & 2047) / 2048 * Math.PI * 2;
+      const c = [1, 1, 1];
+      const fu = (sp.cstat & 4) ? [t.w, 0] : [0, t.w], fv = (sp.cstat & 8) ? [0, t.h] : [t.h, 0];
+      if ((sp.cstat & 48) === 16) { // wall sprite: stands along the line across its angle
+        const dx = -Math.sin(a) * w / 2, dy = Math.cos(a) * w / 2;
+        const zb = (sp.cstat & 128) ? sp.z + h * Z / 2 : sp.z, zt = zb - h * Z;
+        const q = [[sp.x - dx, sp.y - dy, zb, fu[0], fv[0]], [sp.x + dx, sp.y + dy, zb, fu[1], fv[0]], [sp.x + dx, sp.y + dy, zt, fu[1], fv[1]], [sp.x - dx, sp.y - dy, zt, fu[0], fv[1]]];
+        for (const k of [0, 1, 2, 0, 2, 3]) { const v = q[k]; push(bt, v[0], -v[2] / Z, v[1], v[3], v[4], c, sp.shade); }
+      } else { // floor sprite: lies flat, turned by its angle
+        const ux = Math.cos(a), uy = Math.sin(a);
+        const corner = (sx, sy) => [sp.x + ux * sx - uy * sy, sp.y + uy * sx + ux * sy];
+        const q = [[...corner(-h / 2, -w / 2), fu[0], fv[1]], [...corner(-h / 2, w / 2), fu[1], fv[1]], [...corner(h / 2, w / 2), fu[1], fv[0]], [...corner(h / 2, -w / 2), fu[0], fv[0]]];
+        for (const k of [0, 1, 2, 0, 2, 3]) { const v = q[k]; push(bt, v[0], -sp.z / Z + 1, v[1], v[2], v[3], c, sp.shade); }
+      }
+    });
+    const list = [...batches.values()].sort((a, b) => (a.ceil - b.ceil) || (a.see - b.see));
+    let count = 0;
+    for (const b of list) { b.first = count; b.count = b.pos.length / 3; count += b.count; }
+    return { batches: list, count };
+  }
+  function wallSectors(map) {
+    const out = new Int32Array(map.walls.length).fill(-1);
+    map.sectors.forEach((s, i) => { for (let w = s.wallptr; w < s.wallptr + s.wallnum && w < out.length; w++) out[w] = i; });
+    return out;
   }
 
   // ---- WebGL --------------------------------------------------------------------------------------
@@ -1084,17 +1801,15 @@ varying vec2 vUV; varying vec3 vCol; varying float vShade; varying float vDist; 
 void main() { gl_Position = uMVP * vec4(aPos, 1.0); vUV = aUV; vCol = aCol; vShade = aShade; vDist = distance(aPos, uEye); vPos = aPos; }`;
   const FS = `precision mediump float;
 varying vec2 vUV; varying vec3 vCol; varying float vShade; varying float vDist; varying vec3 vPos;
-uniform int uMode;          // 0: colours, 1: Blood tile (palette + shading), 2: tile, no shading table
-uniform sampler2D uTex; uniform vec2 uSize; uniform sampler2D uPal; uniform sampler2D uLook;
+uniform int uMode; uniform sampler2D uTex; uniform vec2 uSize; uniform sampler2D uPal; uniform sampler2D uLook;
 uniform float uVis; uniform float uSeeThrough; uniform vec3 uFog; uniform float uFogDist;
 void main() {
   if (uMode == 0) {
     vec3 p = vPos / 256.0;
     float g = 0.97 - 0.06 * (step(fract(p.x), 0.03) + step(fract(p.z), 0.03) + step(fract(p.y), 0.03));
-    gl_FragColor = vec4(mix(vCol * g, uFog, clamp(vDist / uFogDist, 0.0, 0.85)), 1.0);
+    gl_FragColor = vec4(mix(vCol * g * clamp(1.0 - vShade / 64.0, 0.2, 1.3), uFog, clamp(vDist / uFogDist, 0.0, 0.85)), 1.0);
     return;
   }
-  // the tile is stored column by column (ART), so x and y swap in the texture
   vec2 px = mod(floor(vUV), uSize);
   float idx = floor(texture2D(uTex, vec2((px.y + 0.5) / uSize.y, (px.x + 0.5) / uSize.x)).r * 255.0 + 0.5);
   if (uSeeThrough > 0.5 && idx > 254.5) discard;
@@ -1105,15 +1820,10 @@ void main() {
   if (uMode == 2) c *= 1.0 - shade / 64.0;
   gl_FragColor = vec4(c, 1.0);
 }`;
-
   function makeGL(canvas) {
     const gl = canvas.getContext('webgl', { antialias: false }) || canvas.getContext('experimental-webgl');
     if (!gl) return null;
-    const sh = (type, src) => {
-      const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
-      return s;
-    };
+    const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
     const prog = gl.createProgram();
     gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
     gl.linkProgram(prog);
@@ -1132,18 +1842,13 @@ void main() {
     gl.uniform1i(r.u.tex, 0); gl.uniform1i(r.u.pal, 1); gl.uniform1i(r.u.look, 2);
     return r;
   }
-
   function lumTexture(gl, w, h, data) {
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, w, h, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, data);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
     return t;
   }
-  // the palette and shading table, once
   function gameTextures(r) {
     const g = G();
     if (!g || !g.ready()) return false;
@@ -1152,10 +1857,7 @@ void main() {
       r.palTex = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, r.palTex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 256, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, g.palette());
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
       if (g.shades()) r.lookTex = lumTexture(gl, 256, 64, g.shades());
     }
     return true;
@@ -1163,26 +1865,9 @@ void main() {
   function tileTexture(r, pic) {
     if (r.tiles.has(pic)) return r.tiles.get(pic);
     const t = G() && G().tile(pic);
-    // stored as it is in the ART file: h pixels wide (one column), w columns high
     const v = t ? { tex: lumTexture(r.gl, t.h, t.w, t.data), w: t.w, h: t.h } : null;
     r.tiles.set(pic, v);
     return v;
-  }
-
-  function uploadInto(r, bufs, data) {
-    const gl = r.gl;
-    [['pos', 3], ['uv', 2], ['col', 3], ['shade', 1]].forEach(([k, n]) => {
-      gl.bindBuffer(gl.ARRAY_BUFFER, bufs[k]);
-      gl.bufferData(gl.ARRAY_BUFFER, data[k], gl.DYNAMIC_DRAW);
-    });
-  }
-  function bindBuffers(r, bufs) {
-    const gl = r.gl;
-    [['pos', 3], ['uv', 2], ['col', 3], ['shade', 1]].forEach(([k, n]) => {
-      gl.bindBuffer(gl.ARRAY_BUFFER, bufs[k]);
-      gl.enableVertexAttribArray(r.a[k]);
-      gl.vertexAttribPointer(r.a[k], n, gl.FLOAT, false, 0, 0);
-    });
   }
   function flatten(batches) {
     const n = batches.reduce((s, b) => s + b.count, 0);
@@ -1191,74 +1876,96 @@ void main() {
     for (const b of batches) { out.pos.set(b.pos, o * 3); out.uv.set(b.uv, o * 2); out.col.set(b.col, o * 3); out.shade.set(b.shade, o); o += b.count; }
     return out;
   }
+  function uploadInto(r, bufs, data) {
+    const gl = r.gl;
+    for (const k of ['pos', 'uv', 'col', 'shade']) { gl.bindBuffer(gl.ARRAY_BUFFER, bufs[k]); gl.bufferData(gl.ARRAY_BUFFER, data[k], gl.DYNAMIC_DRAW); }
+  }
+  function bindBuffers(r, bufs) {
+    const gl = r.gl;
+    for (const [k, n] of [['pos', 3], ['uv', 2], ['col', 3], ['shade', 1]]) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufs[k]); gl.enableVertexAttribArray(r.a[k]); gl.vertexAttribPointer(r.a[k], n, gl.FLOAT, false, 0, 0);
+    }
+  }
 
-  // ---- walking ------------------------------------------------------------------------------------
-  // Like Build: the player is a circle on the map plus a height range. A wall stops it when it's
-  // solid, the step up is too high, or the opening is too low (a shut door has no opening at all).
-  function Walker(prj, map, hts) {
-    hts = hts || Heights(prj);
-    const rooms = prj.rooms;
-    const { floorOf, ceilOf } = hts;
-    const edges = map.walls.map((w) => ({ a: [w.x, w.y], b: [map.walls[w.point2].x, map.walls[w.point2].y], s: w.sector, n: w.nextsector }));
+  // ---- walking -----------------------------------------------------------------------------------
+  // The player is a circle on the map plus a height range, in a sector. A wall stops it when it's
+  // solid (or marked blocking), the step up is too high, or the opening is too low.
+  function Walker(map, opts) {
+    opts = opts || {};
+    const geo = Geo();
+    const ws = wallSectors(map);
+    const floorAt = (s, x, y) => -geo.slopeZ(map, s, x, y, false) / Z;
+    const ceilAt = (s, x, y) => -geo.slopeZ(map, s, x, y, true) / Z;
     const st = { x: 0, y: 0, z: 0, vz: 0, ang: 0, pitch: 0, sector: -1, onGround: true };
-    const start = prj.things.find((t) => t.type === 1) || prj.things.find((t) => t.type === 2);
-    if (start) { st.x = start.x; st.y = start.y; st.ang = ((start.ang || 0) / 2048) * Math.PI * 2; }
-    else if (rooms.length) { const c = M.centroidInside(rooms[0].pts) || rooms[0].pts[0]; st.x = c[0]; st.y = c[1]; }
-    st.sector = M.roomAt([st.x, st.y], rooms);
-    if (st.sector >= 0) st.z = floorOf(st.sector);
+    const start = map.sprites.find((sp) => sp.type === 1) || map.sprites.find((sp) => sp.type === 2);
+    if (opts.at) Object.assign(st, opts.at);
+    else if (start) { st.x = start.x; st.y = start.y; st.ang = ((start.ang & 2047) / 2048) * Math.PI * 2; }
+    else { st.x = map.header.startX; st.y = map.header.startY; st.ang = ((map.header.startAng & 2047) / 2048) * Math.PI * 2; }
+    st.sector = geo.sectorAt(map, st.x, st.y, start ? start.sectnum : map.header.startSector);
+    if (st.sector >= 0 && !opts.at) st.z = floorAt(st.sector, st.x, st.y);
 
-    function blocks(e, z) {
-      if (e.n < 0) return true;
-      const lo = Math.max(floorOf(e.n), floorOf(e.s)), hi = Math.min(ceilOf(e.n), ceilOf(e.s));
-      if (floorOf(e.n) - z > PLAYER.step) return true;
-      return hi - Math.max(lo, z) < PLAYER.height * 0.8;
+    function blocks(w, x, y, z) {
+      const wall = map.walls[w], n = wall.nextsector;
+      if (n < 0 || n >= map.sectors.length || (wall.cstat & 1)) return true;
+      const s = ws[w];
+      const f = floorAt(n, x, y), c = Math.min(ceilAt(n, x, y), ceilAt(s, x, y));
+      if (f - z > PLAYER.step) return true;
+      return c - Math.max(f, z) < PLAYER.height * 0.8;
     }
-    function closest(p, a, b) {
+    const closest = (p, a, b) => {
       const dx = b[0] - a[0], dy = b[1] - a[1], l = dx * dx + dy * dy;
-      let t = l ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l : 0;
-      t = Math.max(0, Math.min(1, t));
+      const t = l ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l)) : 0;
       return [a[0] + dx * t, a[1] + dy * t];
-    }
+    };
     const cr = (o, u, v) => (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0]);
-    function crosses(p, q, a, b) {
-      const d1 = cr(a, b, p), d2 = cr(a, b, q), d3 = cr(p, q, a), d4 = cr(p, q, b);
-      return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+    const crosses = (p, q, a, b) => { const d1 = cr(a, b, p), d2 = cr(a, b, q), d3 = cr(p, q, a), d4 = cr(p, q, b); return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)); };
+    // the walls near the player: its sector and the ones around it
+    function nearWalls() {
+      const out = [], seen = new Set();
+      const add = (s) => {
+        if (s < 0 || seen.has(s)) return; seen.add(s);
+        const sec = map.sectors[s];
+        for (let w = sec.wallptr; w < sec.wallptr + sec.wallnum; w++) out.push(w);
+      };
+      add(st.sector);
+      const sec = map.sectors[st.sector];
+      if (sec) for (let w = sec.wallptr; w < sec.wallptr + sec.wallnum; w++) { const n = map.walls[w].nextsector; if (n >= 0) { add(n); const ns = map.sectors[n]; for (let k = ns.wallptr; k < ns.wallptr + ns.wallnum; k++) add(map.walls[k].nextsector); } }
+      return out;
     }
     function tryMove(dx, dy) {
+      if (st.sector < 0) return;
       let p = [st.x + dx, st.y + dy];
+      const walls = nearWalls();
       for (let it = 0; it < 3; it++) {
-        for (const e of edges) {
-          if (!blocks(e, st.z)) continue;
-          const c = closest(p, e.a, e.b), ddx = p[0] - c[0], ddy = p[1] - c[1], d = Math.hypot(ddx, ddy);
-          if (d < PLAYER.radius) {
-            if (d > 0.001) { p[0] = c[0] + ddx / d * PLAYER.radius; p[1] = c[1] + ddy / d * PLAYER.radius; }
-            else p = [st.x, st.y];
-          }
+        for (const w of walls) {
+          const a = map.walls[w], b = map.walls[a.point2];
+          if (!blocks(w, p[0], p[1], st.z)) continue;
+          const c = closest(p, [a.x, a.y], [b.x, b.y]), ddx = p[0] - c[0], ddy = p[1] - c[1], d = Math.hypot(ddx, ddy);
+          if (d < PLAYER.radius) { if (d > 0.001) { p[0] = c[0] + ddx / d * PLAYER.radius; p[1] = c[1] + ddy / d * PLAYER.radius; } else p = [st.x, st.y]; }
         }
       }
-      for (const e of edges) if (blocks(e, st.z) && crosses([st.x, st.y], p, e.a, e.b)) return;
-      const s = M.roomAt(p, rooms);
+      for (const w of walls) { const a = map.walls[w], b = map.walls[a.point2]; if (blocks(w, p[0], p[1], st.z) && crosses([st.x, st.y], p, [a.x, a.y], [b.x, b.y])) return; }
+      const s = geo.sectorAt(map, p[0], p[1], st.sector);
       if (s < 0) return;
-      if (floorOf(s) - st.z > PLAYER.step) return;
-      if (ceilOf(s) - Math.max(st.z, floorOf(s)) < PLAYER.height * 0.8) return;
+      if (floorAt(s, p[0], p[1]) - st.z > PLAYER.step) return;
+      if (ceilAt(s, p[0], p[1]) - Math.max(st.z, floorAt(s, p[0], p[1])) < PLAYER.height * 0.8) return;
       st.x = p[0]; st.y = p[1]; st.sector = s;
     }
-    // what "use" reaches: the nearest wall straight ahead (its other side: a door or lift), else
-    // the lift it stands on
-    function useTarget() {
+    // what "use" reaches: the nearest wall straight ahead in this sector, or the sector itself
+    function useRay() {
       const a = [st.x, st.y], b = [st.x + Math.cos(st.ang) * PLAYER.reach, st.y + Math.sin(st.ang) * PLAYER.reach];
-      let best = null, bd = Infinity;
-      for (const e of edges) {
-        if (e.s !== st.sector || !crosses(a, b, e.a, e.b)) continue;
-        const c = closest(a, e.a, e.b), d = Math.hypot(c[0] - a[0], c[1] - a[1]);
-        if (d < bd) { bd = d; best = e; }
+      let best = -1, bd = Infinity;
+      for (const w of nearWalls()) {
+        if (ws[w] !== st.sector) continue;
+        const wa = map.walls[w], wb = map.walls[wa.point2];
+        if (!crosses(a, b, [wa.x, wa.y], [wb.x, wb.y])) continue;
+        const c = closest(a, [wa.x, wa.y], [wb.x, wb.y]), d = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        if (d < bd) { bd = d; best = w; }
       }
-      if (best && best.n >= 0 && rooms[best.n].kind !== 'room') return best.n;
-      if (st.sector >= 0 && rooms[st.sector].kind === 'lift') return st.sector;
-      return -1;
+      return { wall: best, dist: bd };
     }
     return {
-      st, PLAYER, useTarget,
+      st, PLAYER, useRay, floorAt, ceilAt,
       step(fwd, side, run, jump, dt) {
         const sp = (run ? PLAYER.run : PLAYER.speed) * dt;
         const cs = Math.cos(st.ang), sn = Math.sin(st.ang);
@@ -1266,7 +1973,7 @@ void main() {
         const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / (PLAYER.radius / 2)));
         for (let i = 0; i < n; i++) tryMove(dx / n, dy / n);
         if (st.sector < 0) return;
-        const fl = floorOf(st.sector), cl = ceilOf(st.sector);
+        const fl = floorAt(st.sector, st.x, st.y), cl = ceilAt(st.sector, st.x, st.y);
         if (jump && st.onGround) { st.vz = PLAYER.jump * 16; st.onGround = false; }
         st.vz -= PLAYER.gravity * 16 * dt;
         st.z += st.vz * dt;
@@ -1278,28 +1985,123 @@ void main() {
     };
   }
 
-  // a door or lift moving towards where it's going; the time is in ms
-  function runMovers(prj, hts, walker, now, dtMs) {
-    let changed = false;
-    prj.rooms.forEach((r, s) => {
-      if (r.kind === 'room') return;
-      const x = hts.st[s];
-      if (x.open === 1 && x.target === 1 && r.wait > 0 && x.waitUntil && now >= x.waitUntil) { x.target = 0; x.waitUntil = 0; }
-      if (x.open === x.target) return;
-      const step = dtMs / Math.max(100, r.speed * 100);
-      let next = x.target > x.open ? Math.min(1, x.open + step) : Math.max(0, x.open - step);
-      // a shutting door or a lift going up doesn't squash the player: it waits
-      if (walker && walker.st.sector === s) {
-        if (r.kind === 'door' && next < x.open && r.floor + r.height * next < walker.st.z + PLAYER.height) next = x.open;
-      }
-      if (next !== x.open) { x.open = next; changed = true; }
-      if (x.open === 1 && x.target === 1 && r.wait > 0) x.waitUntil = now + r.wait * 100;
+  // ---- Blood's triggers, simplified ---------------------------------------------------------------
+  // objects: { kind: 'sector'|'wall'|'sprite', i } with their extra data (ext)
+  function Triggers(map, events) {
+    let quiet = false;
+    const keys = new Set(), say = (t) => { if (!quiet && events.say) events.say(t); }, secretTotal = { n: 0 }, found = new Set();
+    const movers = new Map(); // sector -> { from, to, t, dur, target }
+    const ext = (o) => (o.kind === 'sector' ? map.sectors : o.kind === 'wall' ? map.walls : map.sprites)[o.i].ext;
+    const all = [];
+    map.sectors.forEach((s, i) => { if (s.ext) all.push({ kind: 'sector', i }); });
+    map.walls.forEach((w, i) => { if (w.ext) all.push({ kind: 'wall', i }); });
+    map.sprites.forEach((s, i) => { if (s.ext) all.push({ kind: 'sprite', i }); });
+    const timers = [];
+    let now = 0;
+    const isZMotion = (s) => map.sectors[s].type === 600 || map.sectors[s].type === 602;
+    // z motion sectors start where their state says (the game does the same when a level starts)
+    map.sectors.forEach((s, i) => {
+      if (!isZMotion(i) || !s.ext) return;
+      const x = s.ext, k = x.state ? 1 : 0;
+      setBusy(i, k);
     });
-    return changed;
+    function setBusy(s, k) {
+      const sec = map.sectors[s], x = sec.ext;
+      if (x.offFloorZ !== x.onFloorZ) sec.floorz = Math.round(x.offFloorZ + (x.onFloorZ - x.offFloorZ) * k);
+      if (x.offCeilZ !== x.onCeilZ) sec.ceilingz = Math.round(x.offCeilZ + (x.onCeilZ - x.offCeilZ) * k);
+      x._busy = k;
+      if (sec.type === 602) for (const sp of map.sprites) if (sp.sectnum === s) { if (sp._z0 === undefined) sp._z0 = sp.z - x.offFloorZ; sp.z = sec.floorz + sp._z0; }
+    }
+    function setState(o, state) {
+      const x = ext(o);
+      if (x.state === state) return;
+      x.state = state;
+      if (o.kind === 'sector') {
+        if (state && x.reTriggerA && x.waitTimeA) timers.push({ at: now + x.waitTimeA * 100, o, cmd: 0 });
+        if (!state && x.reTriggerB && x.waitTimeB) timers.push({ at: now + x.waitTimeB * 100, o, cmd: 1 });
+      } else if (x.waitTime && x.restState !== state) timers.push({ at: now + x.waitTime * 100, o, cmd: x.restState ? 1 : 0 });
+      if (x.command !== 5 && x.txID && ((state && x.triggerOn) || (!state && x.triggerOff))) send(x.txID, x.command, o);
+    }
+    function operate(o, cmd) {
+      const x = ext(o);
+      if (!x) return;
+      if (cmd === 6) { x.locked = 1; return; }
+      if (cmd === 7) { x.locked = 0; return; }
+      if (cmd === 8) { x.locked = x.locked ? 0 : 1; return; }
+      const want = cmd === 0 ? 0 : cmd === 1 || cmd >= 64 ? 1 : x.state ? 0 : 1;
+      if (o.kind === 'sector') {
+        const sec = map.sectors[o.i];
+        if (isZMotion(o.i)) {
+          const cur = x._busy || 0;
+          if (cur === want && !movers.has(o.i)) return;
+          const dur = Math.max(1, (want ? x.busyTimeA : x.busyTimeB) * 100);
+          movers.set(o.i, { from: cur, to: want, t: 0, dur: dur * Math.abs(want - cur) || 1 });
+          return;
+        }
+        if (sec.type >= 611 && sec.type <= 617 && !x._told) { x._told = 1; say('(This sliding/rotating sector isn\'t moved in the walkthrough)'); }
+      }
+      if (o.kind === 'sprite') {
+        const sp = map.sprites[o.i];
+        if (sp.type === 21 && x.state) return; // one-way switch
+        if (sp.type >= 20 && sp.type <= 23) say('Switch ' + (want ? 'on' : 'off'));
+      }
+      setState(o, want);
+    }
+    function send(channel, cmd, from) {
+      if (channel === 1) { secretTotal.n = Math.max(0, cmd - 64); return; }
+      if (channel === 2) {
+        const key = from ? from.kind + from.i : Math.random();
+        if (found.has(key)) return;
+        found.add(key);
+        say('A secret is revealed!' + (secretTotal.n ? ' (' + found.size + ' of ' + secretTotal.n + ')' : ''));
+        return;
+      }
+      if (channel === 3) { say('(A message: text #' + Math.max(0, cmd - 64) + ')'); return; }
+      if (channel === 4) { say('Level exit!'); return; }
+      if (channel === 5) { say('Secret level exit!'); return; }
+      for (const o of all) { const x = ext(o); if (x.rxID === channel && o !== from) operate(o, cmd); }
+    }
+    const KEY_NAMES = ['', 'skull key', 'eye key', 'fire key', 'dagger key', 'spider key', 'moon key', 'key 7'];
+    function trigger(o, cmd) {
+      const x = ext(o);
+      if (!x || x.locked || x.isTriggered) return false;
+      const need = o.kind === 'sector' ? x.Key : x.key;
+      if (need && !keys.has(need)) { say('You need the ' + (KEY_NAMES[need] || 'key ' + need)); return true; }
+      if (x.triggerOnce) x.isTriggered = 1;
+      if (x.decoupled && x.txID) send(x.txID, x.command, o);
+      else operate(o, cmd);
+      return true;
+    }
+    return {
+      keys, found, secretTotal, trigger, send, operate,
+      start() { const real = say; quiet = true; send(7, 1); send(9, 1); quiet = false; },
+      // the player went from one sector into another
+      moved(from, to) {
+        if (from >= 0 && map.sectors[from] && map.sectors[from].ext && map.sectors[from].ext.Exit) trigger({ kind: 'sector', i: from }, 43);
+        if (to >= 0 && map.sectors[to] && map.sectors[to].ext && map.sectors[to].ext.Enter) trigger({ kind: 'sector', i: to }, 42);
+      },
+      // moves doors and lifts on; true when anything moved (the level has to be drawn again)
+      tick(dtMs) {
+        now += dtMs;
+        for (let k = timers.length - 1; k >= 0; k--) if (timers[k].at <= now) { const t = timers.splice(k, 1)[0]; operate(t.o, t.cmd); }
+        let moved = false;
+        for (const [s, m] of movers) {
+          m.t = Math.min(m.dur, m.t + dtMs);
+          const k = m.from + (m.to - m.from) * (m.t / m.dur);
+          setBusy(s, k);
+          moved = true;
+          if (m.t >= m.dur) { movers.delete(s); setState({ kind: 'sector', i: s }, m.to); }
+        }
+        return moved;
+      },
+      moving: (s) => movers.has(s),
+    };
   }
 
   // ---- the viewer ------------------------------------------------------------------------------------
-  function open(prj, overlay) {
+  // map: MapFile's model (it's changed while walking: doors move; pass a copy)
+  function open(map, overlay, options) {
+    options = options || {};
     overlay.innerHTML = `
 <canvas class="v3d"></canvas>
 <div class="v3d-top"><button data-m="orbit">Look around</button><button data-m="walk">Walk</button><span class="v3d-info"></span><button data-m="close" class="on">Close</button></div>
@@ -1314,38 +2116,40 @@ void main() {
     const info = overlay.querySelector('.v3d-info'), help = overlay.querySelector('.v3d-help'), msgEl = overlay.querySelector('.v3d-msg');
     if (!r) help.textContent = 'This browser has no WebGL, so there is no 3D view.';
     const textured = !!(r && gameTextures(r));
-    const hts = Heights(prj);
-    const hidden = new Set(); // keys picked up
-    let mesh = buildMesh(prj, hts, { textured, hide: hidden });
+    const hidden = new Set(); // sprites picked up
+    const ws = wallSectors(map);
+    let mesh = buildMesh(map, { wallSector: ws, hidden });
     if (r) uploadInto(r, r.level, flatten(mesh.batches));
-    const walker = Walker(prj, mesh.map, hts);
-    const keysHeld = new Set(), secretsFound = new Set();
-    const nSecrets = prj.rooms.filter((x) => x.secret).length;
-    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity, top = 0;
-    prj.rooms.forEach((rm) => { rm.pts.forEach((p) => { x1 = Math.min(x1, p[0]); y1 = Math.min(y1, p[1]); x2 = Math.max(x2, p[0]); y2 = Math.max(y2, p[1]); }); top = Math.max(top, rm.floor + rm.height); });
-    if (!isFinite(x1)) { x1 = y1 = 0; x2 = y2 = 4096; }
-    const orbit = { cx: (x1 + x2) / 2, cy: top / 2, cz: (y1 + y2) / 2, yaw: 0.7, pitch: 0.75, dist: Math.max(x2 - x1, y2 - y1) * 1.2 + 3000 };
-    let mode = 'orbit', running = true, last = performance.now(), run = false, usePressed = false, jumpPressed = false;
-    const keys = {}, stick = { x: 0, y: 0, id: null }, look = { id: null, x: 0, y: 0 };
-
+    const walker = Walker(map, options);
     function message(t) { msgEl.textContent = t; msgEl.classList.add('show'); clearTimeout(message.t); message.t = setTimeout(() => msgEl.classList.remove('show'), 2500); }
+    const trig = Triggers(map, { say: message });
+    let started = false;
+    // the overview's camera
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity, top = -Infinity, bottom = Infinity;
+    for (const w of map.walls) { x1 = Math.min(x1, w.x); y1 = Math.min(y1, w.y); x2 = Math.max(x2, w.x); y2 = Math.max(y2, w.y); }
+    for (const s of map.sectors) { top = Math.max(top, -s.ceilingz / Z); bottom = Math.min(bottom, -s.floorz / Z); }
+    if (!isFinite(x1)) { x1 = y1 = 0; x2 = y2 = 4096; top = 2048; bottom = 0; }
+    const orbit = { cx: (x1 + x2) / 2, cy: (top + bottom) / 2, cz: (y1 + y2) / 2, yaw: 0.7, pitch: 0.75, dist: Math.max(x2 - x1, y2 - y1) * 1.1 + 3000 };
+    let mode = options.walk ? 'walk' : 'orbit', running = true, last = performance.now(), run = false, usePressed = false, jumpPressed = false;
+    const keys = {}, stick = { x: 0, y: 0, id: null }, look = { id: null, x: 0, y: 0 };
+    let rebuild = false, lastSector = walker.st.sector;
+
     function setMode(m) {
       mode = m;
       overlay.querySelectorAll('[data-m]').forEach((b) => b.classList.toggle('on', b.dataset.m === m || b.dataset.m === 'close'));
       overlay.classList.toggle('walking', m === 'walk');
+      if (m === 'walk' && !started) { started = true; trig.start(); }
       help.textContent = (m === 'walk'
-        ? 'Left: move. Right: look. Use opens doors and starts lifts. Keyboard: WASD, mouse drag, E use, Space jump, Shift run. Sizes are close to Blood\'s, not exact.'
+        ? 'Left: move. Right: look. Use: doors, switches, lifts. Keyboard: WASD, mouse drag, E use, Space jump, Shift run. Sizes are close to Blood\'s; enemies stand still.'
         : 'Drag to turn the map, pinch or scroll to zoom. Ceilings are left out here; Walk shows them.')
         + (textured ? '' : ' (Load your Blood files in ☰ for the real textures.)');
       help.classList.remove('gone'); clearTimeout(help.t); help.t = setTimeout(() => help.classList.add('gone'), 8000);
-      if (m === 'walk' && walker.st.sector < 0) info.textContent = 'No start inside a room';
+      if (m === 'walk' && walker.st.sector < 0) info.textContent = 'No start inside a sector';
     }
     const kd = (e) => { keys[e.code] = true; if (e.code === 'Space') e.preventDefault(); if (e.code === 'KeyE' || e.code === 'Enter') usePressed = true; };
     const ku = (e) => { keys[e.code] = false; };
-    overlay.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => {
-      if (b.dataset.m === 'close') { running = false; overlay.classList.remove('open', 'walking'); overlay.innerHTML = ''; window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); return; }
-      setMode(b.dataset.m);
-    });
+    function close() { running = false; overlay.classList.remove('open', 'walking'); overlay.innerHTML = ''; window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); if (options.onClose) options.onClose(walker.st); }
+    overlay.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => { if (b.dataset.m === 'close') close(); else setMode(b.dataset.m); });
     overlay.querySelector('.v3d-jump').addEventListener('pointerdown', (e) => { e.preventDefault(); jumpPressed = true; });
     overlay.querySelector('.v3d-use').addEventListener('pointerdown', (e) => { e.preventDefault(); usePressed = true; });
     const runBtn = overlay.querySelector('.v3d-run');
@@ -1381,113 +2185,116 @@ void main() {
       }
       const prev = pinch.get(e.pointerId);
       if (!prev) return;
-      if (pinch.size === 1) {
-        orbit.yaw += (e.offsetX - prev[0]) * 0.008;
-        orbit.pitch = Math.max(0.05, Math.min(1.5, orbit.pitch + (e.offsetY - prev[1]) * 0.006));
-      }
+      if (pinch.size === 1) { orbit.yaw += (e.offsetX - prev[0]) * 0.008; orbit.pitch = Math.max(0.05, Math.min(1.5, orbit.pitch + (e.offsetY - prev[1]) * 0.006)); }
       pinch.set(e.pointerId, [e.offsetX, e.offsetY]);
-      if (pinch.size === 2) {
-        const [a, b] = [...pinch.values()]; const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
-        if (pinchD) orbit.dist = Math.max(800, Math.min(200000, orbit.dist * pinchD / d));
-        pinchD = d;
-      }
+      if (pinch.size === 2) { const [a, b] = [...pinch.values()]; const d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (pinchD) orbit.dist = Math.max(800, Math.min(400000, orbit.dist * pinchD / d)); pinchD = d; }
     });
-    const end = (e) => {
-      pinch.delete(e.pointerId);
-      if (e.pointerId === stick.id) { stick.id = null; stick.x = stick.y = 0; knob.style.transform = ''; stickEl.classList.remove('on'); }
-      if (e.pointerId === look.id) look.id = null;
-    };
+    const end = (e) => { pinch.delete(e.pointerId); if (e.pointerId === stick.id) { stick.id = null; stick.x = stick.y = 0; knob.style.transform = ''; stickEl.classList.remove('on'); } if (e.pointerId === look.id) look.id = null; };
     cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
-    cv.addEventListener('wheel', (e) => { e.preventDefault(); orbit.dist = Math.max(800, Math.min(200000, orbit.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+    cv.addEventListener('wheel', (e) => { e.preventDefault(); orbit.dist = Math.max(800, Math.min(400000, orbit.dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
 
+    // pressing use: a switch or other sprite in front, a wall, the sector behind the wall, or the sector the player is in
     function doUse() {
-      const s = walker.useTarget();
-      if (s < 0) return;
-      const rm = prj.rooms[s], x = hts.st[s];
-      if (rm.kind === 'door' && rm.key && !keysHeld.has(rm.key)) { message('You need the ' + M.KEY_NAMES[rm.key]); return; }
-      x.target = x.target > 0.5 ? 0 : 1;
-      x.waitUntil = 0;
-    }
-    function gameplay(now) {
-      const st = walker.st;
-      // keys: walk over them
-      prj.things.forEach((t, i) => {
-        if (t.type < 100 || t.type > 105 || hidden.has(i)) return;
-        if (Math.hypot(t.x - st.x, t.y - st.y) < 220 && M.roomAt([t.x, t.y], prj.rooms) === st.sector) {
-          hidden.add(i); keysHeld.add(t.type - 99); message('Picked up the ' + M.KEY_NAMES[t.type - 99]); rebuild = true;
-        }
+      const st = walker.st, ray = walker.useRay();
+      let bestSprite = -1, bd = ray.wall >= 0 ? ray.dist : PLAYER.reach;
+      map.sprites.forEach((sp, i) => {
+        if (!sp.ext || !sp.ext.Push || hidden.has(i)) return;
+        const dx = sp.x - st.x, dy = sp.y - st.y, d = Math.hypot(dx, dy);
+        if (d > bd + 64) return;
+        const off = Math.abs(((Math.atan2(dy, dx) - st.ang + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+        if (off < 0.45 && Math.abs(-sp.z / Z - (st.z + PLAYER.eye)) < 900) { bd = d; bestSprite = i; }
       });
-      if (st.sector >= 0 && prj.rooms[st.sector].secret && !secretsFound.has(st.sector)) {
-        secretsFound.add(st.sector);
-        message('A secret is revealed! (' + secretsFound.size + ' of ' + nSecrets + ')');
+      if (bestSprite >= 0) { trig.trigger({ kind: 'sprite', i: bestSprite }, 30); return; }
+      if (ray.wall >= 0) {
+        const w = map.walls[ray.wall];
+        if (w.ext && w.ext.triggerPush) { trig.trigger({ kind: 'wall', i: ray.wall }, 50); return; }
+        const n = w.nextsector;
+        if (n >= 0 && map.sectors[n].ext && map.sectors[n].ext.Wallpush) { trig.trigger({ kind: 'sector', i: n }, 40); return; }
       }
+      const s = st.sector;
+      if (s >= 0 && map.sectors[s].ext && map.sectors[s].ext.Push) trig.trigger({ kind: 'sector', i: s }, 40);
     }
-
-    // sprites facing the viewer: items, weapons, enemies (with Blood's pictures)
+    // walking over things, into sectors
+    function gameplay() {
+      const st = walker.st;
+      if (st.sector !== lastSector) { trig.moved(lastSector, st.sector); lastSector = st.sector; }
+      map.sprites.forEach((sp, i) => {
+        if (hidden.has(i) || Math.hypot(sp.x - st.x, sp.y - st.y) > 220 || Math.abs(-sp.z / Z - st.z) > 900) return;
+        const item = (sp.type >= 40 && sp.type < 51) || (sp.type >= 60 && sp.type < 81) || (sp.type >= 100 && sp.type <= 148);
+        if (sp.type >= 100 && sp.type <= 106) { trig.keys.add(sp.type - 99); message('Picked up the ' + ['skull', 'eye', 'fire', 'dagger', 'spider', 'moon', 'seventh'][sp.type - 100] + ' key'); }
+        if (sp.ext && (sp.ext.Pickup || sp.ext.Touch)) trig.trigger({ kind: 'sprite', i }, sp.ext.Pickup ? 32 : 33);
+        if (item) { hidden.add(i); rebuild = true; }
+      });
+    }
+    // sprites facing the viewer
     function spriteBatches(eye) {
       if (!textured) return [];
       const out = new Map();
-      prj.things.forEach((t, i) => {
-        const inf = M.THING_BY_TYPE[t.type];
-        if (!inf || inf.start || hidden.has(i)) return;
-        const tile = G().tile(inf.pic);
-        const s = M.roomAt([t.x, t.y], prj.rooms);
-        if (!tile || s < 0) return;
-        const w = tile.w * (inf.xr || 48) / 4, h = tile.h * (inf.yr || 48) / 4;
-        const dx = eye[0] - t.x, dz = eye[2] - t.y, l = Math.hypot(dx, dz) || 1;
-        const rx = -dz / l * w / 2, rz = dx / l * w / 2;
-        const y0 = hts.floorOf(s), y1 = y0 + h;
-        let b = out.get(inf.pic);
-        if (!b) out.set(inf.pic, b = { pic: inf.pic, sprite: true, pos: [], uv: [], col: [], shade: [] });
-        const q = [[t.x - rx, y0, t.y - rz, 0, tile.h - 0.01], [t.x + rx, y0, t.y + rz, tile.w - 0.01, tile.h - 0.01], [t.x + rx, y1, t.y + rz, tile.w - 0.01, 0], [t.x - rx, y1, t.y - rz, 0, 0]];
-        for (const k of [0, 1, 2, 0, 2, 3]) { const v = q[k]; b.pos.push(v[0], v[1], v[2]); b.uv.push(v[3], v[4]); b.col.push(1, 1, 1); b.shade.push(prj.rooms[s].light || 0); }
+      map.sprites.forEach((sp, i) => {
+        if ((sp.cstat & 48) || editorOnly(sp) || hidden.has(i)) return;
+        const t = G().tile(sp.picnum);
+        if (!t) return;
+        const w = t.w * sp.xrepeat / 4, h = t.h * sp.yrepeat / 4;
+        const pan = G().tile(sp.picnum).picanm || 0;
+        const xo = ((pan >> 8) << 24 >> 24) + sp.xoffset, yo = ((pan >> 16) << 24 >> 24) + sp.yoffset;
+        const dx = eye[0] - sp.x, dz = eye[2] - sp.y, l = Math.hypot(dx, dz) || 1;
+        const rx = -dz / l, rz = dx / l, sx = sp.xrepeat / 4, sy = sp.yrepeat / 4;
+        const cx = sp.x + rx * xo * sx, cz = sp.y + rz * xo * sx;
+        let y0 = -sp.z / Z + yo * sy;
+        if (sp.cstat & 128) y0 -= h / 2;
+        // items and enemies: the game drops them onto the floor when the level starts
+        if ((sp.statnum === 3 || sp.statnum === 6) && sp.sectnum >= 0 && sp.sectnum < map.sectors.length) {
+          const fl = -Geo().slopeZ(map, sp.sectnum, sp.x, sp.y, false) / Z;
+          if (y0 < fl + 64) y0 = fl + yo * sy;
+        }
+        const y1 = y0 + h;
+        let b = out.get(sp.picnum);
+        if (!b) out.set(sp.picnum, b = { pic: sp.picnum, see: true, pos: [], uv: [], col: [], shade: [] });
+        const fu = (sp.cstat & 4) ? [t.w - 0.01, 0] : [0, t.w - 0.01], fv = (sp.cstat & 8) ? [0, t.h - 0.01] : [t.h - 0.01, 0];
+        const q = [[cx - rx * w / 2, y0, cz - rz * w / 2, fu[0], fv[0]], [cx + rx * w / 2, y0, cz + rz * w / 2, fu[1], fv[0]], [cx + rx * w / 2, y1, cz + rz * w / 2, fu[1], fv[1]], [cx - rx * w / 2, y1, cz - rz * w / 2, fu[0], fv[1]]];
+        for (const k of [0, 1, 2, 0, 2, 3]) { const v = q[k]; b.pos.push(v[0], v[1], v[2]); b.uv.push(v[3], v[4]); b.col.push(1, 1, 1); b.shade.push(sp.shade); }
       });
-      let first = 0;
-      const list = [...out.values()];
+      let first = 0; const list = [...out.values()];
       for (const b of list) { b.count = b.pos.length / 3; b.first = first; first += b.count; }
       return list;
     }
-    // the sky: a ring of tiles around the viewer (Build's parallax sky: 16 tiles, the sky tile and those after it)
     function skyBatches(eye) {
-      if (!textured || !prj.rooms.some((x) => x.sky)) return [];
+      if (!textured) return [];
+      const sec = map.sectors.find((s) => s.ceilingstat & 1);
+      if (!sec) return [];
+      const base = sec.ceilingpicnum, n = 1 << Math.min(5, map.header.skyBits || 0) || 1, R = 60000;
       const out = [];
-      const R = 60000, n = 16, base = prj.skyPic;
-      for (let i = 0; i < n; i++) {
-        const pic = G().tile(base + i) ? base + i : base, tile = G().tile(pic);
+      for (let i = 0; i < Math.max(n, 4); i++) {
+        const off = map.skyOffsets[i % n] || 0, pic = G().tile(base + off) ? base + off : base, tile = G().tile(pic);
         if (!tile) continue;
-        const a1 = (i / n) * Math.PI * 2, a2 = ((i + 1) / n) * Math.PI * 2, hh = R * 0.9;
+        const a1 = (i / Math.max(n, 4)) * Math.PI * 2, a2 = ((i + 1) / Math.max(n, 4)) * Math.PI * 2;
         const p1 = [eye[0] + Math.cos(a1) * R, eye[2] + Math.sin(a1) * R], p2 = [eye[0] + Math.cos(a2) * R, eye[2] + Math.sin(a2) * R];
-        const yb = eye[1] - hh * 0.35, yt = eye[1] + hh;
-        const b = { pic, sky: true, pos: [], uv: [], col: [], shade: [] };
+        const yb = eye[1] - R * 0.3, yt = eye[1] + R * 0.9;
+        const b = { pic, see: false, pos: [], uv: [], col: [], shade: [] };
         const q = [[p1, yb, 0, tile.h - 0.01], [p2, yb, tile.w - 0.01, tile.h - 0.01], [p2, yt, tile.w - 0.01, 0], [p1, yt, 0, 0]];
         for (const k of [0, 1, 2, 0, 2, 3]) { const [p, y, u, v] = q[k]; b.pos.push(p[0], y, p[1]); b.uv.push(u, v); b.col.push(0, 0, 0); b.shade.push(0); }
         out.push(b);
       }
-      let first = 0;
-      for (const b of out) { b.count = 6; b.first = first; first += 6; }
+      let first = 0; for (const b of out) { b.count = 6; b.first = first; first += 6; }
       return out;
     }
-
     function drawBatches(list, bufs, uploadData, skipCeil) {
       const gl = r.gl;
       if (uploadData) uploadInto(r, bufs, flatten(list));
       bindBuffers(r, bufs);
       for (const b of list) {
         if (!b.count || (skipCeil && b.ceil)) continue;
-        const t = textured && b.pic >= 0 ? tileTexture(r, b.pic) : null;
+        const t = textured ? tileTexture(r, b.pic) : null;
         if (t) {
           gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, t.tex);
           gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, r.palTex);
           if (r.lookTex) { gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, r.lookTex); }
-          gl.uniform1i(r.u.mode, r.lookTex ? 1 : 2);
-          gl.uniform2f(r.u.size, t.w, t.h);
-          gl.uniform1f(r.u.see, b.sprite || b.sky ? 1 : 0);
-        } else gl.uniform1i(r.u.mode, 0);
+          gl.uniform1i(r.u.mode, r.lookTex ? 1 : 2); gl.uniform2f(r.u.size, t.w, t.h); gl.uniform1f(r.u.see, b.see ? 1 : 0);
+        } else { if (b.see) continue; gl.uniform1i(r.u.mode, 0); }
         gl.drawArrays(gl.TRIANGLES, b.first, b.count);
       }
     }
 
-    let rebuild = false;
     function frame(now) {
       if (!running) return;
       const dtMs = Math.min(50, now - last), dt = dtMs / (1000 / 60); last = now;
@@ -1501,51 +2308,857 @@ void main() {
         if (keys.ArrowLeft) walker.st.ang -= 0.04 * dt;
         if (keys.ArrowRight) walker.st.ang += 0.04 * dt;
         walker.step(Math.max(-1, Math.min(1, fwd)), Math.max(-1, Math.min(1, side)), run || keys.ShiftLeft || keys.ShiftRight, jumpPressed || keys.Space, dt);
-        gameplay(now);
+        gameplay();
+        if (trig.tick(dtMs)) rebuild = true;
         eye = walker.eye();
         const st = walker.st;
         at = [eye[0] + Math.cos(st.ang) * Math.cos(st.pitch) * 100, eye[1] + Math.sin(st.pitch) * 100, eye[2] + Math.sin(st.ang) * Math.cos(st.pitch) * 100];
-        info.textContent = st.sector >= 0 ? (prj.rooms[st.sector].kind === 'lift' ? 'Lift ' : 'Room ') + (st.sector + 1) + (nSecrets ? '  secrets ' + secretsFound.size + '/' + nSecrets : '') : '';
+        info.textContent = st.sector >= 0 ? 'Sector ' + st.sector + (trig.secretTotal.n ? '  secrets ' + trig.found.size + '/' + trig.secretTotal.n : '') : '';
       } else {
         eye = [orbit.cx + Math.cos(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist, orbit.cy + Math.sin(orbit.pitch) * orbit.dist, orbit.cz + Math.sin(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist];
         at = [orbit.cx, orbit.cy, orbit.cz];
-        info.textContent = prj.rooms.length + ' rooms';
+        info.textContent = map.sectors.length + ' sectors, ' + map.sprites.length + ' sprites';
       }
       usePressed = jumpPressed = false;
-      if (runMovers(prj, hts, walker, now, dtMs) || rebuild) {
-        rebuild = false;
-        mesh = buildMesh(prj, hts, { textured, hide: hidden });
-        if (r) uploadInto(r, r.level, flatten(mesh.batches));
-      }
+      if (rebuild) { rebuild = false; mesh = buildMesh(map, { wallSector: ws, hidden }); if (r) uploadInto(r, r.level, flatten(mesh.batches)); }
       if (r) {
         const gl = r.gl;
         gl.viewport(0, 0, cv.width, cv.height);
         gl.clearColor(0.09, 0.05, 0.06, 1);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         gl.disable(gl.CULL_FACE);
-        const proj = perspective(mode === 'walk' ? 1.25 : 0.9, cv.width / Math.max(1, cv.height), mode === 'walk' ? 16 : 64, 400000);
+        const proj = perspective(mode === 'walk' ? 1.25 : 0.9, cv.width / Math.max(1, cv.height), mode === 'walk' ? 16 : 64, 600000);
         gl.uniformMatrix4fv(r.u.mvp, false, mul(proj, lookAt(eye, at, [0, 1, 0])));
         gl.uniform3fv(r.u.eye, eye);
         gl.uniform3fv(r.u.fog, mode === 'walk' ? [0.09, 0.05, 0.06] : [0.12, 0.07, 0.07]);
-        gl.uniform1f(r.u.fogDist, mode === 'walk' ? 14000 : orbit.dist * 4);
-        // Blood's darkness with distance (the map's visibility); none in the overview
-        gl.uniform1f(r.u.vis, mode === 'walk' ? (prj.visibility || 0) / 327680 : 0);
-        if (mode === 'walk') {
-          gl.disable(gl.DEPTH_TEST);
-          drawBatches(skyBatches(eye), r.dyn, true, false);
-        }
+        gl.uniform1f(r.u.fogDist, mode === 'walk' ? 20000 : orbit.dist * 4);
+        gl.uniform1f(r.u.vis, mode === 'walk' ? (map.header.visibility || 0) / 327680 : 0);
+        if (mode === 'walk') { gl.disable(gl.DEPTH_TEST); drawBatches(skyBatches(eye), r.dyn, true, false); }
         gl.enable(gl.DEPTH_TEST);
         drawBatches(mesh.batches, r.level, false, mode !== 'walk');
         drawBatches(spriteBatches(eye), r.dyn, true, false);
       }
       requestAnimationFrame(frame);
     }
-    setMode('orbit');
+    setMode(mode);
     requestAnimationFrame(frame);
-    return { setMode, walker, heights: hts, textured, close: () => overlay.querySelector('[data-m=close]').click() };
+    return { setMode, walker, triggers: trig, textured, map, close };
   }
 
-  root.View3D = { open, buildMesh, triangulate, Walker, Heights, runMovers, PLAYER };
+  root.View3D = { open, buildMesh, Walker, Triggers, wallSectors, PLAYER };
+})(typeof window !== 'undefined' ? window : this);
+
+</script>
+<script>
+// Blood Map Maker: the full editor, for any Blood map (MapFile's model, edited with MapGeo).
+//
+// Every field of sectors, walls and sprites and of their extra data can be changed; links between
+// objects (tx/rx channels) are listed and drawn; sectors are drawn and joined like in a Build editor
+// (also inside other sectors), walls split, corners moved and removed, sprites placed from Blood's
+// whole list of object types (names from XMAPEDIT, see blooddata.js). Saving writes the map back
+// exactly, apart from what was changed.
+(function (root) {
+  'use strict';
+  const F = () => root.MapFile, G = () => root.MapGeo, B = () => root.BloodData, UI = () => root.MapMakerUI;
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const Z = 16;
+
+  // ---- what the fields mean -------------------------------------------------------------------------
+  const BITS = {
+    sectorStat: [[1, 'sky (parallax)'], [2, 'sloped'], [4, 'swap x/y'], [8, 'double size'], [16, 'flip x'], [32, 'flip y'], [64, 'align to first wall'], [128, 'masked'], [256, 'translucent']],
+    wall: [[1, 'blocks the player'], [2, 'lower part from the other side'], [4, 'align to floor'], [8, 'flip x'], [16, 'masked (in the opening)'], [32, 'one-way'], [64, 'blocks shots'], [128, 'translucent'], [256, 'flip y'], [512, 'more translucent']],
+    sprite: [[1, 'blocks the player'], [2, 'translucent'], [4, 'flip x'], [8, 'flip y'], [16, 'stands along a wall'], [32, 'lies on the floor'], [64, 'one-sided'], [128, 'centered'], [256, 'blocks shots'], [512, 'more translucent'], [8192, 'no shade'], [32768, 'invisible']],
+  };
+  const LABELS = {
+    state: 'state (on)', txID: 'sends to channel (tx)', rxID: 'listens on channel (rx)', command: 'command it sends', triggerOn: 'sends when turned on', triggerOff: 'sends when turned off',
+    triggerOnce: 'only once', isTriggered: 'already used', decoupled: 'decoupled (only sends)', locked: 'locked', Key: 'needs key', key: 'needs key', Push: 'use (push)',
+    Wallpush: 'use its walls (from outside)', Enter: 'entering', Exit: 'leaving', Vector: 'shot at', Impact: 'hit (explosion)', Pickup: 'picked up', Touch: 'touched', Sight: 'seen',
+    Proximity: 'something near', triggerPush: 'use (push)', triggerVector: 'shot at', triggerTouch: 'touched', dudeLockout: 'enemies can\'t use it', DudeLockout: 'enemies can\'t use it',
+    busyTimeA: 'time to turn on (1/10 s)', busyTimeB: 'time to turn off (1/10 s)', waitTimeA: 'wait, then off (1/10 s)', waitTimeB: 'wait, then on (1/10 s)', reTriggerA: 'turn off by itself',
+    reTriggerB: 'turn on by itself', busyTime: 'busy time (1/10 s)', waitTime: 'wait time (1/10 s)', restState: 'rest state', interruptable: 'can be reversed while moving', Interrutable: 'can be reversed',
+    offCeilZ: 'ceiling when off (z)', onCeilZ: 'ceiling when on (z)', offFloorZ: 'floor when off (z)', onFloorZ: 'floor when on (z)', busyWaveA: 'motion curve on', busyWaveB: 'motion curve off',
+    data: 'data', data1: 'data 1', data2: 'data 2', data3: 'data 3', data4: 'data 4', Underwater: 'under water', Depth: 'water depth', Crush: 'crushes', damageType: 'damage type',
+    lS: 'not in single player', lB: 'not in bloodbath', lC: 'not in co-op', lT: 'not in teams', lSkill: 'not at difficulties (bits)', respawn: 'respawn', health: 'health',
+    dudeDeaf: 'deaf', dudeAmbush: 'ambush', dudeGuard: 'guard (doesn\'t move)', dropMsg: 'drops item', lockMsg: 'locked message', panVel: 'panning speed', panAngle: 'panning angle',
+    panAlways: 'always pan', panFloor: 'pan floor', panCeiling: 'pan ceiling', Drag: 'drag things along', amplitude: 'light amplitude', freq: 'light speed', phase: 'light phase',
+    wave: 'light wave', shadeAlways: 'always shade', shadeFloor: 'shade floor', shadeCeiling: 'shade ceiling', shadeWalls: 'shade walls', shade: 'shade', color: 'coloured light',
+    windVel: 'wind speed', windAng: 'wind angle', windAlways: 'always wind', bobZRange: 'bob height', bobSpeed: 'bob speed', bobTheta: 'bob phase', bobAlways: 'always bob',
+    bobFloor: 'bob floor', bobCeiling: 'bob ceiling', bobRotate: 'bob rotates', ceilpal: 'ceiling palette', floorpal: 'floor palette', marker0: 'marker 0', marker1: 'marker 1',
+    stopOn: 'stop when on', stopOff: 'stop when off', panXVel: 'pan x speed', panYVel: 'pan y speed', goalAng: 'goal angle', medium: 'medium', target: 'target',
+  };
+  const GROUPS = [
+    ['Trigger', ['state', 'rxID', 'txID', 'command', 'triggerOn', 'triggerOff', 'triggerOnce', 'isTriggered', 'decoupled', 'locked', 'Key', 'key', 'Push', 'Wallpush', 'triggerPush', 'Enter', 'Exit',
+      'Vector', 'triggerVector', 'Impact', 'Pickup', 'Touch', 'triggerTouch', 'Sight', 'Proximity', 'dudeLockout', 'DudeLockout']],
+    ['Timing', ['busyTimeA', 'busyTimeB', 'busyTime', 'waitTimeA', 'waitTimeB', 'waitTime', 'reTriggerA', 'reTriggerB', 'restState', 'interruptable', 'Interrutable', 'busyWaveA', 'busyWaveB', 'stopOn', 'stopOff']],
+    ['Data', ['data', 'data1', 'data2', 'data3', 'data4']],
+    ['Motion (doors, lifts)', ['offCeilZ', 'onCeilZ', 'offFloorZ', 'onFloorZ', 'marker0', 'marker1', 'Crush']],
+    ['Game modes', ['lS', 'lB', 'lC', 'lT', 'lSkill', 'respawn']],
+    ['Enemy', ['health', 'dudeDeaf', 'dudeAmbush', 'dudeGuard', 'dudeFlag4', 'goalAng', 'dropMsg', 'lockMsg']],
+    ['Light', ['amplitude', 'freq', 'phase', 'wave', 'shadeAlways', 'shadeFloor', 'shadeCeiling', 'shadeWalls', 'shade', 'color', 'ceilpal', 'floorpal']],
+    ['Panning, wind, bobbing', ['panVel', 'panAngle', 'panAlways', 'panFloor', 'panCeiling', 'Drag', 'panXVel', 'panYVel', 'windVel', 'windAng', 'windAlways', 'bobZRange', 'bobSpeed', 'bobTheta', 'bobAlways', 'bobFloor', 'bobCeiling', 'bobRotate']],
+    ['Water, damage', ['Underwater', 'Depth', 'damageType', 'medium']],
+  ];
+  const HIDE = new Set(['reference', 'busy', 'unused1', 'unused2', 'unused3', 'unused4', 'Reserved', 'respawnPending', 'dodgeDir', 'targetX', 'targetY', 'targetZ', 'burnTime', 'burnSource',
+    'height', 'stateTimer', 'ceilXPanFrac', 'ceilYPanFrac', 'floorXPanFrac', 'floorYPanFrac', 'xpanFrac', 'ypanFrac', 'isTriggered']);
+  const KEYS = ['none', 'skull', 'eye', 'fire', 'dagger', 'spider', 'moon', 'key 7'];
+
+  function specOf(kind) { return kind === 'sector' ? F().XSECTOR : kind === 'wall' ? F().XWALL : F().XSPRITE; }
+  function bitsOf(spec, name) { const f = spec.find((x) => x[0] === name); return f ? f[1] : 0; }
+  function typeName(kind, type) { const t = B()[kind][type]; return t ? t.name : (type ? 'type ' + type : 'Normal'); }
+
+  // ---- the editor ---------------------------------------------------------------------------------
+  let st = null; // { map, name, view, tool, sel, ... }
+
+  function html() {
+    return `
+<header><span class="title">Full map</span><input id="feName" type="text" maxlength="8" spellcheck="false" aria-label="Map file name"><button id="feMenuBtn" class="small">☰</button></header>
+<div id="feWrap" class="wrap"><canvas id="feCv"></canvas><div id="feHint" class="hint"></div><button id="feBadge" class="small badge">Check</button></div>
+<div id="feSheet" class="sheet"></div>
+<div id="feTools" class="tools">
+  <button data-t="pan">Move</button><button data-t="select">Select</button><button data-t="points">Points</button><button data-t="draw">✎ Sector</button>
+  <button data-t="sprite">+ Sprite</button><button data-t="erase">Delete</button><button id="feUndo">Undo</button><button id="feFit">Fit</button><button id="fe3d">3D / Walk</button>
+</div>
+<div id="feMenu" class="menu">
+  <button id="feSave" class="on">Save .MAP</button>
+  <button id="feOpen">Open a .MAP…</button>
+  <button id="feNew">New empty map</button>
+  <label class="row" style="margin:0"><span>Grid</span><select id="feGrid"><option>16</option><option>64</option><option>128</option><option selected>256</option><option>512</option><option>1024</option></select></label>
+  <label class="row" style="margin:0"><span>Links</span><select id="feLinks"><option value="sel">of the selected</option><option value="all">all</option><option value="none">none</option></select></label>
+  <button id="feSettings">Map settings</button>
+  <button id="feBack">Back to the simple editor</button>
+  <input id="feFile" type="file" accept=".map,.MAP" hidden>
+</div>`;
+  }
+
+  function open(map, name) {
+    const host = $('full');
+    host.innerHTML = html();
+    host.classList.add('open');
+    st = { map, name: (name || 'MYMAP').toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8) || 'MYMAP', view: { x: 0, y: 0, scale: 0.05 }, tool: 'select', sel: null,
+      grid: 256, undo: [], drawPts: [], spriteType: 0, links: 'sel', paths: null, pointers: new Map(), gesture: null, vert: null, moving: null };
+    $('feName').value = st.name;
+    $('feName').oninput = (e) => { st.name = e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8); autosave(); };
+    document.querySelectorAll('#feTools [data-t]').forEach((b) => b.onclick = () => setTool(b.dataset.t));
+    $('feUndo').onclick = undo;
+    $('feFit').onclick = fit;
+    $('fe3d').onclick = open3d;
+    $('feMenuBtn').onclick = () => $('feMenu').classList.toggle('open');
+    $('feSave').onclick = save;
+    $('feOpen').onclick = () => $('feFile').click();
+    $('feFile').onchange = async (e) => { const f = e.target.files[0]; e.target.value = ''; $('feMenu').classList.remove('open'); if (f) openFile(f); };
+    $('feNew').onclick = () => { $('feMenu').classList.remove('open'); if (confirm('Start an empty map? (Undo brings this one back)')) { snapshot(); st.map = newMap(); st.name = 'MYMAP'; $('feName').value = st.name; st.sel = null; changed(); fit(); } };
+    $('feGrid').onchange = (e) => { st.grid = +e.target.value; draw(); };
+    $('feLinks').onchange = (e) => { st.links = e.target.value; draw(); };
+    $('feSettings').onclick = () => { $('feMenu').classList.remove('open'); settingsPanel(); };
+    $('feBack').onclick = () => { $('feMenu').classList.remove('open'); close(); };
+    $('feBadge').onclick = checkPanel;
+    const cv = $('feCv');
+    cv.addEventListener('pointerdown', down); cv.addEventListener('pointermove', move); cv.addEventListener('pointerup', up);
+    cv.addEventListener('pointercancel', (e) => { st.pointers.delete(e.pointerId); st.gesture = null; });
+    cv.addEventListener('wheel', wheel, { passive: false });
+    window.addEventListener('resize', resize);
+    resize();
+    setTool('select');
+    fit();
+    changed(true);
+  }
+  function close() {
+    $('full').classList.remove('open');
+    $('full').innerHTML = '';
+    window.removeEventListener('resize', resize);
+    st = null;
+    if (UI() && UI().onFullClosed) UI().onFullClosed();
+  }
+
+  function newMap() {
+    const map = G().emptyMap();
+    G().addSector(map, [[0, 0], [4096, 0], [4096, 4096], [0, 4096]]);
+    map.sprites.push(spriteOf(1, 1024, 2048, 0, 0));
+    return map;
+  }
+
+  // ---- keeping it -----------------------------------------------------------------------------------
+  function bytesOf(map) { F().finish(map); return F().writeMap(map); }
+  function snapshot() { st.undo.push(bytesOf(st.map)); if (st.undo.length > 40) st.undo.shift(); }
+  function undo() {
+    if (!st.undo.length) { toast('Nothing to undo'); return; }
+    st.map = F().parseMap(st.undo.pop()); st.sel = null; closeSheet(); changed();
+  }
+  let saveTimer = 0;
+  function autosave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => { try { await idbPut('fullmap', { name: st.name, bytes: bytesOf(st.map) }); } catch (e) {} }, 800);
+  }
+  function idb() { return new Promise((res, rej) => { const rq = indexedDB.open('bloodmapmaker', 1); rq.onupgradeneeded = () => rq.result.createObjectStore('files'); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
+  async function idbPut(k, v) { const d = await idb(); await new Promise((res, rej) => { const t = d.transaction('files', 'readwrite'); t.objectStore('files').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); d.close(); }
+  async function idbGet(k) { const d = await idb(); const v = await new Promise((res, rej) => { const rq = d.transaction('files').objectStore('files').get(k); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); d.close(); return v; }
+
+  function changed(noSave) {
+    st.paths = null;
+    if (!noSave) autosave();
+    const p = G().problems(st.map);
+    const b = $('feBadge');
+    b.textContent = p.length ? p.length + ' to fix' : st.map.sectors.length + ' sectors';
+    b.style.borderColor = p.length ? 'var(--err)' : 'var(--line)';
+    draw();
+  }
+  function toast(t) { if (UI()) UI().toast(t); }
+
+  async function openFile(file) {
+    try {
+      const map = F().parseMap(new Uint8Array(await file.arrayBuffer()));
+      if (st) { snapshot(); st.map = map; st.name = file.name.replace(/\.map$/i, '').toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8); $('feName').value = st.name; st.sel = null; closeSheet(); changed(); fit(); }
+      else open(map, file.name.replace(/\.map$/i, ''));
+      toast(file.name + ': ' + map.sectors.length + ' sectors, ' + map.walls.length + ' walls, ' + map.sprites.length + ' sprites' + (map.crcOk ? '' : ' (its check sum was wrong)'));
+    } catch (e) { toast(file.name + ': ' + e.message); }
+  }
+  function save() {
+    $('feMenu').classList.remove('open');
+    const p = G().problems(st.map);
+    if (p.length) { checkPanel(); toast('Fix the problems first'); return; }
+    const bytes = bytesOf(st.map);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+    a.download = (st.name || 'MYMAP') + '.MAP';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast(a.download + ' saved (' + Math.round(bytes.length / 1024) + ' KB)');
+  }
+  async function restore() {
+    try { const v = await idbGet('fullmap'); if (v && v.bytes) return { map: F().parseMap(new Uint8Array(v.bytes)), name: v.name }; } catch (e) {}
+    return null;
+  }
+
+  // ---- view -------------------------------------------------------------------------------------------
+  function resize() {
+    if (!st) return;
+    const cv = $('feCv'), r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    cv.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw();
+  }
+  const W = () => $('feCv').getBoundingClientRect().width, H = () => $('feCv').getBoundingClientRect().height;
+  const toScreen = (x, y) => [(x - st.view.x) * st.view.scale + W() / 2, (y - st.view.y) * st.view.scale + H() / 2];
+  const toMap = (sx, sy) => [(sx - W() / 2) / st.view.scale + st.view.x, (sy - H() / 2) / st.view.scale + st.view.y];
+  function snap(p) {
+    // corners snap to existing corners near the finger first, else to the grid
+    const r = 14 / st.view.scale;
+    let best = null, bd = r * r;
+    for (const w of st.map.walls) { const d = (w.x - p[0]) ** 2 + (w.y - p[1]) ** 2; if (d < bd) { bd = d; best = [w.x, w.y]; } }
+    if (best) return best;
+    return [Math.round(p[0] / st.grid) * st.grid, Math.round(p[1] / st.grid) * st.grid];
+  }
+  function fit() {
+    const m = st.map;
+    if (!m.walls.length) { st.view = { x: 0, y: 0, scale: 0.05 }; draw(); return; }
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+    for (const w of m.walls) { x1 = Math.min(x1, w.x); y1 = Math.min(y1, w.y); x2 = Math.max(x2, w.x); y2 = Math.max(y2, w.y); }
+    st.view.x = (x1 + x2) / 2; st.view.y = (y1 + y2) / 2;
+    st.view.scale = Math.min(W() / (x2 - x1 + 1024), H() / (y2 - y1 + 1024));
+    draw();
+  }
+  function sectorPaths() {
+    if (st.paths) return st.paths;
+    const m = st.map, geo = G();
+    st.paths = m.sectors.map((s, i) => {
+      const loops = geo.loopsOf(m, i);
+      return loops.map((l) => l.map((w) => [m.walls[w].x, m.walls[w].y]));
+    });
+    return st.paths;
+  }
+  function objPos(kind, i) {
+    const m = st.map;
+    if (kind === 'sprite') return [m.sprites[i].x, m.sprites[i].y];
+    if (kind === 'wall') { const a = m.walls[i], b = m.walls[a.point2]; return [(a.x + b.x) / 2, (a.y + b.y) / 2]; }
+    const s = m.sectors[i]; let x = 0, y = 0;
+    for (let w = s.wallptr; w < s.wallptr + s.wallnum; w++) { x += m.walls[w].x; y += m.walls[w].y; }
+    return [x / s.wallnum, y / s.wallnum];
+  }
+  function spriteColor(sp) {
+    const t = B().sprite[sp.type], g = t && t.group;
+    if (sp.type === 1 || sp.type === 2) return '#6fbf73';
+    if (g === 'Enemy' || (sp.type >= 200 && sp.type < 260)) return '#e04030';
+    if (sp.type >= 40 && sp.type < 51) return '#f0a24a';
+    if (sp.type >= 60 && sp.type < 81) return '#d9c36a';
+    if (sp.type >= 100 && sp.type < 150) return '#6fa8dc';
+    if (sp.type >= 20 && sp.type < 30) return '#4fd1d1';
+    if (sp.type >= 400 && sp.type < 500) return '#c27ba0';
+    if (sp.type >= 700 && sp.type < 800) return '#9b8cf0';
+    return '#b0a090';
+  }
+  function draw() {
+    if (!st) return;
+    const cv = $('feCv'), ctx = cv.getContext('2d'), w = W(), h = H(), m = st.map;
+    ctx.fillStyle = '#0d0707'; ctx.fillRect(0, 0, w, h);
+    // grid
+    let g = st.grid; while (g * st.view.scale < 10) g *= 2;
+    const [mx1, my1] = toMap(0, 0), [mx2, my2] = toMap(w, h);
+    ctx.lineWidth = 1; ctx.strokeStyle = '#1b1111';
+    ctx.beginPath();
+    for (let x = Math.floor(mx1 / g) * g; x <= mx2; x += g) { const sx = toScreen(x, 0)[0]; ctx.moveTo(sx, 0); ctx.lineTo(sx, h); }
+    for (let y = Math.floor(my1 / g) * g; y <= my2; y += g) { const sy = toScreen(0, y)[1]; ctx.moveTo(0, sy); ctx.lineTo(w, sy); }
+    ctx.stroke();
+    // sectors
+    const paths = sectorPaths();
+    paths.forEach((loops, i) => {
+      ctx.beginPath();
+      for (const l of loops) l.forEach((p, k) => { const s = toScreen(p[0], p[1]); k ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); });
+      const sec = m.sectors[i], hgt = Math.max(-1, Math.min(1, -sec.floorz / 16 / 2048));
+      const isSel = st.sel && st.sel.kind === 'sector' && st.sel.i === i;
+      ctx.fillStyle = isSel ? 'rgba(240,162,74,.35)' : sec.type >= 600 ? 'hsla(30,55%,28%,.75)' : (sec.ceilingstat & 1) ? 'hsla(210,35%,22%,.7)' : 'hsla(' + (20 - hgt * 40) + ',45%,' + (18 + hgt * 8) + '%,.75)';
+      ctx.fill('evenodd');
+    });
+    // walls
+    for (let i = 0; i < m.walls.length; i++) {
+      const a = m.walls[i], b = m.walls[a.point2];
+      if (!b || (a.nextwall >= 0 && a.nextwall < i && !(a.cstat & 16))) continue;
+      const s = toScreen(a.x, a.y), t = toScreen(b.x, b.y);
+      if ((s[0] < 0 && t[0] < 0) || (s[1] < 0 && t[1] < 0) || (s[0] > w && t[0] > w) || (s[1] > h && t[1] > h)) continue;
+      ctx.strokeStyle = (a.cstat & 16) ? '#6fa8dc' : a.nextwall >= 0 ? '#a03030' : '#d8cfc8';
+      ctx.lineWidth = a.ext ? 2.2 : 1.2;
+      ctx.beginPath(); ctx.moveTo(s[0], s[1]); ctx.lineTo(t[0], t[1]); ctx.stroke();
+    }
+    if (st.sel && st.sel.kind === 'wall') {
+      const a = m.walls[st.sel.i], b = a && m.walls[a.point2];
+      if (b) { const s = toScreen(a.x, a.y), t = toScreen(b.x, b.y); ctx.strokeStyle = '#f0a24a'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(s[0], s[1]); ctx.lineTo(t[0], t[1]); ctx.stroke(); }
+    }
+    // corners
+    if (st.tool === 'points' || st.tool === 'draw') {
+      ctx.fillStyle = '#d8cfc8';
+      for (const wl of m.walls) { const s = toScreen(wl.x, wl.y); if (s[0] > -4 && s[1] > -4 && s[0] < w + 4 && s[1] < h + 4) ctx.fillRect(s[0] - 2, s[1] - 2, 4, 4); }
+      if (st.vert) { const s = toScreen(st.vert[0], st.vert[1]); ctx.fillStyle = '#f0a24a'; ctx.fillRect(s[0] - 5, s[1] - 5, 10, 10); }
+    }
+    // sprites
+    const rs = Math.max(3, Math.min(9, 48 * st.view.scale));
+    m.sprites.forEach((sp, i) => {
+      const s = toScreen(sp.x, sp.y);
+      if (s[0] < -10 || s[1] < -10 || s[0] > w + 10 || s[1] > h + 10) return;
+      const isSel = st.sel && st.sel.kind === 'sprite' && st.sel.i === i;
+      ctx.fillStyle = spriteColor(sp);
+      ctx.beginPath(); ctx.arc(s[0], s[1], isSel ? rs + 3 : rs, 0, Math.PI * 2); ctx.fill();
+      if (isSel) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
+      if (rs > 5 || isSel) {
+        const a = (sp.ang & 2047) / 2048 * Math.PI * 2;
+        ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(s[0], s[1]); ctx.lineTo(s[0] + Math.cos(a) * rs * 2, s[1] + Math.sin(a) * rs * 2); ctx.stroke();
+      }
+    });
+    // links
+    drawLinks(ctx);
+    // the sector being drawn
+    if (st.drawPts.length) {
+      ctx.strokeStyle = '#f0a24a'; ctx.fillStyle = '#f0a24a'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      st.drawPts.forEach((p, k) => { const s = toScreen(p[0], p[1]); k ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); });
+      ctx.stroke();
+      st.drawPts.forEach((p) => { const s = toScreen(p[0], p[1]); ctx.beginPath(); ctx.arc(s[0], s[1], 5, 0, Math.PI * 2); ctx.fill(); });
+    }
+    hint();
+  }
+  // tx -> rx arrows: of the selected object, or all of them
+  function linkObjects() {
+    const m = st.map, out = [];
+    m.sectors.forEach((o, i) => { if (o.ext) out.push({ kind: 'sector', i, x: o.ext }); });
+    m.walls.forEach((o, i) => { if (o.ext) out.push({ kind: 'wall', i, x: o.ext }); });
+    m.sprites.forEach((o, i) => { if (o.ext) out.push({ kind: 'sprite', i, x: o.ext }); });
+    return out;
+  }
+  function drawLinks(ctx) {
+    if (st.links === 'none') return;
+    const objs = linkObjects();
+    const byRx = new Map();
+    for (const o of objs) if (o.x.rxID) { if (!byRx.has(o.x.rxID)) byRx.set(o.x.rxID, []); byRx.get(o.x.rxID).push(o); }
+    const sel = st.sel;
+    const isSel = (o) => sel && o.kind === sel.kind && o.i === sel.i;
+    ctx.lineWidth = 1.5;
+    for (const o of objs) {
+      if (!o.x.txID || o.x.txID < 3 || !byRx.has(o.x.txID)) continue;
+      for (const r of byRx.get(o.x.txID)) {
+        if (r === o) continue;
+        if (st.links === 'sel' && !isSel(o) && !isSel(r)) continue;
+        const a = toScreen(...objPos(o.kind, o.i)), b = toScreen(...objPos(r.kind, r.i));
+        ctx.strokeStyle = ctx.fillStyle = isSel(o) || isSel(r) ? '#ffe066' : 'rgba(255,224,102,.45)';
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+        const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+        ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(b[0] - Math.cos(ang - 0.4) * 10, b[1] - Math.sin(ang - 0.4) * 10); ctx.lineTo(b[0] - Math.cos(ang + 0.4) * 10, b[1] - Math.sin(ang + 0.4) * 10); ctx.fill();
+      }
+    }
+  }
+  function hint() {
+    const t = {
+      pan: 'Drag to move, pinch to zoom.',
+      select: 'Tap a sprite, a wall or a sector. Drag a selected sprite to move it.',
+      points: st.vert ? 'Drag the corner to move it, or use the panel.' : 'Tap a corner to pick it; drag it to move it.',
+      draw: st.drawPts.length ? 'Tap the next corner (it snaps to existing corners); tap the first one to finish.' : 'Tap the first corner of a new sector (inside a sector makes a sector within it).',
+      sprite: 'Tap where to put: ' + typeName('sprite', st.spriteType),
+      erase: 'Tap a sprite or a sector to delete it.',
+    }[st.tool];
+    $('feHint').textContent = t || '';
+  }
+
+  // ---- picking ----------------------------------------------------------------------------------------
+  function spriteAt(p) {
+    const r = 16 / st.view.scale; let best = -1, bd = r * r;
+    st.map.sprites.forEach((sp, i) => { const d = (sp.x - p[0]) ** 2 + (sp.y - p[1]) ** 2; if (d <= bd) { bd = d; best = i; } });
+    return best;
+  }
+  function wallAt(p) {
+    // the nearest wall within reach; of the two sides of an opening, the one whose sector the tap is in
+    const m = st.map, r = 10 / st.view.scale;
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < m.walls.length; i++) {
+      const a = m.walls[i], b = m.walls[a.point2];
+      if (!b) continue;
+      const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy;
+      const t = l ? Math.max(0, Math.min(1, ((p[0] - a.x) * dx + (p[1] - a.y) * dy) / l)) : 0;
+      const d = Math.hypot(p[0] - (a.x + dx * t), p[1] - (a.y + dy * t));
+      if (d > r) continue;
+      const side = dx * (p[1] - a.y) - dy * (p[0] - a.x); // > 0: on its sector's side
+      const score = d + (side >= 0 ? 0 : r); // the wrong side only if nothing else is near
+      if (score < bd) { bd = score; best = i; }
+    }
+    return best;
+  }
+  function cornerAt(p) {
+    const r = 14 / st.view.scale; let best = null, bd = r * r;
+    for (const w of st.map.walls) { const d = (w.x - p[0]) ** 2 + (w.y - p[1]) ** 2; if (d < bd) { bd = d; best = [w.x, w.y]; } }
+    return best;
+  }
+
+  // ---- touch ------------------------------------------------------------------------------------------
+  function down(e) {
+    const cv = $('feCv');
+    cv.setPointerCapture(e.pointerId);
+    st.pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY, x0: e.offsetX, y0: e.offsetY });
+    if (st.pointers.size === 2) {
+      const [a, b] = [...st.pointers.values()];
+      st.gesture = { kind: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, view: { ...st.view } };
+      st.moving = null;
+      return;
+    }
+    const p = toMap(e.offsetX, e.offsetY);
+    st.gesture = { kind: st.tool === 'pan' ? 'pan' : 'tap', moved: false, view: { ...st.view } };
+    // dragging a selected sprite, or a corner
+    if (st.tool === 'select' && st.sel && st.sel.kind === 'sprite' && spriteAt(p) === st.sel.i) st.moving = { kind: 'sprite', i: st.sel.i };
+    else if (st.tool === 'points') { const c = cornerAt(p); if (c) { st.vert = c; st.moving = { kind: 'corner', from: c.slice(), at: c.slice() }; draw(); } }
+  }
+  function move(e) {
+    const p0 = st.pointers.get(e.pointerId);
+    if (!p0) return;
+    p0.x = e.offsetX; p0.y = e.offsetY;
+    if (st.gesture && st.gesture.kind === 'pinch' && st.pointers.size >= 2) {
+      const [a, b] = [...st.pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y), cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2, v = st.gesture.view;
+      const scale = Math.max(0.002, Math.min(4, v.scale * d / st.gesture.d));
+      const mx = (st.gesture.cx - W() / 2) / v.scale + v.x, my = (st.gesture.cy - H() / 2) / v.scale + v.y;
+      st.view = { scale, x: mx - (cx - W() / 2) / scale, y: my - (cy - H() / 2) / scale };
+      draw(); return;
+    }
+    if (!st.gesture || st.pointers.size !== 1) return;
+    const dx = p0.x - p0.x0, dy = p0.y - p0.y0;
+    if (Math.hypot(dx, dy) > 8) st.gesture.moved = true;
+    if (!st.gesture.moved) return;
+    if (st.moving) {
+      const p = toMap(p0.x, p0.y);
+      if (st.moving.kind === 'sprite') {
+        if (!st.moving.saved) { snapshot(); st.moving.saved = true; }
+        const sp = st.map.sprites[st.moving.i];
+        const q = [Math.round(p[0] / 16) * 16, Math.round(p[1] / 16) * 16];
+        const s = G().sectorAt(st.map, q[0], q[1], sp.sectnum);
+        if (s >= 0) { sp.x = q[0]; sp.y = q[1]; if (s !== sp.sectnum) { sp.sectnum = s; } }
+        draw();
+      } else {
+        const q = [Math.round(p[0] / Math.min(st.grid, 64)) * Math.min(st.grid, 64), Math.round(p[1] / Math.min(st.grid, 64)) * Math.min(st.grid, 64)];
+        if (!st.moving.saved) { snapshot(); st.moving.saved = true; }
+        G().moveCorner(st.map, st.moving.at[0], st.moving.at[1], q[0], q[1]);
+        st.moving.at = q; st.vert = q; st.paths = null; draw();
+      }
+      return;
+    }
+    st.view.x = st.gesture.view.x - dx / st.view.scale; st.view.y = st.gesture.view.y - dy / st.view.scale; draw();
+  }
+  function up(e) {
+    const p0 = st.pointers.get(e.pointerId);
+    const wasTap = p0 && st.gesture && st.gesture.kind === 'tap' && !st.gesture.moved && st.pointers.size === 1;
+    st.pointers.delete(e.pointerId);
+    if (st.moving && st.moving.saved) {
+      if (st.moving.kind === 'corner') {
+        // a corner that made walls cross goes back
+        if (G().problems(st.map).length || crossing()) { G().moveCorner(st.map, st.moving.at[0], st.moving.at[1], st.moving.from[0], st.moving.from[1]); st.vert = st.moving.from; toast('Walls would cross there'); st.undo.pop(); }
+        else cornerPanel();
+      } else if (st.sel) spritePanel(st.sel.i);
+      st.moving = null; changed(); return;
+    }
+    st.moving = null;
+    if (!st.pointers.size) st.gesture = null;
+    if (wasTap) tap(p0.x, p0.y);
+  }
+  function wheel(e) {
+    e.preventDefault();
+    const before = toMap(e.offsetX, e.offsetY);
+    st.view.scale = Math.max(0.002, Math.min(4, st.view.scale * Math.exp(-e.deltaY * 0.0015)));
+    const after = toMap(e.offsetX, e.offsetY);
+    st.view.x += before[0] - after[0]; st.view.y += before[1] - after[1];
+    draw();
+  }
+  // any two walls crossing (after moving a corner)
+  function crossing() {
+    const m = st.map, near = (st.vert || [0, 0]);
+    const segs = m.walls.map((a) => { const b = m.walls[a.point2]; return [[a.x, a.y], [b.x, b.y]]; });
+    const touched = segs.filter((s) => (s[0][0] === near[0] && s[0][1] === near[1]) || (s[1][0] === near[0] && s[1][1] === near[1]));
+    const cr = (o, u, v) => (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0]);
+    for (const t of touched) for (const s of segs) {
+      const d1 = cr(s[0], s[1], t[0]), d2 = cr(s[0], s[1], t[1]), d3 = cr(t[0], t[1], s[0]), d4 = cr(t[0], t[1], s[1]);
+      if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+    }
+    return false;
+  }
+
+  // a phone sends a click after the touch: it mustn't land on the panel that the tap just opened
+  let lastTap = 0, lastTapXY = [0, 0];
+  document.addEventListener('click', (e) => {
+    if (Date.now() - lastTap < 450 && Math.hypot(e.clientX - lastTapXY[0], e.clientY - lastTapXY[1]) < 40 && e.target && e.target.id !== 'feCv'
+      && e.target.closest && e.target.closest('#full')) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
+  function tap(sx, sy) {
+    lastTap = Date.now(); { const r = document.getElementById('feCv').getBoundingClientRect(); lastTapXY = [r.left + sx, r.top + sy]; }
+    const m = st.map, p = toMap(sx, sy);
+    if (st.tool === 'select' || st.tool === 'erase') {
+      const sp = spriteAt(p);
+      if (sp >= 0) {
+        if (st.tool === 'erase') { snapshot(); m.sprites.splice(sp, 1); st.sel = null; closeSheet(); changed(); return; }
+        st.sel = { kind: 'sprite', i: sp }; spritePanel(sp); draw(); return;
+      }
+      const wl = st.tool === 'select' ? wallAt(p) : -1;
+      if (wl >= 0) { st.sel = { kind: 'wall', i: wl }; wallPanel(wl); draw(); return; }
+      const s = G().sectorAt(m, p[0], p[1], st.sel && st.sel.kind === 'sector' ? st.sel.i : -1);
+      if (s < 0) { st.sel = null; closeSheet(); draw(); return; }
+      if (st.tool === 'erase') {
+        const n = m.sprites.filter((x) => x.sectnum === s).length;
+        if (n && !confirm('Delete sector ' + s + ' and its ' + n + ' sprites?')) return;
+        snapshot(); G().deleteSector(m, s); st.sel = null; closeSheet(); changed(); return;
+      }
+      st.sel = { kind: 'sector', i: s }; sectorPanel(s); draw(); return;
+    }
+    if (st.tool === 'points') {
+      const c = cornerAt(p);
+      st.vert = c; if (c) cornerPanel(); else closeSheet(); draw(); return;
+    }
+    if (st.tool === 'draw') {
+      const q = snap(p), pts = st.drawPts;
+      if (pts.length >= 3 && q[0] === pts[0][0] && q[1] === pts[0][1]) { finishDraw(); return; }
+      if (!pts.length || q[0] !== pts[pts.length - 1][0] || q[1] !== pts[pts.length - 1][1]) pts.push(q);
+      drawPanel(); draw(); return;
+    }
+    if (st.tool === 'sprite') {
+      const q = [Math.round(p[0] / 16) * 16, Math.round(p[1] / 16) * 16];
+      const s = G().sectorAt(m, q[0], q[1], -1);
+      if (s < 0) { toast('Put it inside a sector'); return; }
+      snapshot();
+      const z = Math.round(G().slopeZ(m, s, q[0], q[1], false));
+      m.sprites.push(spriteOf(st.spriteType, q[0], q[1], z, s));
+      st.sel = { kind: 'sprite', i: m.sprites.length - 1 };
+      changed(); spritePanel(st.sel.i);
+    }
+  }
+  function spriteOf(type, x, y, z, s) {
+    const t = B().sprite[type] || {};
+    const sp = { x, y, z, cstat: 0, picnum: t.tile >= 0 ? t.tile : 0, shade: 0, pal: t.pal > 0 ? t.pal : 0, clipdist: 32, blend: 0, xrepeat: t.xr > 0 ? t.xr : 64, yrepeat: t.yr > 0 ? t.yr : 64,
+      xoffset: 0, yoffset: 0, sectnum: s, statnum: 0, ang: 0, owner: -1, xvel: 0, yvel: 0, zvel: 0, type, flags: 0, extra: -1 };
+    if (type === 1 || type === 2) { sp.picnum = 2522; sp.cstat = 128; sp.xrepeat = sp.yrepeat = 64; }
+    else if (type >= 200 && type < 260) { sp.statnum = 6; sp.cstat = 256 | 128; }
+    else if ((type >= 40 && type < 51) || (type >= 60 && type < 81) || (type >= 100 && type < 150)) { sp.statnum = 3; sp.cstat = 128; }
+    else if (type >= 400 && type < 500) { sp.statnum = 4; sp.cstat = 1 | 256; }
+    else if (type >= 700 && type < 800) { sp.statnum = 7; sp.cstat = 0x8000; }
+    else if (type >= 3 && type < 20) { sp.statnum = 10; sp.cstat = 0x8000; }
+    if (type) sp.ext = {};
+    return sp;
+  }
+
+  function setTool(t) {
+    st.tool = t; st.drawPts = []; st.vert = null;
+    document.querySelectorAll('#feTools [data-t]').forEach((b) => b.classList.toggle('on', b.dataset.t === t));
+    if (t === 'sprite') spriteChooser(); else if (t !== 'select') closeSheet();
+    draw();
+  }
+
+  // ---- panels ----------------------------------------------------------------------------------------
+  function openSheet(h) { const s = $('feSheet'); s.innerHTML = h; s.classList.add('open'); requestAnimationFrame(resize); }
+  function closeSheet() { const s = $('feSheet'); if (!s) return; s.classList.remove('open'); s.innerHTML = ''; requestAnimationFrame(resize); }
+  let uid = 0;
+  // a form field bound to obj[key]; kinds: num, bits (with list), bool, select (with options), tile
+  function field(label, obj, key, kind, extra) {
+    const id = 'f' + (++uid);
+    const v = obj[key] === undefined ? 0 : obj[key];
+    let input;
+    if (kind === 'bool') input = '<input type="checkbox" id="' + id + '"' + (v ? ' checked' : '') + '>';
+    else if (kind === 'select') input = '<select id="' + id + '">' + extra.map(([k, n]) => '<option value="' + k + '"' + (+k === +v ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + (extra.some(([k]) => +k === +v) ? '' : '<option value="' + v + '" selected>' + v + '</option>') + '</select>';
+    else if (kind === 'tile') input = '<div class="picrow"><canvas class="tileprev" id="' + id + 'Img" width="40" height="40"></canvas><input id="' + id + '" type="number" value="' + v + '" style="flex:1"><button id="' + id + 'Pick" class="small">Pick</button></div>';
+    else input = '<input id="' + id + '" type="number" value="' + v + '">';
+    binders.push(() => {
+      const el = $(id); if (!el) return;
+      const set = (nv) => { snapshot(); obj[key] = nv; changed(); if (extra && extra.after) extra.after(); };
+      if (kind === 'bool') el.onchange = () => set(el.checked ? 1 : 0);
+      else if (kind === 'select') el.onchange = () => set(parseInt(el.value, 10));
+      else el.onchange = () => { const n = parseInt(el.value, 10); if (!isNaN(n)) set(n); };
+      if (kind === 'tile') {
+        const show = () => UI() && UI().drawTile($(id + 'Img'), obj[key]);
+        show();
+        el.addEventListener('change', show);
+        $(id + 'Pick').onclick = () => UI().openTiles(obj[key], null, (n) => { el.value = n; set(n); show(); });
+      }
+    });
+    return '<div class="row"><label for="' + id + '">' + esc(label) + '</label>' + input + '</div>';
+  }
+  function bitsField(label, obj, key, list) {
+    const id = 'f' + (++uid);
+    binders.push(() => {
+      document.querySelectorAll('[data-bits="' + id + '"]').forEach((el) => el.onchange = () => {
+        snapshot(); const b = +el.dataset.bit; obj[key] = el.checked ? (obj[key] | b) : (obj[key] & ~b); changed();
+      });
+    });
+    return '<details><summary>' + esc(label) + '</summary><div class="chips">' + list.map(([b, n]) =>
+      '<label class="chk"><input type="checkbox" data-bits="' + id + '" data-bit="' + b + '"' + ((obj[key] & b) ? ' checked' : '') + '> ' + esc(n) + '</label>').join('') + '</div></details>';
+  }
+  // the height of a z value, in map units with up being more (what the simple editor shows)
+  function heightField(label, obj, key) {
+    const id = 'f' + (++uid);
+    binders.push(() => { const el = $(id); if (el) el.onchange = () => { const n = parseFloat(el.value); if (!isNaN(n)) { snapshot(); obj[key] = Math.round(-n * Z); changed(); } }; });
+    return '<div class="row"><label for="' + id + '">' + esc(label) + '</label><input id="' + id + '" type="number" step="16" value="' + Math.round(-obj[key] / Z) + '"></div>';
+  }
+  let binders = [];
+  function bind() { const b = binders; binders = []; b.forEach((f) => f()); }
+
+  // the extra data of any object, grouped; tx/rx with their channel names and a "free channel" helper
+  function extraSection(kind, obj, rerender) {
+    if (!obj.ext) {
+      binders.push(() => { const b = $('feAddX'); if (b) b.onclick = () => { snapshot(); obj.ext = {}; changed(); rerender(); }; });
+      return '<details><summary>Extra data (triggers, timing, …)</summary><p><small>This ' + kind + ' has none.</small></p><button id="feAddX" class="small">Add extra data</button></details>';
+    }
+    const spec = specOf(kind), x = obj.ext;
+    const known = new Set();
+    let out = '';
+    const label = (k) => LABELS[k] || k;
+    const one = (k) => {
+      known.add(k);
+      if (HIDE.has(k) || !spec.some((f) => f[0] === k)) return '';
+      const bits = bitsOf(spec, k);
+      if (k === 'command') return field(label(k), x, k, 'select', Object.entries(B().commands).filter(([c]) => +c < 70 || +x[k] === +c).map(([c, n]) => [c, c + ': ' + n]));
+      if (k === 'Key' || k === 'key') return field(label(k), x, k, 'select', KEYS.map((n, i) => [i, n]));
+      if (k === 'rxID' || k === 'txID') {
+        const ch = B().channels[x[k]];
+        return field(label(k) + (ch ? ' — ' + ch : ''), x, k, 'num');
+      }
+      if (bits === 1) return field(label(k), x, k, 'bool');
+      if (kind === 'sprite' && /^data[1-4]$/.test(k)) {
+        const t = B().sprite[obj.type], n = t && t.data && t.data[+k.slice(4) - 1];
+        return field((n ? n.replace(/^\*/, '') + ' (' + label(k) + ')' : label(k)), x, k, 'num');
+      }
+      return field(label(k), x, k, 'num');
+    };
+    for (const [g, keys] of GROUPS) {
+      const inner = keys.filter((k) => spec.some((f) => f[0] === k)).map(one).join('');
+      if (inner) out += '<details' + (g === 'Trigger' ? ' open' : '') + '><summary>' + g + '</summary>' + inner + '</details>';
+    }
+    const rest = spec.map((f) => f[0]).filter((k) => !known.has(k) && !HIDE.has(k));
+    if (rest.length) out += '<details><summary>Other</summary>' + rest.map(one).join('') + '</details>';
+    binders.push(() => {
+      const fr = $('feFreeCh'); if (fr) fr.onclick = () => { const c = freeChannel(); toast('Channel ' + c + ' is free'); };
+      const rm = $('feRmX'); if (rm) rm.onclick = () => { snapshot(); delete obj.ext; changed(); rerender(); };
+    });
+    return '<details open><summary>Extra data</summary>' + out + '<div class="btns"><button id="feFreeCh" class="small">A free channel?</button><button id="feRmX" class="small">Remove extra data</button></div></details>';
+  }
+  function freeChannel() {
+    const used = new Set();
+    for (const o of linkObjects()) { used.add(o.x.rxID); used.add(o.x.txID); }
+    let c = 100; while (used.has(c)) c++;
+    return c;
+  }
+  // who this object sends to and hears from
+  function linksSection(kind, i, obj) {
+    if (!obj.ext) return '';
+    const x = obj.ext, objs = linkObjects();
+    const to = x.txID ? objs.filter((o) => o.x.rxID === x.txID && !(o.kind === kind && o.i === i)) : [];
+    const from = x.rxID ? objs.filter((o) => o.x.txID === x.rxID && !(o.kind === kind && o.i === i)) : [];
+    const name = (o) => o.kind + ' ' + o.i + (o.kind === 'sprite' ? ' (' + typeName('sprite', st.map.sprites[o.i].type) + ')' : o.kind === 'sector' && st.map.sectors[o.i].type ? ' (' + typeName('sector', st.map.sectors[o.i].type) + ')' : '');
+    const list = (arr, dir) => arr.slice(0, 30).map((o, k) => '<button class="small" data-go="' + dir + k + '">' + esc(name(o)) + '</button>').join('');
+    binders.push(() => {
+      to.slice(0, 30).forEach((o, k) => { const b = document.querySelector('[data-go="t' + k + '"]'); if (b) b.onclick = () => selectObj(o.kind, o.i); });
+      from.slice(0, 30).forEach((o, k) => { const b = document.querySelector('[data-go="f' + k + '"]'); if (b) b.onclick = () => selectObj(o.kind, o.i); });
+    });
+    const special = B().channels[x.txID];
+    return '<details open><summary>Links</summary>'
+      + (x.txID ? '<p><small>Sends "' + esc(B().commands[x.command] || x.command) + '" to channel ' + x.txID + (special ? ' (' + special + ')' : '') + ':</small></p><div class="chips">' + (list(to, 't') || '<small>nobody listens there</small>') + '</div>' : '')
+      + (x.rxID ? '<p><small>Listens on channel ' + x.rxID + (B().channels[x.rxID] ? ' (' + B().channels[x.rxID] + ')' : '') + '; it hears:</small></p><div class="chips">' + (list(from, 'f') || '<small>nobody sends there</small>') + '</div>' : '')
+      + (!x.txID && !x.rxID ? '<p><small>No channels set (see Trigger above).</small></p>' : '') + '</details>';
+  }
+  function selectObj(kind, i) {
+    st.sel = { kind, i };
+    const p = objPos(kind, i); st.view.x = p[0]; st.view.y = p[1];
+    if (kind === 'sector') sectorPanel(i); else if (kind === 'wall') wallPanel(i); else spritePanel(i);
+    draw();
+  }
+
+  function sectorPanel(s) {
+    const sec = st.map.sectors[s];
+    const types = Object.entries(B().sector).map(([k, v]) => [k, k + ': ' + v.name]);
+    const re = () => sectorPanel(s);
+    openSheet('<h3>Sector ' + s + ' <small>' + esc(typeName('sector', sec.type)) + '</small></h3>'
+      + field('Type', sec, 'type', 'select', types)
+      + heightField('Floor height', sec, 'floorz') + heightField('Ceiling height', sec, 'ceilingz')
+      + field('Floor tile', sec, 'floorpicnum', 'tile') + field('Ceiling tile', sec, 'ceilingpicnum', 'tile')
+      + '<details><summary>Floor: shade, palette, slope, panning</summary>' + field('Floor shade', sec, 'floorshade', 'num') + field('Floor palette', sec, 'floorpal', 'num')
+      + field('Floor slope', sec, 'floorheinum', 'num') + field('Floor x panning', sec, 'floorxpanning', 'num') + field('Floor y panning', sec, 'floorypanning', 'num') + '</details>'
+      + bitsField('Floor flags', sec, 'floorstat', BITS.sectorStat)
+      + '<details><summary>Ceiling: shade, palette, slope, panning</summary>' + field('Ceiling shade', sec, 'ceilingshade', 'num') + field('Ceiling palette', sec, 'ceilingpal', 'num')
+      + field('Ceiling slope', sec, 'ceilingheinum', 'num') + field('Ceiling x panning', sec, 'ceilingxpanning', 'num') + field('Ceiling y panning', sec, 'ceilingypanning', 'num') + '</details>'
+      + bitsField('Ceiling flags (sky, slope, …)', sec, 'ceilingstat', BITS.sectorStat)
+      + '<details><summary>More</summary>' + field('Visibility', sec, 'visibility', 'num') + field('Hitag', sec, 'hitag', 'num') + '</details>'
+      + extraSection('sector', sec, re) + linksSection('sector', s, sec)
+      + '<div class="btns"><button id="feWalls" class="small">Wall tile for all its walls…</button><button id="feWalkHere" class="small">Walk from here</button><button id="feDelS" class="small">Delete sector</button><button id="feDone" class="small on">Done</button></div>');
+    bind();
+    $('feWalls').onclick = () => UI().openTiles(st.map.walls[sec.wallptr].picnum, null, (n) => { snapshot(); for (let w = sec.wallptr; w < sec.wallptr + sec.wallnum; w++) st.map.walls[w].picnum = n; changed(); });
+    $('feWalkHere').onclick = () => { const p = objPos('sector', s); open3d({ x: p[0], y: p[1], sector: s, z: -sec.floorz / Z, ang: 0, pitch: 0 }); };
+    $('feDelS').onclick = () => { snapshot(); G().deleteSector(st.map, s); st.sel = null; closeSheet(); changed(); };
+    $('feDone').onclick = () => { st.sel = null; closeSheet(); draw(); };
+  }
+  function wallPanel(w) {
+    const wall = st.map.walls[w];
+    const types = Object.entries(B().wall).map(([k, v]) => [k, k + ': ' + v.name]);
+    const re = () => wallPanel(w);
+    const o = st.map.walls[wall.point2];
+    openSheet('<h3>Wall ' + w + ' <small>' + (wall.nextsector >= 0 ? 'opening to sector ' + wall.nextsector : 'solid') + ', ' + Math.round(Math.hypot(o.x - wall.x, o.y - wall.y)) + ' long</small></h3>'
+      + field('Tile', wall, 'picnum', 'tile') + (wall.nextsector >= 0 ? field('Masked tile (in the opening)', wall, 'overpicnum', 'tile') : '')
+      + bitsField('Flags (blocking, aligned, masked, …)', wall, 'cstat', BITS.wall)
+      + '<details><summary>Shade, palette, size, panning</summary>' + field('Shade', wall, 'shade', 'num') + field('Palette', wall, 'pal', 'num')
+      + field('X repeat', wall, 'xrepeat', 'num') + field('Y repeat', wall, 'yrepeat', 'num') + field('X panning', wall, 'xpanning', 'num') + field('Y panning', wall, 'ypanning', 'num') + '</details>'
+      + field('Type', wall, 'type', 'select', types)
+      + '<details><summary>More</summary>' + field('Hitag', wall, 'hitag', 'num') + '</details>'
+      + extraSection('wall', wall, re) + linksSection('wall', w, wall)
+      + '<div class="btns"><button id="feSplit" class="small">Split (add a corner)</button>' + (wall.nextsector >= 0 ? '<button id="feOther" class="small">Other side</button>' : '') + '<button id="feDone" class="small on">Done</button></div>');
+    bind();
+    $('feSplit').onclick = () => { snapshot(); G().splitWall(st.map, w); st.sel = null; closeSheet(); changed(); toast('Split: a new corner in the middle (Points to move it)'); };
+    if ($('feOther')) $('feOther').onclick = () => selectObj('wall', wall.nextwall);
+    $('feDone').onclick = () => { st.sel = null; closeSheet(); draw(); };
+  }
+  function spritePanel(i) {
+    const sp = st.map.sprites[i];
+    if (!sp) { closeSheet(); return; }
+    const re = () => spritePanel(i);
+    const t = B().sprite[sp.type];
+    openSheet('<h3>Sprite ' + i + ' <small>' + esc(typeName('sprite', sp.type)) + ', sector ' + sp.sectnum + '</small></h3>'
+      + '<div class="row"><label>Type</label><button id="feType" class="small">' + esc(sp.type + ': ' + typeName('sprite', sp.type)) + '</button></div>'
+      + field('Tile', sp, 'picnum', 'tile')
+      + field('Facing (0 east, 512 south, 1024 west, 1536 north)', sp, 'ang', 'num')
+      + heightField('Height (z)', sp, 'z')
+      + bitsField('Flags (blocking, wall/floor sprite, invisible, …)', sp, 'cstat', BITS.sprite)
+      + '<details><summary>Position, size, shade, palette</summary>' + field('X', sp, 'x', 'num') + field('Y', sp, 'y', 'num') + field('X repeat (width)', sp, 'xrepeat', 'num') + field('Y repeat (height)', sp, 'yrepeat', 'num')
+      + field('Shade', sp, 'shade', 'num') + field('Palette', sp, 'pal', 'num') + field('Clip distance', sp, 'clipdist', 'num') + field('X offset', sp, 'xoffset', 'num') + field('Y offset', sp, 'yoffset', 'num')
+      + field('Status (statnum)', sp, 'statnum', 'num') + field('Flags (hitag)', sp, 'flags', 'num') + '</details>'
+      + extraSection('sprite', sp, re) + linksSection('sprite', i, sp)
+      + '<div class="btns"><button id="feTurnL" class="small">⟲</button><button id="feTurnR" class="small">⟳</button><button id="feFloor" class="small">Onto the floor</button><button id="feDup" class="small">Copy</button><button id="feDelP" class="small">Delete</button><button id="feDone" class="small on">Done</button></div>'
+      + (t && t.caption ? '' : ''));
+    bind();
+    $('feType').onclick = () => spriteChooser((type) => { snapshot(); const fresh = spriteOf(type, sp.x, sp.y, sp.z, sp.sectnum); Object.assign(sp, { type, picnum: fresh.picnum, xrepeat: fresh.xrepeat, yrepeat: fresh.yrepeat, statnum: fresh.statnum, pal: fresh.pal }); if (!sp.ext && type) sp.ext = {}; changed(); spritePanel(i); });
+    $('feTurnL').onclick = () => { snapshot(); sp.ang = (sp.ang - 256 + 2048) & 2047; changed(); };
+    $('feTurnR').onclick = () => { snapshot(); sp.ang = (sp.ang + 256) & 2047; changed(); };
+    $('feFloor').onclick = () => { snapshot(); sp.z = Math.round(G().slopeZ(st.map, sp.sectnum, sp.x, sp.y, false)); changed(); spritePanel(i); };
+    $('feDup').onclick = () => { snapshot(); const c = JSON.parse(JSON.stringify(sp)); c.x += 128; c.extra = -1; st.map.sprites.push(c); st.sel = { kind: 'sprite', i: st.map.sprites.length - 1 }; changed(); spritePanel(st.sel.i); };
+    $('feDelP').onclick = () => { snapshot(); st.map.sprites.splice(i, 1); st.sel = null; closeSheet(); changed(); };
+    $('feDone').onclick = () => { st.sel = null; closeSheet(); draw(); };
+  }
+  function cornerPanel() {
+    if (!st.vert) return;
+    const [x, y] = st.vert;
+    const n = st.map.walls.filter((w) => w.x === x && w.y === y).length;
+    openSheet('<h3>Corner</h3><div class="row"><label>X</label><input id="feCx" type="number" value="' + x + '"></div><div class="row"><label>Y</label><input id="feCy" type="number" value="' + y + '"></div>'
+      + '<p><small>' + n + ' wall' + (n === 1 ? '' : 's') + ' start here. Drag the corner to move it.</small></p>'
+      + '<div class="btns"><button id="feCdel" class="small">Remove corner</button><button id="feDone" class="small on">Done</button></div>');
+    const mv = () => {
+      const nx = parseInt($('feCx').value, 10), ny = parseInt($('feCy').value, 10);
+      if (isNaN(nx) || isNaN(ny)) return;
+      snapshot(); G().moveCorner(st.map, st.vert[0], st.vert[1], nx, ny); const old = st.vert; st.vert = [nx, ny];
+      if (crossing()) { G().moveCorner(st.map, nx, ny, old[0], old[1]); st.vert = old; st.undo.pop(); toast('Walls would cross there'); }
+      changed();
+    };
+    $('feCx').onchange = mv; $('feCy').onchange = mv;
+    $('feCdel').onclick = () => { try { snapshot(); G().deleteCorner(st.map, x, y); st.vert = null; closeSheet(); changed(); } catch (e) { st.undo.pop(); toast(e.message); } };
+    $('feDone').onclick = () => { st.vert = null; closeSheet(); draw(); };
+  }
+  function drawPanel() {
+    openSheet('<h3>New sector</h3><p><small>' + st.drawPts.length + ' corners. Tap the first corner again, or Finish. Corners snap to existing corners: put them on a wall\'s ends (or on a wall) to join the new sector to it.</small></p>'
+      + '<div class="btns"><button id="feFin" class="small on">Finish</button><button id="feBackPt" class="small">Remove last corner</button><button id="feCancel" class="small">Cancel</button></div>');
+    $('feFin').onclick = finishDraw;
+    $('feBackPt').onclick = () => { st.drawPts.pop(); drawPanel(); draw(); };
+    $('feCancel').onclick = () => { st.drawPts = []; closeSheet(); draw(); };
+  }
+  function finishDraw() {
+    const pts = st.drawPts;
+    if (pts.length < 3) { toast('A sector needs at least 3 corners'); return; }
+    // looks like the sector it's in or next to (or the selected one)
+    const m = st.map;
+    const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+    let like = G().sectorAt(m, cx, cy, -1);
+    if (like < 0 && st.lastSector >= 0 && st.lastSector < m.sectors.length) like = st.lastSector;
+    const src = like >= 0 ? m.sectors[like] : null;
+    const fields = src ? { floorz: src.floorz, ceilingz: src.ceilingz, floorpicnum: src.floorpicnum, ceilingpicnum: src.ceilingpicnum, floorshade: src.floorshade, ceilingshade: src.ceilingshade, ceilingstat: src.ceilingstat & 1 } : null;
+    const wallFields = src ? { picnum: m.walls[src.wallptr].picnum, overpicnum: m.walls[src.wallptr].picnum } : null;
+    try {
+      snapshot();
+      const s = G().addSector(m, pts, fields, wallFields);
+      st.drawPts = []; st.lastSector = s; st.sel = { kind: 'sector', i: s };
+      changed(); sectorPanel(s);
+      toast('Sector ' + s + ' added' + (like >= 0 ? ' (looks like sector ' + like + ')' : ''));
+    } catch (e) { st.undo.pop(); toast(e.message); }
+  }
+  // Blood's object types, grouped like XMAPEDIT groups them, with a search box
+  function spriteChooser(pick) {
+    const types = Object.entries(B().sprite).map(([k, v]) => ({ type: +k, ...v }));
+    const groupOf = (t) => t.type === 0 ? 'Decoration' : t.type < 20 ? 'Markers' : t.type < 40 ? 'Switches and triggers' : t.type < 60 ? 'Weapons' : t.type < 100 ? 'Ammo' : t.type < 150 ? 'Items, keys, armor' : t.type < 260 ? 'Enemies' : t.type < 400 ? 'Other' : t.type < 500 ? 'Things (barrels, traps, …)' : t.type < 700 ? 'Other' : 'Generators, sounds';
+    const groups = {};
+    for (const t of types) (groups[groupOf(t)] = groups[groupOf(t)] || []).push(t);
+    const render = (q) => {
+      let h = '<h3>' + (pick ? 'Sprite type' : 'Place a sprite') + '</h3><input id="feQ" type="text" placeholder="Search (e.g. switch, cultist, key)" value="' + esc(q || '') + '">';
+      for (const g in groups) {
+        const list = groups[g].filter((t) => !q || (t.name + ' ' + t.type).toLowerCase().includes(q.toLowerCase()));
+        if (!list.length) continue;
+        h += '<div><small>' + g + '</small><div class="chips">' + list.map((t) => '<button class="small' + (t.type === st.spriteType && !pick ? ' on' : '') + '" data-ty="' + t.type + '">' + esc(t.name) + '</button>').join('') + '</div></div>';
+      }
+      openSheet(h);
+      const qi = $('feQ'); qi.oninput = () => { render(qi.value); const n = $('feQ'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+      document.querySelectorAll('[data-ty]').forEach((b) => b.onclick = () => { const ty = +b.dataset.ty; if (pick) pick(ty); else { st.spriteType = ty; render(qi.value); hint(); } });
+    };
+    render('');
+  }
+  function settingsPanel() {
+    const h = st.map.header;
+    openSheet('<h3>Map settings</h3>' + field('Darker with distance (visibility)', h, 'visibility', 'num') + field('Parallax type', h, 'parallaxType', 'num')
+      + '<p><small>Version ' + (st.map.version >> 8) + ', ' + st.map.sectors.length + ' sectors, ' + st.map.walls.length + ' walls, ' + st.map.sprites.length + ' sprites.</small></p>'
+      + '<div class="btns"><button id="feDone" class="small on">Done</button></div>');
+    bind();
+    $('feDone').onclick = closeSheet;
+  }
+  function checkPanel() {
+    const warn = [], p = G().problems(st.map, warn);
+    const starts = st.map.sprites.filter((s) => s.type === 1).length, dm = st.map.sprites.filter((s) => s.type === 2).length;
+    if (!starts) warn.push('There is no single player start (sprite type 1).');
+    if (dm < 2) warn.push('Bloodbath needs bloodbath starts (sprite type 2): ' + dm + ' now.');
+    openSheet('<h3>Check</h3><div class="problems">' + p.map((t) => '<div class="error">✗ ' + esc(t) + '</div>').join('') + warn.slice(0, 40).map((t) => '<div class="warning">• ' + esc(t) + '</div>').join('')
+      + (!p.length && !warn.length ? '<div style="color:var(--ok)">Everything looks right.</div>' : '') + '</div><div class="btns"><button id="feDone" class="small on">Close</button></div>');
+    $('feDone').onclick = closeSheet;
+  }
+
+  function open3d(at) {
+    if (!root.View3D) return;
+    const copy = F().parseMap(bytesOf(st.map)); // the walkthrough moves doors: on a copy
+    root.View3D.open(copy, $('v3d'), at && at.sector !== undefined ? { at, walk: true } : {});
+  }
+
+  root.FullEditor = { open, openFile, restore, close, isOpen: () => !!st, current: () => st && st.map, newMap,
+    // for tests: where a map point is on the screen, and moving the view
+    screenOf: (x, y) => { const r = $('feCv').getBoundingClientRect(), p = toScreen(x, y); return [r.left + p[0], r.top + p[1]]; },
+    look: (x, y, scale) => { st.view = { x, y, scale }; draw(); } };
 })(typeof window !== 'undefined' ? window : this);
 
 </script>
@@ -1892,7 +3505,14 @@ void main() {
     return best;
   }
 
+  // a phone sends a click after the touch: it mustn't land on the panel that the tap just opened
+  let lastTap = 0, lastTapXY = [0, 0];
+  document.addEventListener('click', (e) => {
+    if (Date.now() - lastTap < 450 && Math.hypot(e.clientX - lastTapXY[0], e.clientY - lastTapXY[1]) < 40 && e.target && e.target.id !== 'cv'
+      && e.target.closest && e.target.closest('#sheet')) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
   function tap(sx, sy) {
+    lastTap = Date.now(); { const r = document.getElementById('cv').getBoundingClientRect(); lastTapXY = [r.left + sx, r.top + sy]; }
     const p = toMap(sx, sy), g = snap(p);
     if (tool === 'rect') {
       if (!drawPts.length) { drawPts = [g]; cursor = g; }
@@ -2053,7 +3673,22 @@ void main() {
   $('fitBtn').onclick = fit;
   $('v3dBtn').onclick = () => {
     if (!prj.rooms.length) { toast('Draw a room first'); return; }
-    viewer = window.View3D.open(prj, $('v3d'));
+    try { viewer = window.View3D.open(window.MapFile.parseMap(M.exportMap(prj, true)), $('v3d')); } catch (e) { toast(e.message); }
+  };
+  // the full editor (any Blood map); it uses the tile picker and messages from here
+  window.MapMakerUI = { toast, drawTile, openTiles, onFullClosed: () => { resize(); } };
+  $('fullOpenBtn').onclick = () => { $('menu').classList.remove('open'); $('mapIn').click(); };
+  $('mapIn').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) window.FullEditor.openFile(f); };
+  $('fullConvBtn').onclick = () => {
+    $('menu').classList.remove('open');
+    try { window.FullEditor.open(window.MapFile.parseMap(M.exportMap(prj, true)), prj.name); toast('A copy of this map in the full editor; the simple project stays as it is'); }
+    catch (e) { toast(e.message); }
+  };
+  $('fullLastBtn').onclick = async () => {
+    $('menu').classList.remove('open');
+    const last = await window.FullEditor.restore();
+    if (last) window.FullEditor.open(last.map, last.name);
+    else window.FullEditor.open(window.FullEditor.newMap(), 'MYMAP');
   };
   $('name').value = prj.name;
   $('name').addEventListener('input', (e) => { prj.name = e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8); store(); });

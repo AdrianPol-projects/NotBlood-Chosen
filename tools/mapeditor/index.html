@@ -24,7 +24,7 @@ header { display: flex; gap: 8px; align-items: center; padding: 8px 10px; paddin
 header .title { font-weight: 700; color: var(--accent2); white-space: nowrap; }
 header input { flex: 1; min-width: 0; text-transform: uppercase; }
 #wrap { position: relative; flex: 1; min-height: 0; }
-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+#wrap > canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
 #hint { position: absolute; left: 10px; right: 10px; top: 8px; pointer-events: none; color: var(--dim); font-size: 13px; text-shadow: 0 1px 2px #000; }
 #badge { position: absolute; right: 10px; top: 8px; }
 #tools { display: flex; gap: 6px; padding: 8px; overflow-x: auto; background: var(--panel); border-top: 1px solid var(--line); }
@@ -53,13 +53,32 @@ small { color: var(--dim); }
 #tiles .grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; padding: 8px; align-content: start; }
 #tiles .grid button { padding: 2px; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--dim); }
 #tiles canvas { width: 64px; height: 64px; image-rendering: pixelated; background: #000; }
-.tileprev { width: 40px; height: 40px; image-rendering: pixelated; background: #000; border-radius: 4px; vertical-align: middle; }
+.tileprev { position: static; flex: 0 0 auto; width: 40px; height: 40px; image-rendering: pixelated; background: #000; border-radius: 4px; vertical-align: middle; }
 .picrow { display: flex; gap: 6px; align-items: center; }
 .picrow button { flex: 0 0 auto; }
 .v3d-use { position: absolute; right: 16px; display: none; width: 76px; height: 56px; border-radius: 16px; background: #0008; bottom: 176px; }
 #v3d.walking .v3d-use { display: block; }
 .v3d-msg { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); color: #f0a24a; font-weight: 700; font-size: 20px; text-shadow: 0 2px 4px #000; opacity: 0; transition: opacity .3s; pointer-events: none; text-align: center; }
 .v3d-msg.show { opacity: 1; }
+#full { position: fixed; inset: 0; z-index: 7; background: var(--bg); display: none; flex-direction: column; }
+#full.open { display: flex; }
+#full header { display: flex; gap: 8px; align-items: center; padding: 8px 10px; padding-top: max(8px, env(safe-area-inset-top)); background: var(--panel); border-bottom: 1px solid var(--line); }
+#full header .title { font-weight: 700; color: var(--accent2); white-space: nowrap; }
+#full header input { flex: 1; min-width: 0; text-transform: uppercase; }
+#full .wrap { position: relative; flex: 1; min-height: 0; }
+#full .wrap > canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+#full .hint { position: absolute; left: 10px; right: 120px; top: 8px; pointer-events: none; color: var(--dim); font-size: 13px; text-shadow: 0 1px 2px #000; }
+#full .badge { position: absolute; right: 10px; top: 8px; }
+#full .tools { display: flex; gap: 6px; padding: 8px; overflow-x: auto; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+#full .tools button { flex: 0 0 auto; }
+#full .sheet { background: var(--panel); border-top: 1px solid var(--line); max-height: 52vh; overflow-y: auto; padding: 10px 12px; display: none; }
+#full .sheet.open { display: block; }
+#full .menu { position: fixed; right: 8px; top: 56px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px; display: none; flex-direction: column; gap: 6px; z-index: 9; min-width: 230px; }
+#full .menu.open { display: flex; }
+#full details { border-top: 1px solid var(--line); padding: 4px 0; }
+#full summary { color: var(--accent2); padding: 6px 0; cursor: pointer; }
+#full .chk { display: inline-flex; gap: 4px; align-items: center; font-size: 14px; margin-right: 10px; }
+#full .row input[type=checkbox] { width: 22px; height: 22px; justify-self: start; }
 #v3d { position: fixed; inset: 0; z-index: 8; background: #000; display: none; }
 #v3d.open { display: block; }
 #v3d canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
@@ -105,6 +124,9 @@ small { color: var(--dim); }
   <button id="newBtn">New map</button>
   <button id="saveBtn">Save project (.json)</button>
   <button id="openBtn">Open project (.json)</button>
+  <button id="fullOpenBtn">Open a .MAP (full editor)…</button>
+  <button id="fullConvBtn">This map in the full editor</button>
+  <button id="fullLastBtn">Full editor (the last map)</button>
   <button id="artBtn">Blood files for textures…</button>
   <button id="mapSetBtn">Map settings</button>
   <label class="row" style="margin:0"><span>Grid</span>
@@ -132,10 +154,16 @@ small { color: var(--dim); }
 </div></div>
 <div id="toast"></div>
 <div id="tiles"><div class="bar"><button id="tilePrev" class="small">◀</button><input id="tileGo" type="number" min="0" max="30719" placeholder="Tile number" style="flex:1"><button id="tileNext" class="small">▶</button><button id="tileClose" class="small on">Cancel</button></div><div class="grid" id="tileGrid"></div></div>
+<div id="full"></div>
 <div id="v3d"></div>
+<input id="mapIn" type="file" accept=".map,.MAP" hidden>
 <script src="mapcore.js"></script>
+<script src="mapfile.js"></script>
+<script src="mapgeo.js"></script>
+<script src="blooddata.js"></script>
 <script src="gamefiles.js"></script>
 <script src="view3d.js"></script>
+<script src="fulleditor.js"></script>
 <script>
 (function () {
   'use strict';
@@ -479,7 +507,14 @@ small { color: var(--dim); }
     return best;
   }
 
+  // a phone sends a click after the touch: it mustn't land on the panel that the tap just opened
+  let lastTap = 0, lastTapXY = [0, 0];
+  document.addEventListener('click', (e) => {
+    if (Date.now() - lastTap < 450 && Math.hypot(e.clientX - lastTapXY[0], e.clientY - lastTapXY[1]) < 40 && e.target && e.target.id !== 'cv'
+      && e.target.closest && e.target.closest('#sheet')) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
   function tap(sx, sy) {
+    lastTap = Date.now(); { const r = document.getElementById('cv').getBoundingClientRect(); lastTapXY = [r.left + sx, r.top + sy]; }
     const p = toMap(sx, sy), g = snap(p);
     if (tool === 'rect') {
       if (!drawPts.length) { drawPts = [g]; cursor = g; }
@@ -640,7 +675,22 @@ small { color: var(--dim); }
   $('fitBtn').onclick = fit;
   $('v3dBtn').onclick = () => {
     if (!prj.rooms.length) { toast('Draw a room first'); return; }
-    viewer = window.View3D.open(prj, $('v3d'));
+    try { viewer = window.View3D.open(window.MapFile.parseMap(M.exportMap(prj, true)), $('v3d')); } catch (e) { toast(e.message); }
+  };
+  // the full editor (any Blood map); it uses the tile picker and messages from here
+  window.MapMakerUI = { toast, drawTile, openTiles, onFullClosed: () => { resize(); } };
+  $('fullOpenBtn').onclick = () => { $('menu').classList.remove('open'); $('mapIn').click(); };
+  $('mapIn').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) window.FullEditor.openFile(f); };
+  $('fullConvBtn').onclick = () => {
+    $('menu').classList.remove('open');
+    try { window.FullEditor.open(window.MapFile.parseMap(M.exportMap(prj, true)), prj.name); toast('A copy of this map in the full editor; the simple project stays as it is'); }
+    catch (e) { toast(e.message); }
+  };
+  $('fullLastBtn').onclick = async () => {
+    $('menu').classList.remove('open');
+    const last = await window.FullEditor.restore();
+    if (last) window.FullEditor.open(last.map, last.name);
+    else window.FullEditor.open(window.FullEditor.newMap(), 'MYMAP');
   };
   $('name').value = prj.name;
   $('name').addEventListener('input', (e) => { prj.name = e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8); store(); });
