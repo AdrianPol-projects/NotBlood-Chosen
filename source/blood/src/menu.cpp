@@ -587,8 +587,13 @@ void SetNetShowWeapon(CGameMenuItemZCycle *pItem);
 void SetNetMonsterMenu(CGameMenuItemZCycle *pItem);
 
 CGameMenuItemTitle itemNetStartTitle("MULTIPLAYER", 1, 160, 20, 2038);
-CGameMenuItemChain itemNetStart1("GAME:", 3, 66, 35, 180, 0, &menuNetworkGameMode, -1, NULL, 0);
-CGameMenuItemChain itemNetStartBots("BOTS:", 3, 66, 44, 180, 0, &menuBots, -1, SetupBotsNetMenu, 0);
+void SetNetStartMode(CGameMenuItemZCycle *pItem);
+void UpdateNetStartMode(CGameMenuItem *pItem);
+extern const char *pzNetAllModes[];
+extern const int nNetAllModes;
+CGameMenuItemZCycle itemNetStartMode("MODE:", 3, 66, 35, 180, 0, SetNetStartMode, pzNetAllModes, nNetAllModes, 0);
+CGameMenuItemChain itemNetStart1("GAME SETTINGS:", 3, 66, 43, 180, 0, &menuNetworkGameMode, -1, NULL, 0);
+CGameMenuItemChain itemNetStartBots("BOTS:", 3, 66, 51, 180, 0, &menuBots, -1, SetupBotsNetMenu, 0);
 static char zNetStartBotsText[48];
 static void UpdateNetStartBots(CGameMenuItem *pItem)
 {
@@ -602,16 +607,16 @@ static void UpdateNetStartBots(CGameMenuItem *pItem)
     itemNetStartBots.bEnable = myconnectindex == connecthead; // the host's PC plays them
     BotsNetSummary(zNetStartBotsText, sizeof(zNetStartBotsText));
 }
-CGameMenuItemZCycle itemNetStart2("EPISODE:", 3, 66, 53, 180, 0, SetupNetLevels, NULL, 0, 0);
-CGameMenuItemZCycle itemNetStart3("LEVEL:", 3, 66, 62, 180, 0, NetClearUserMap, NULL, 0, 0);
-CGameMenuItemZCycle itemNetStart4("DIFFICULTY:", 3, 66, 71, 180, 0, SetNetMonsterMenu, zDiffStrings, ARRAY_SSIZE(zDiffStrings), 0);
-CGameMenuItemChain itemNetStart5("MONSTER SETTING:", 3, 66, 80, 180, 0, &menuNetworkGameMonsters, -1, NULL, 0);
-CGameMenuItemZCycle itemNetStart6("WEAPONS:", 3, 66, 89, 180, 0, 0, zWeaponStrings, 4, 0);
-CGameMenuItemZCycle itemNetStart7("ITEMS:", 3, 66, 98, 180, 0, 0, zItemStrings, 3, 0);
+CGameMenuItemZCycle itemNetStart2("EPISODE:", 3, 66, 59, 180, 0, SetupNetLevels, NULL, 0, 0);
+CGameMenuItemZCycle itemNetStart3("LEVEL:", 3, 66, 67, 180, 0, NetClearUserMap, NULL, 0, 0);
+CGameMenuItemZCycle itemNetStart4("DIFFICULTY:", 3, 66, 75, 180, 0, SetNetMonsterMenu, zDiffStrings, ARRAY_SSIZE(zDiffStrings), 0);
+CGameMenuItemChain itemNetStart5("MONSTER SETTING:", 3, 66, 83, 180, 0, &menuNetworkGameMonsters, -1, NULL, 0);
+CGameMenuItemZCycle itemNetStart6("WEAPONS:", 3, 66, 91, 180, 0, 0, zWeaponStrings, 4, 0);
+CGameMenuItemZCycle itemNetStart7("ITEMS:", 3, 66, 99, 180, 0, 0, zItemStrings, 3, 0);
 CGameMenuItemZBool itemNetStartBoolChaseView("CHASE VIEW:", 3, 66, 107, 180, false, NULL, NULL, NULL);
-CGameMenuItemZBool itemNetStartBoolHolstering("HOLSTERING:", 3, 66, 116, 180, false, NULL, NULL, NULL);
-CGameMenuItemZBool itemNetStartBoolSecondWind("SECOND WIND:", 3, 66, 125, 180, true, 0, NULL, NULL);
-CGameMenuItemZBool itemNetStartBoolSpectatorMode("SPECTATING:", 3, 66, 134, 180, false, 0, NULL, NULL);
+CGameMenuItemZBool itemNetStartBoolHolstering("HOLSTERING:", 3, 66, 115, 180, false, NULL, NULL, NULL);
+CGameMenuItemZBool itemNetStartBoolSecondWind("SECOND WIND:", 3, 66, 123, 180, true, 0, NULL, NULL);
+CGameMenuItemZBool itemNetStartBoolSpectatorMode("SPECTATING:", 3, 66, 131, 180, false, 0, NULL, NULL);
 CGameMenuItemZBool itemNetStartBoolLagCompensation("LAG COMPENSATION:", 3, 66, 86, 180, true, 0, NULL, NULL); // shown in MATCH RULES
 CGameMenuItemChain itemNetStart8("SET ITEMS", 3, 0, 143, 256, 1, &menuBannedItems, -1, NULL, 0);
 CGameMenuItemChain itemNetStart8Load("LOAD ITEMS", 3, 0, 143, 384, 1, &menuMultiUserItems, 0, NULL, 0);
@@ -1756,7 +1761,11 @@ void SetupNetStartMenu(void)
 {
     bool oneEpisode = false;
     menuNetStart.Add(&itemNetStartTitle, false);
+    menuNetStart.Add(&itemNetStartMode, false);
     menuNetStart.Add(&itemNetStart1, false);
+    itemNetStartMode.pPreDrawCallback = UpdateNetStartMode;
+    itemNetStartMode.tooltip_pzTextUpper = "Every match type: bloodbath, gun game, hill, juggernaut,";
+    itemNetStartMode.tooltip_pzTextLower = "last man, hide and seek, team modes, flags, co-op, survival";
     menuNetStart.Add(&itemNetStartBots, false);
     for (int i = 0; i < (oneEpisode ? 1 : 6); i++)
     {
@@ -4166,6 +4175,60 @@ void SetNetChosenMode(CGameMenuItemZCycle *pItem)
         Bsnprintf(zNetStartGameText, sizeof(zNetStartGameText), "%s: %s", zNetGameTypes[ClipRange(itemNetGameMode.m_nFocus, 0, ARRAY_SSIZE(zNetGameTypes)-1)], modesName(nMode));
         itemNetStart1.m_pzText2 = zNetStartGameText;
     }
+}
+
+// MODE: on the MULTIPLAYER and BOTS menus: every match type in one list, so nobody has to know that
+// capture the flag is under TEAMS and survival under CO-OP. Picking one sets GAME SETTINGS' GAME and MODE.
+static const struct { int nType, nMode; } kNetAllModes[] = {
+    { kGameTypeBloodBath, kChosenModeNormal }, { kGameTypeBloodBath, kChosenModeGunGame }, { kGameTypeBloodBath, kChosenModeKingOfTheHill },
+    { kGameTypeBloodBath, kChosenModeJuggernaut }, { kGameTypeBloodBath, kChosenModeLastManStanding }, { kGameTypeBloodBath, kChosenModeHideSeek },
+    { kGameTypeTeams, kChosenModeNormal }, { kGameTypeTeams, kChosenModeCaptureFlag }, { kGameTypeTeams, kChosenModeKingOfTheHill },
+    { kGameTypeTeams, kChosenModeLastManStanding },
+    { kGameTypeCoop, kChosenModeNormal }, { kGameTypeCoop, kChosenModeSurvival },
+};
+const char *pzNetAllModes[] = { "BLOODBATH", "GUN GAME", "KING OF THE HILL", "JUGGERNAUT", "LAST MAN STANDING", "HIDE AND SEEK",
+    "TEAM BLOODBATH", "CAPTURE THE FLAG", "TEAM KING OF THE HILL", "LAST TEAM STANDING", "CO-OP", "SURVIVAL (CO-OP)" };
+const int nNetAllModes = ARRAY_SSIZE(pzNetAllModes);
+EDUKE32_STATIC_ASSERT(ARRAY_SSIZE(kNetAllModes) == ARRAY_SSIZE(pzNetAllModes));
+
+int NetMenuAllModeIndex(void)
+{
+    const int nType = itemNetGameMode.m_nFocus+1, nMode = ChosenModeFromMenu();
+    for (int i = 0; i < nNetAllModes; i++)
+        if (kNetAllModes[i].nType == nType && kNetAllModes[i].nMode == nMode)
+            return i;
+    return 0;
+}
+
+void NetMenuSetAllMode(int nIndex)
+{
+    nIndex = ClipRange(nIndex, 0, nNetAllModes-1);
+    if (itemNetGameMode.m_nFocus+1 != kNetAllModes[nIndex].nType)
+    {
+        itemNetGameMode.SetTextIndex(kNetAllModes[nIndex].nType-1);
+        SetNetGameMode(&itemNetGameMode);
+    }
+    const char **ppzNames;
+    const int *pnModes;
+    const int nCount = modesForGameType(kNetAllModes[nIndex].nType, &ppzNames, &pnModes);
+    for (int i = 0; i < nCount; i++)
+        if (pnModes[i] == kNetAllModes[nIndex].nMode)
+            itemNetGameChosenMode.SetTextIndex(i);
+    SetNetChosenMode(&itemNetGameChosenMode);
+}
+
+void SetNetStartMode(CGameMenuItemZCycle *pItem)
+{
+    NetMenuSetAllMode(pItem->m_nFocus);
+}
+
+void UpdateNetStartMode(CGameMenuItem *pItem)
+{
+    // follows changes made in GAME SETTINGS
+    CGameMenuItemZCycle *pCycle = (CGameMenuItemZCycle *)pItem;
+    const int nIndex = NetMenuAllModeIndex();
+    if (pCycle->m_nFocus != nIndex)
+        pCycle->SetTextIndex(nIndex);
 }
 
 void SetNetGameMode(CGameMenuItemZCycle *pItem)

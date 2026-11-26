@@ -602,18 +602,21 @@ static void SetupCareerMenu(CGameMenuItemChain *pItem);
 CGameMenu menuCareer;
 
 CGameMenuItemTitle itemBotsTitle("BOTS", 1, 160, 20, 2038);
-CGameMenuItemSlider itemBotsCount("BOTS:", 3, 66, 38, 180, &gBotCount, 1, kBotMaxBots, 1, BotsSlider, -1, -1, kMenuSliderValue);
-CGameMenuItemZCycle itemBotsSkill("DIFFICULTY:", 3, 66, 48, 180, 0, BotsSetSkill, gBotSkillNames, kBotSkillMax, 0);
-CGameMenuItemZCycle itemBotsPersona("PERSONALITY:", 3, 66, 58, 180, 0, BotsSetPersona, gBotPersonaNames, kBotPersonaMax, 0);
-CGameMenuItemChain itemBotsEach("SET EACH BOT", 3, 0, 72, 320, 1, &menuBotsEach, -1, BotsSetupEach, 0);
-CGameMenuItemChain itemBotsTuning("FINE TUNING (ALL BOTS)", 3, 0, 82, 320, 1, &menuBotsTuning, -1, NULL, 0);
-CGameMenuItemChain itemBotsTeams("SET TEAMS", 3, 0, 92, 320, 1, &menuTeams, -1, SetupTeamsMenu, 0);
-CGameMenuItemChain itemBotsMatch("MATCH SETTINGS", 3, 0, 102, 320, 1, &menuNetStart, 1, NULL, 0);
-CGameMenuItemChain itemBotsCareer("CAREER", 3, 0, 116, 320, 1, &menuCareer, -1, SetupCareerMenu, 0);
-CGameMenuItemChain itemBotsWatch("WATCH BOTS", 3, 0, 126, 320, 1, NULL, -1, BotsWatch, 0);
-CGameMenuItemText itemBotsInfo(zBotsInfo, 3, 160, 140, 1);
-CGameMenuItemText itemBotsInfo2(zBotsInfo2, 3, 160, 150, 1);
-CGameMenuItemChain itemBotsStart("START MATCH", 1, 0, 160, 320, 1, NULL, -1, BotsStart, 0);
+static void BotsSetMode(CGameMenuItemZCycle *pItem);
+static void UpdateBotsMode(CGameMenuItem *pItem);
+CGameMenuItemZCycle itemBotsMode("MODE:", 3, 66, 38, 180, 0, BotsSetMode, pzNetAllModes, nNetAllModes, 0);
+CGameMenuItemSlider itemBotsCount("BOTS:", 3, 66, 48, 180, &gBotCount, 1, kBotMaxBots, 1, BotsSlider, -1, -1, kMenuSliderValue);
+CGameMenuItemZCycle itemBotsSkill("DIFFICULTY:", 3, 66, 58, 180, 0, BotsSetSkill, gBotSkillNames, kBotSkillMax, 0);
+CGameMenuItemZCycle itemBotsPersona("PERSONALITY:", 3, 66, 68, 180, 0, BotsSetPersona, gBotPersonaNames, kBotPersonaMax, 0);
+CGameMenuItemChain itemBotsEach("SET EACH BOT", 3, 0, 80, 320, 1, &menuBotsEach, -1, BotsSetupEach, 0);
+CGameMenuItemChain itemBotsTuning("FINE TUNING (ALL BOTS)", 3, 0, 90, 320, 1, &menuBotsTuning, -1, NULL, 0);
+CGameMenuItemChain itemBotsTeams("SET TEAMS", 3, 0, 100, 320, 1, &menuTeams, -1, SetupTeamsMenu, 0);
+CGameMenuItemChain itemBotsMatch("MATCH SETTINGS", 3, 0, 110, 320, 1, &menuNetStart, 1, NULL, 0);
+CGameMenuItemChain itemBotsCareer("CAREER", 3, 0, 122, 320, 1, &menuCareer, -1, SetupCareerMenu, 0);
+CGameMenuItemChain itemBotsWatch("WATCH BOTS", 3, 0, 132, 320, 1, NULL, -1, BotsWatch, 0);
+CGameMenuItemText itemBotsInfo(zBotsInfo, 3, 160, 142, 1);
+CGameMenuItemText itemBotsInfo2(zBotsInfo2, 3, 160, 151, 1);
+CGameMenuItemChain itemBotsStart("START MATCH", 1, 0, 162, 320, 1, NULL, -1, BotsStart, 0);
 
 static char zCareer1[80], zCareer2[96], zCareer3[80], zCareer4[80];
 static bool bCareerResetArmed;
@@ -666,6 +669,19 @@ CGameMenuItemSlider itemBotsEachHighGround("HIGH GROUND %:", 3, 66, 150, 180, &g
 CGameMenuItemChain itemBotsEachReset("RESET THIS BOT", 3, 0, 161, 320, 1, NULL, -1, BotsEachReset, 0);
 static CGameMenuItemSlider *pBotsEachTune[kBotTuneMax] = { &itemBotsEachAim, &itemBotsEachReaction, &itemBotsEachAggression, &itemBotsEachJumping,
     &itemBotsEachAmbush, &itemBotsEachFlank, &itemBotsEachCamping, &itemBotsEachHighGround };
+
+static void BotsSetMode(CGameMenuItemZCycle *pItem)
+{
+    NetMenuSetAllMode(pItem->m_nFocus);
+}
+
+static void UpdateBotsMode(CGameMenuItem *pItem)
+{
+    CGameMenuItemZCycle *pCycle = (CGameMenuItemZCycle *)pItem;
+    const int nIndex = NetMenuAllModeIndex();
+    if (pCycle->m_nFocus != nIndex)
+        pCycle->SetTextIndex(nIndex);
+}
 
 static void BotsSlider(CGameMenuItemSlider *pItem)
 {
@@ -784,7 +800,7 @@ static void BotsMenuMode(bool bNet)
         itemBotsCount.tooltip_pzTextUpper = "How many bots to play against";
     }
     itemBotsCount.nValue = *itemBotsCount.pValue;
-    CGameMenuItem *pOffline[] = { &itemBotsMatch, &itemBotsCareer, &itemBotsWatch, &itemBotsStart };
+    CGameMenuItem *pOffline[] = { &itemBotsMode, &itemBotsMatch, &itemBotsCareer, &itemBotsWatch, &itemBotsStart };
     for (CGameMenuItem *pItem : pOffline)
         pItem->bEnable = !bNet, pItem->bNoDraw = bNet;
     itemBotsTitle.m_pzText = bNet ? "BOTS IN THIS GAME" : "BOTS";
@@ -1050,7 +1066,11 @@ void SetupChosenMenus(void)
     itemBotOrderHold.tooltip_pzTextUpper = "They guard where you're standing now";
     itemBotOrderFree.tooltip_pzTextUpper = "They go on their own: hunt, take objectives, collect";
     menuBots.Add(&itemBotsTitle, false);
+    menuBots.Add(&itemBotsMode, false);
     menuBots.Add(&itemBotsCount, true);
+    itemBotsMode.pPreDrawCallback = UpdateBotsMode;
+    itemBotsMode.tooltip_pzTextUpper = "Every match type: bloodbath, gun game, hill, juggernaut,";
+    itemBotsMode.tooltip_pzTextLower = "last man, hide and seek, team modes, flags, co-op, survival";
     menuBots.Add(&itemBotsSkill, false);
     menuBots.Add(&itemBotsPersona, false);
     menuBots.Add(&itemBotsEach, false);

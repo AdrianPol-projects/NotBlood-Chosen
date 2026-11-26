@@ -40,6 +40,10 @@ void BotMatchSetMode(int nGameType, int nMode);
 void BotMatchSetLives(int nLives);
 void BotMatchResetMutators(void);
 void BotMatchSetRules(int nSize, int nBarrels, int bAkimbo, int nRounds, int bVote);
+extern const char *pzNetAllModes[];   // MODE: every match type (game type and mode together)
+extern const int nNetAllModes;
+int NetMenuAllModeIndex(void);
+void NetMenuSetAllMode(int nIndex);
 int NetMenuGameType(void);      // the GAME SETTINGS choice: kGameTypeCoop, ...
 bool NetMenuAutoTeams(void);
 
