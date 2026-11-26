@@ -89,14 +89,15 @@ Everybody in a network game needs **1.4**. Older versions can't join a 1.4 game,
 
 ## New in 1.4
 - **NotBlood's final update** is in: lag compensation (MATCH RULES > LAG COMPENSATION, on by default), NotBlood's own juggernaut option (Bloodbath > QUAD JUGGERNAUT: whoever kills the juggernaut takes over and gets akimbo/quad damage), player hitscan projectiles and the new mutator options.
-- **Public servers:** a relay started with `PUBLIC=1` needs no key to play (its dashboard still does unless `PUBLIC_DASHBOARD=1`). Leave SERVER empty in MULTIPLAYER > ONLINE to use the public server built into the game, if your build has one.
+- **Public servers:** a relay started with `PUBLIC=1` needs no key to play (its dashboard still does unless `PUBLIC_DASHBOARD=1`). Leave SERVER empty in MULTIPLAYER > ONLINE to use the public server built into the game: **blood.pi-mole.com**, open to everybody (its dashboard, with the live games, is at https://blood.pi-mole.com).
 - **Private lobbies:** fill in LOBBY PASSWORD before HOST A LOBBY. The lobby list shows it as LOCKED; the others type the same password before joining (upper and lower case don't matter).
 - **Lobby chat:** type on the waiting for players screen and press Enter; everybody in the lobby sees it, and lines that arrive during the game show up as messages.
 - **Players and bots are counted apart** in the lobby list ("2/4 +3 BOTS"), so a lobby full of bots doesn't look like a busy game.
 - **User maps download by themselves** in online games: whoever starts a game on a user map hands it to the server, and players who don't have it (or have another file of that name) get it when the level starts, into `downloads/`. The server and the game both check every map before it's used.
 - **Safer map loading:** every map (downloaded or not) is checked before loading: sector, wall and sprite counts, sky size, the sizes of the extra data, and that every wall, sector and sprite points into the map. A damaged map gives an error instead of crashing the game.
 - **Bots play more like people:** a quick turn onto an enemy overshoots a little and settles; a hard hit makes them flinch (the aim jumps, they stop shooting a moment); an enemy that ducks out of sight and comes back is picked up again quicker; after a long quiet spell they react a bit slower.
-- 1.4 can't play with 1.3.
+- **Blood Map Maker:** a map editor that runs in the browser, also on phones and tablets: draw rooms, add doors, lifts, secrets, enemies and items, walk through the map in 3D with the real Blood textures, and open, edit and save any Blood `.MAP` without losing anything. Open it at https://blood.pi-mole.com/mapmaker (or `/mapmaker` on any NotBlood server); it also has its own downloads (`mapeditor-v…` releases).
+- 1.4 can't play with 1.3. **1.3 stays available** under [Releases](https://github.com/AdrianPol-projects/NotBlood-Chosen/releases/tag/v1.3) for anybody who still plays it.
 
 ## New in 1.3
 - **Hide and seek** (Bloodbath > MODE): hiders look like a barrel, vase or crate from the map and only have the pitchfork; the seekers are blindfolded for the first 30 seconds. A found hider becomes a seeker. Hiders make a noise every 30 seconds.

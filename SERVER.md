@@ -187,6 +187,9 @@ In `server.env`:
 | `WEB_PAGE_CHECK_MINUTES` | `10` | how often opening the page may also look for one; `0`: only on the timer |
 | `WEB_REPO` | `AdrianPol-projects/NotBlood-Chosen` | the GitHub repository whose newest release has the web version |
 | `WEB_DIR` | `$DATA_DIR/web` | where the web version is kept |
+| `PUBLIC` | `0` | `1`: games need no key ([A public server](#a-public-server)) |
+| `PUBLIC_DASHBOARD` | `0` | `1`: the dashboard needs no key either |
+| `SITE` | `blood` | `duke`: the dashboard carries Duke Chosen's name and links (the same relay serves [Duke Chosen](https://github.com/AdrianPol-projects/Duke-Chosen) games; set `WEB_UPDATE_HOURS=0`, there is no Duke web version yet) |
 
 Built-in limits: 200 connections, 24 per address, 50 lobbies. A player who doesn't answer for 45 seconds is dropped.
 

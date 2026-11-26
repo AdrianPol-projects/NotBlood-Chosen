@@ -802,12 +802,29 @@ def asset_version():
 
 INDEX_HTML = None
 
+# One relay program serves both games' sites: SITE=duke gives the dashboard Duke Chosen's name and
+# download links instead of NotBlood's (its game traffic and stats work the same way).
+SITE = os.environ.get("SITE", "blood").strip().lower()
+DUKE_REPO = "https://github.com/AdrianPol-projects/Duke-Chosen"
+
+
+def site_page(html):
+    if SITE != "duke":
+        return html
+    return (html.replace("<title>NotBlood Live</title>", "<title>Duke Chosen Live</title>")
+            .replace("NOTBLOOD <em>LIVE</em>", "DUKE CHOSEN <em>LIVE</em>")
+            .replace('<a href="play/">Play NotBlood in your browser</a> (bring your own Blood files)',
+                     '<a href="%s/releases">Download Duke Chosen</a> (bring your own Duke Nukem 3D files)' % DUKE_REPO)
+            .replace("Host one from the game: MULTIPLAYER &rsaquo; ONLINE, or <a href=\"play/\">play in your browser</a>.",
+                     "Host one from the game: <code>eduke32 -online-host \"My game\"</code> "
+                     "(<a href=\"%s#online-play\">how</a>)." % DUKE_REPO))
+
 
 async def index(request):
     global INDEX_HTML
     if INDEX_HTML is None:
         v = asset_version()
-        INDEX_HTML = ((STATIC_DIR / "index.html").read_text()
+        INDEX_HTML = (site_page((STATIC_DIR / "index.html").read_text())
                       .replace('static/app.js"', 'static/app.js?v=%s"' % v)
                       .replace('static/style.css"', 'static/style.css?v=%s"' % v))
     return web.Response(text=INDEX_HTML, content_type="text/html", headers={"Cache-Control": "no-cache"})
@@ -819,7 +836,8 @@ async def mapmaker(request):
 
 
 async def health(request):
-    return web.json_response({"ok": True, "lobbies": len(relay.lobbies), "protocol": PROTOCOL, "public": PUBLIC})
+    return web.json_response({"ok": True, "lobbies": len(relay.lobbies), "protocol": PROTOCOL, "public": PUBLIC,
+                              "site": SITE})
 
 
 # ---- the web version of the game (/play) -----------------------------------------------------------
