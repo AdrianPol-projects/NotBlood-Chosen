@@ -112,6 +112,23 @@ PUBLIC_DASHBOARD=0   # 1: the dashboard needs no key either (everybody can watch
 ```
 Keep `BLOOD_KEY` set: it's what opens the dashboard while `PUBLIC_DASHBOARD=0`.
 
+**Room for the key holders.** A public server is free for anybody, but to keep the machine fast it
+limits the games of players without the key, and whoever has the key always gets in:
+
+```sh
+PUBLIC_MAX_LOBBIES=6        # lobbies hosted without the key at the same time (then: "try again later")
+PUBLIC_MAX_CONNECTIONS=120  # games connected without the key (of 200); the rest stay free for key holders
+```
+
+A player enters the key in MULTIPLAYER > ONLINE > KEY (on a public server it is optional). Their
+lobbies don't count against the limit, and players without the key can still join them.
+
+**Joining a running game.** The host's lobby says who may join once the game runs: `open`
+(anybody), `ask` (the host is asked and says yes or no; the player waits up to a minute) or `closed`
+(only before the game starts). Games that don't say get the site's default: `open` for `SITE=duke3d`
+(EDuke32 takes players at any time), `closed` otherwise (`DROP_IN=1` makes it `open`). Blood's and
+Shadow Warrior's network games have a fixed set of players, so their lobbies close when the game starts.
+
 On a public server:
 - **Private lobbies:** a host who fills in LOBBY PASSWORD gets a lobby only players with the same password can join. The server only ever sees a hash of the password, and 10 wrong passwords lock an address out for 10 minutes, like wrong keys.
 - **Chat:** everybody in a lobby can chat on the waiting screen. At most 8 lines per 10 seconds per player.
@@ -190,7 +207,9 @@ In `server.env`:
 | `PUBLIC` | `0` | `1`: games need no key ([A public server](#a-public-server)) |
 | `PUBLIC_DASHBOARD` | `0` | `1`: the dashboard needs no key either |
 | `SITE` | `blood` | which game's site: `blood`, `duke3d` ([Duke3D Chosen](https://github.com/AdrianPol-projects/Duke3D-Chosen)) or `sw` ([SW Chosen](https://github.com/AdrianPol-projects/ShadowWarrior-Chosen)): the name, the dashboard's weapons and keys, and whose web version `/play/` serves |
-| `DROP_IN` | `1` for `duke3d`, else `0` | `1`: players may join a lobby whose game is running |
+| `DROP_IN` | `1` for `duke3d`, else `0` | the join policy of lobbies whose game doesn't send one: `1` open, `0` closed |
+| `PUBLIC_MAX_LOBBIES` | `6` | public server: lobbies hosted without the key at the same time |
+| `PUBLIC_MAX_CONNECTIONS` | `120` | public server: games connected without the key |
 | `GITHUB_TOKEN` | (none) | a token that may read `WEB_REPO`, when that repository is private |
 
 Built-in limits: 200 connections, 24 per address, 50 lobbies. A player who doesn't answer for 45 seconds is dropped.

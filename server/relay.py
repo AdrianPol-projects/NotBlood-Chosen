@@ -46,6 +46,13 @@ PROTOCOL = 1
 KEY = os.environ.get("BLOOD_KEY", os.environ.get("GAME_KEY", ""))
 PUBLIC = os.environ.get("PUBLIC", "0") == "1"                      # games need no key
 PUBLIC_DASHBOARD = os.environ.get("PUBLIC_DASHBOARD", "0") == "1"  # neither does the dashboard
+# A public server keeps room for the people who have its key: players without it may host at most
+# PUBLIC_MAX_LOBBIES lobbies and use at most PUBLIC_MAX_CONNECTIONS connections; key holders can always
+# host and connect (up to MAX_LOBBIES and MAX_CONNECTIONS).
+PUBLIC_MAX_LOBBIES = int(os.environ.get("PUBLIC_MAX_LOBBIES", "6"))
+PUBLIC_MAX_CONNECTIONS = int(os.environ.get("PUBLIC_MAX_CONNECTIONS", "120"))
+JOIN_ASK_TIMEOUT = 60  # a player asking to join a running game waits this long for the host's answer
+JOIN_POLICIES = ("closed", "ask", "open")
 PORT = int(os.environ.get("PORT", "8080"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -159,6 +166,11 @@ class Lobby:
         self.bots = 0
         self.chat = deque(maxlen=CHAT_KEEP)  # (time, name, text)
         self.map_file = None  # (file name, sha256, bytes) of the host's user map
+        self.trusted = False  # hosted by someone with the server key
+        # joining while the game runs: "closed" (only before it starts), "ask" (the host decides), "open"
+        self.join_policy = "open" if DROP_IN else "closed"
+        self.join_requests = {}  # request id -> (Conn, player name)
+        self.next_request = 1
 
     def conns(self):
         return ([self.host] if self.host else []) + list(self.clients.values())
@@ -177,6 +189,7 @@ class Lobby:
             "players": [self.host_name] + [c.player_name for c in self.clients.values()],
             "bots": self.bots,
             "private": bool(self.password),
+            "join": self.join_policy,
             "user_map": self.map_file[0] if self.map_file else None,
             "chat": [list(c) for c in self.chat],
             "max": self.max_players,
@@ -196,6 +209,7 @@ class Relay:
     def __init__(self):
         self.lobbies = {}  # lower case name -> Lobby
         self.dashboards = set()
+        self.public_conns = 0  # games connected without the key (public server)
         self.history = []
         self.history_file = DATA_DIR / "history.json"
         try:
@@ -261,6 +275,9 @@ class Conn:
         self.peer_id = 0
         self.player_name = ""
         self.is_host = False
+        self.trusted = False         # knows the server key (priority on a public server)
+        self.counted_public = False
+        self.join_request = None     # (lobby, request id) while waiting for a host to let it in
         self.queue = deque()
         self.wake = asyncio.Event()
         self.closing = False
@@ -380,8 +397,8 @@ async def ping_loop(conn):
 
 
 async def authenticate(ws, ip, public=False):
-    """Challenge/response with the server key. Returns the rest of the answer when the peer knows
-    the key (or the server is public: then any answer will do), None when not."""
+    """Challenge/response with the server key. Returns (the rest of the answer, whether the peer knows
+    the key) when it may come in (on a public server anybody may), None when not."""
     nonce = secrets.token_hex(16)
     await ws.send_str("challenge\t" + nonce + ("\tpublic" if public else ""))
     try:
@@ -393,14 +410,16 @@ async def authenticate(ws, ip, public=False):
     fields = msg.data.split("\t")
     if len(fields) < 2 or fields[0] != "auth":
         return None
-    if public:
-        return fields[2:]
     want = hmac.new(KEY.encode(), nonce.encode(), hashlib.sha256).hexdigest()
-    if not KEY or not hmac.compare_digest(want, fields[1].strip().lower()):
+    knows_key = bool(KEY) and hmac.compare_digest(want, fields[1].strip().lower())
+    if public:
+        # anybody may play; who knows the key gets priority (see PUBLIC_MAX_LOBBIES)
+        return fields[2:], knows_key
+    if not knows_key:
         guard.fail(ip)
         await ws.send_str("error\tWrong server key")
         return None
-    return fields[2:]
+    return fields[2:], True
 
 
 async def game_ws(request):
@@ -413,10 +432,17 @@ async def game_ws(request):
     conn = Conn(ws, ip)
     pinger = None
     try:
-        extra = await authenticate(ws, ip, PUBLIC)
-        if extra is None:
+        auth = await authenticate(ws, ip, PUBLIC)
+        if auth is None:
             return ws
+        extra, conn.trusted = auth
         proto = extra[0] if extra else ""
+        if not conn.trusted and relay.public_conns >= PUBLIC_MAX_CONNECTIONS:
+            await conn.text("error", "The public server is busy right now - try again in a while")
+            return ws
+        if not conn.trusted:
+            relay.public_conns += 1
+            conn.counted_public = True
         if proto != str(PROTOCOL):
             await conn.text("error", "Server protocol %d, game protocol %s - update the game or the server" % (PROTOCOL, proto))
             return ws
@@ -446,6 +472,8 @@ async def game_ws(request):
     finally:
         if pinger:
             pinger.cancel()
+        if conn.counted_public:
+            relay.public_conns -= 1
         await drop_conn(conn)
         await conn.finish()
         guard.leave(ip)
@@ -453,6 +481,11 @@ async def game_ws(request):
 
 
 async def drop_conn(conn):
+    if conn.join_request:  # was waiting for a host's answer
+        wanted, rid = conn.join_request
+        conn.join_request = None
+        if wanted.join_requests.pop(rid, None) and wanted.host:
+            await wanted.host.text("join_cancel", rid)
     lobby = conn.lobby
     if not lobby:
         if conn.lobby_name:  # its lobby was closed by the host leaving
@@ -462,6 +495,10 @@ async def drop_conn(conn):
     if conn.is_host:
         log.info("%s (host) left lobby %r: %s; %s", conn.player_name, lobby.name, conn.reason, conn.describe())
         relay.close_lobby(lobby)
+        for waiting, _ in list(lobby.join_requests.values()):
+            waiting.join_request = None
+            await waiting.text("error", "The host left")
+        lobby.join_requests.clear()
         for c in list(lobby.clients.values()):
             c.lobby = None
             c.reason = "the host left"
@@ -474,6 +511,29 @@ async def drop_conn(conn):
         if lobby.host:
             await lobby.host.text("peer_leave", conn.peer_id)
         log.info("%s left lobby %r: %s; %s", conn.player_name, lobby.name, conn.reason, conn.describe())
+
+
+async def complete_join(lobby, conn, player):
+    while lobby.next_id in lobby.clients or lobby.next_id == 0:
+        lobby.next_id = lobby.next_id % 255 + 1
+    conn.peer_id = lobby.next_id
+    lobby.next_id = lobby.next_id % 255 + 1
+    conn.lobby, conn.player_name, conn.lobby_name = lobby, player, lobby.name
+    lobby.clients[conn.peer_id] = conn
+    lobby.player_names.add(player)
+    log.info("%s joined lobby %r as %d%s", player, lobby.name, conn.peer_id, " (game running)" if lobby.state != "waiting" else "")
+    await lobby.host.text("peer_join", conn.peer_id, player)
+    await conn.text("joined", lobby.name, conn.peer_id, lobby.host_name)
+
+
+async def join_request_timeout(lobby, rid):
+    await asyncio.sleep(JOIN_ASK_TIMEOUT)
+    req = lobby.join_requests.pop(rid, None)
+    if req:
+        req[0].join_request = None
+        if lobby.host:
+            await lobby.host.text("join_cancel", rid)
+        await req[0].text("error", "The host didn't answer")
 
 
 async def close_after_flush(conn):
@@ -509,7 +569,7 @@ async def on_game_text(conn, text):
             # players are people only; bots are counted on their own (older games read the first 7 fields)
             lines.append("\t".join(str(x) for x in (
                 l.name, l.host_name, 1 + len(l.clients), l.max_players, l.state, l.mod, l.version,
-                l.bots, 1 if l.password else 0, l.map_file[0] if l.map_file else "")))
+                l.bots, 1 if l.password else 0, l.map_file[0] if l.map_file else "", l.join_policy)))
         conn.push("\n".join(lines))
 
     elif cmd in ("host", "report") and not lobby:
@@ -531,6 +591,10 @@ async def on_game_text(conn, text):
         if len(relay.lobbies) >= MAX_LOBBIES:
             await conn.text("error", "Too many lobbies on this server")
             return True
+        if PUBLIC and not conn.trusted and sum(1 for l in relay.lobbies.values() if not l.trusted) >= PUBLIC_MAX_LOBBIES:
+            await conn.text("error", "The public server has %d games running, its most - try again later "
+                            "(or enter the server key: key holders can always host)" % PUBLIC_MAX_LOBBIES)
+            return True
         password = f[6].strip().lower() if len(f) > 6 and cmd == "host" else ""
         if password and not SHA_RE.match(password):
             await conn.text("error", "Bad request")
@@ -538,6 +602,10 @@ async def on_game_text(conn, text):
         lobby = Lobby(name, "online" if cmd == "host" else "lan", conn, max_players, player or "Host", mod, version)
         lobby.player_names.add(lobby.host_name)
         lobby.password = password
+        lobby.trusted = conn.trusted
+        # host ... <password hash> <joining while it runs: closed|ask|open> (older games: the site's default)
+        if len(f) > 7 and f[7].strip().lower() in JOIN_POLICIES:
+            lobby.join_policy = f[7].strip().lower()
         relay.lobbies[name.lower()] = lobby
         conn.lobby, conn.is_host, conn.player_name, conn.lobby_name = lobby, True, lobby.host_name, lobby.name
         log.info("%s %s %slobby %r (%d players, mod %r, %s) from %s", lobby.host_name,
@@ -560,8 +628,9 @@ async def on_game_text(conn, text):
         if mod != lobby.mod:
             await conn.text("error", "The host plays with mod '%s', you have '%s'" % (lobby.mod or "none", mod or "none"))
             return True
-        if lobby.state != "waiting" and not DROP_IN:
-            await conn.text("error", "That game has already started")
+        running = lobby.state != "waiting"
+        if running and lobby.join_policy == "closed":
+            await conn.text("error", "That game has already started (its host doesn't take players during the game)")
             return True
         if 1 + len(lobby.clients) >= lobby.max_players:
             await conn.text("error", "That lobby is full")
@@ -575,16 +644,43 @@ async def on_game_text(conn, text):
                 guard.fail(conn.ip)
                 await conn.text("error", "Wrong lobby password")
                 return True
-        while lobby.next_id in lobby.clients or lobby.next_id == 0:
-            lobby.next_id = lobby.next_id % 255 + 1
-        conn.peer_id = lobby.next_id
-        lobby.next_id = lobby.next_id % 255 + 1
-        conn.lobby, conn.player_name, conn.lobby_name = lobby, player, lobby.name
-        lobby.clients[conn.peer_id] = conn
-        lobby.player_names.add(player)
-        log.info("%s joined lobby %r as %d", player, lobby.name, conn.peer_id)
-        await lobby.host.text("peer_join", conn.peer_id, player)
-        await conn.text("joined", lobby.name, conn.peer_id, lobby.host_name)
+        if running and lobby.join_policy == "ask":
+            if conn.join_request:
+                return True
+            # the host decides (join_request / join_answer); the player waits for "joined" or an error
+            rid = lobby.next_request
+            lobby.next_request = lobby.next_request % 9999 + 1
+            lobby.join_requests[rid] = (conn, player)
+            conn.join_request = (lobby, rid)
+            log.info("%s asks to join the running game in lobby %r", player, lobby.name)
+            await lobby.host.text("join_request", rid, player)
+            await conn.text("join_wait", lobby.name, JOIN_ASK_TIMEOUT)
+            asyncio.create_task(join_request_timeout(lobby, rid))
+            return True
+        await complete_join(lobby, conn, player)
+
+    elif cmd == "join_answer" and lobby and conn.is_host and len(f) >= 3:
+        # join_answer <request id> yes|no
+        try:
+            rid = int(f[1])
+        except ValueError:
+            return True
+        req = lobby.join_requests.pop(rid, None)
+        if not req:
+            return True
+        player_conn, player = req
+        player_conn.join_request = None
+        if f[2].strip().lower() != "yes":
+            log.info("%s: the host of %r said no", player, lobby.name)
+            await player_conn.text("error", "The host didn't let you in")
+        elif 1 + len(lobby.clients) >= lobby.max_players:
+            await player_conn.text("error", "That lobby is full")
+        else:
+            await complete_join(lobby, player_conn, player)
+
+    elif cmd == "join_policy" and lobby and conn.is_host and len(f) >= 2:
+        if f[1].strip().lower() in JOIN_POLICIES:
+            lobby.join_policy = f[1].strip().lower()
 
     elif cmd == "state" and lobby and conn.is_host and len(f) >= 2:
         state = clean_name(f[1], 32)
