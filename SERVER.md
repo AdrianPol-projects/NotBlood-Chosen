@@ -189,7 +189,9 @@ In `server.env`:
 | `WEB_DIR` | `$DATA_DIR/web` | where the web version is kept |
 | `PUBLIC` | `0` | `1`: games need no key ([A public server](#a-public-server)) |
 | `PUBLIC_DASHBOARD` | `0` | `1`: the dashboard needs no key either |
-| `SITE` | `blood` | `duke`: the dashboard carries Duke Chosen's name and links (the same relay serves [Duke Chosen](https://github.com/AdrianPol-projects/Duke-Chosen) games; set `WEB_UPDATE_HOURS=0`, there is no Duke web version yet) |
+| `SITE` | `blood` | which game's site: `blood`, `duke3d` ([Duke3D Chosen](https://github.com/AdrianPol-projects/Duke3D-Chosen)) or `sw` ([SW Chosen](https://github.com/AdrianPol-projects/ShadowWarrior-Chosen)): the name, the dashboard's weapons and keys, and whose web version `/play/` serves |
+| `DROP_IN` | `1` for `duke3d`, else `0` | `1`: players may join a lobby whose game is running |
+| `GITHUB_TOKEN` | (none) | a token that may read `WEB_REPO`, when that repository is private |
 
 Built-in limits: 200 connections, 24 per address, 50 lobbies. A player who doesn't answer for 45 seconds is dropped.
 

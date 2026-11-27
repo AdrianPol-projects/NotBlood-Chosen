@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""NotBlood online relay and live game dashboard.
+"""Online relay and live game dashboard of NotBlood Chosen, Duke3D Chosen and SW Chosen (SITE=...).
 
 Games can't reach each other directly over the internet (routers, NAT), so every player opens one
 WebSocket to this server and the game's normal network traffic is passed through it:
@@ -43,7 +43,7 @@ from mapcheck import MapError, check_map
 
 PROTOCOL = 1
 
-KEY = os.environ.get("BLOOD_KEY", "")
+KEY = os.environ.get("BLOOD_KEY", os.environ.get("GAME_KEY", ""))
 PUBLIC = os.environ.get("PUBLIC", "0") == "1"                      # games need no key
 PUBLIC_DASHBOARD = os.environ.get("PUBLIC_DASHBOARD", "0") == "1"  # neither does the dashboard
 PORT = int(os.environ.get("PORT", "8080"))
@@ -560,7 +560,7 @@ async def on_game_text(conn, text):
         if mod != lobby.mod:
             await conn.text("error", "The host plays with mod '%s', you have '%s'" % (lobby.mod or "none", mod or "none"))
             return True
-        if lobby.state != "waiting":
+        if lobby.state != "waiting" and not DROP_IN:
             await conn.text("error", "That game has already started")
             return True
         if 1 + len(lobby.clients) >= lobby.max_players:
@@ -802,22 +802,38 @@ def asset_version():
 
 INDEX_HTML = None
 
-# One relay program serves both games' sites: SITE=duke gives the dashboard Duke Chosen's name and
-# download links instead of NotBlood's (its game traffic and stats work the same way).
+# One relay program serves the sites of all the Chosen games. SITE picks the name, the download
+# links, the dashboard's weapon and key names and (unless WEB_REPO says otherwise) where the web
+# version comes from; the game traffic and the stats work the same way for all of them.
+SITES = {
+    "blood": {"name": "NotBlood", "brand": "NOTBLOOD", "repo": "AdrianPol-projects/NotBlood-Chosen",
+              "files": "Blood files", "game": "NotBlood", "drop_in": False},
+    "duke3d": {"name": "Duke3D Chosen", "brand": "DUKE3D", "repo": "AdrianPol-projects/Duke3D-Chosen",
+               "files": "DUKE3D.GRP", "game": "Duke Nukem 3D", "drop_in": True},
+    "sw": {"name": "SW Chosen", "brand": "SHADOW WARRIOR", "repo": "AdrianPol-projects/ShadowWarrior-Chosen",
+           "files": "SW.GRP", "game": "Shadow Warrior", "drop_in": False},
+}
 SITE = os.environ.get("SITE", "blood").strip().lower()
-DUKE_REPO = "https://github.com/AdrianPol-projects/Duke-Chosen"
+if SITE == "duke":   # the retired Duke Chosen site name
+    SITE = "duke3d"
+if SITE not in SITES:
+    SITE = "blood"
+SITE_INFO = SITES[SITE]
+# 1: players may join a lobby whose game already runs (EDuke32 lets them; Blood and Shadow Warrior
+# games have a fixed set of players)
+DROP_IN = os.environ.get("DROP_IN", "1" if SITE_INFO["drop_in"] else "0") == "1"
 
 
 def site_page(html):
-    if SITE != "duke":
+    if SITE == "blood":
         return html
-    return (html.replace("<title>NotBlood Live</title>", "<title>Duke Chosen Live</title>")
-            .replace("NOTBLOOD <em>LIVE</em>", "DUKE CHOSEN <em>LIVE</em>")
+    i = SITE_INFO
+    return (html.replace("<title>NotBlood Live</title>", "<title>%s Live</title>" % i["name"])
+            .replace("NOTBLOOD <em>LIVE</em>", "%s <em>LIVE</em>" % i["brand"])
             .replace('<a href="play/">Play NotBlood in your browser</a> (bring your own Blood files)',
-                     '<a href="%s/releases">Download Duke Chosen</a> (bring your own Duke Nukem 3D files)' % DUKE_REPO)
-            .replace("Host one from the game: MULTIPLAYER &rsaquo; ONLINE, or <a href=\"play/\">play in your browser</a>.",
-                     "Host one from the game: <code>eduke32 -online-host \"My game\"</code> "
-                     "(<a href=\"%s#online-play\">how</a>)." % DUKE_REPO))
+                     '<a href="play/">Play %s in your browser</a> (bring your own %s) &middot; '
+                     '<a href="https://github.com/%s/releases">Downloads</a>' % (i["game"], i["files"], i["repo"]))
+            .replace("<html lang=\"en\">", "<html lang=\"en\" data-site=\"%s\">" % SITE))
 
 
 async def index(request):
@@ -848,7 +864,7 @@ async def health(request):
 # the page (at most every WEB_PAGE_CHECK_MINUTES), into WEB_DIR/current. Players bring their own Blood files; nothing of the game data is on the server.
 
 WEB_DIR = Path(os.environ.get("WEB_DIR", str(DATA_DIR / "web")))
-WEB_REPO = os.environ.get("WEB_REPO", "AdrianPol-projects/NotBlood-Chosen")
+WEB_REPO = os.environ.get("WEB_REPO", SITE_INFO["repo"])
 WEB_UPDATE_HOURS = float(os.environ.get("WEB_UPDATE_HOURS", "1"))  # 0: never download
 WEB_PAGE_CHECK_MINUTES = float(os.environ.get("WEB_PAGE_CHECK_MINUTES", "10"))  # 0: only on the timer
 WEB_MAX_ZIP = 200 * 1024 * 1024
@@ -858,8 +874,9 @@ WEB_TYPES = {
     ".woff2": "font/woff2", ".txt": "text/plain",
 }
 WEB_MISSING_HTML = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>NotBlood Chosen</title><body style="background:#070202;color:#e8dcd6;font:18px system-ui;padding:2em">
-<p>The web version isn't on this server yet. It is downloaded automatically; try again in a few minutes.</p>"""
+<title>%s</title><body style="background:#070202;color:#e8dcd6;font:18px system-ui;padding:2em">
+<p>The web version isn't on this server yet. It is downloaded automatically; try again in a few minutes.</p>""" % (
+    "NotBlood Chosen" if SITE == "blood" else SITE_INFO["name"])
 
 
 async def play_redirect(request):
@@ -906,8 +923,8 @@ def web_unpack(zip_path, marker):
     new.mkdir(parents=True)
     with zipfile.ZipFile(zip_path) as z:
         names = z.namelist()
-        if "index.html" not in names or "notblood.wasm" not in names:
-            raise ValueError("not a NotBlood web build")
+        if "index.html" not in names or not any(n.endswith(".wasm") for n in names):
+            raise ValueError("not a web build of the game")
         for n in names:
             if n.startswith("/") or ".." in n.split("/"):
                 raise ValueError("bad file name in the zip: %r" % n)
@@ -923,7 +940,10 @@ def web_unpack(zip_path, marker):
 async def web_update_once():
     import aiohttp
     WEB_DIR.mkdir(parents=True, exist_ok=True)
-    gh = {"User-Agent": "notblood-relay", "Accept": "application/vnd.github+json"}
+    gh = {"User-Agent": "chosen-relay", "Accept": "application/vnd.github+json"}
+    if os.environ.get("GITHUB_TOKEN"):
+        # a private repository's releases need a token that may read it (fine-grained: Contents read)
+        gh["Authorization"] = "Bearer " + os.environ["GITHUB_TOKEN"]
     timeout = aiohttp.ClientTimeout(total=900)
     async with aiohttp.ClientSession(timeout=timeout, headers=gh) as http:
         async with http.get("https://api.github.com/repos/%s/releases/latest" % WEB_REPO) as r:
@@ -942,7 +962,9 @@ async def web_update_once():
             return
         zip_path = WEB_DIR / "download.zip"
         got = 0
-        async with http.get(asset["browser_download_url"], headers={"Accept": "application/octet-stream"}) as r:
+        # with a token (private repository) through the API, which redirects to the file
+        url = asset["url"] if os.environ.get("GITHUB_TOKEN") else asset["browser_download_url"]
+        async with http.get(url, headers={"Accept": "application/octet-stream"}) as r:
             if r.status != 200:
                 log.warning("web version: download answered %d", r.status)
                 return

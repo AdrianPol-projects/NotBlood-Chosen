@@ -15,8 +15,24 @@ const store = {
 };
 
 const PLAYER_COLORS = ["#4da3ff", "#ff4b3e", "#4fd17a", "#f2d34b", "#c77dff", "#ff9f43", "#3fe0d0", "#ff7ad9"];
-const WEAPONS = ["", "Pitchfork", "Flare Gun", "Shotgun", "Tommy Gun", "Napalm", "Dynamite", "Spray Can", "Tesla", "Life Leech", "Voodoo Doll", "Proximity", "Remote", "Beast"];
-const KEYS = { 1: ["Skull", "#e9e2cf"], 2: ["Eye", "#6fb3ff"], 3: ["Fire", "#ff8a2b"], 4: ["Dagger", "#c9c9c9"], 5: ["Spider", "#b07be0"], 6: ["Moon", "#f2d34b"], 7: ["Key 7", "#9be37a"] };
+// the relay serves several games' sites (SITE in relay.py): their weapon and key names
+const SITE = document.documentElement.dataset.site || "blood";
+const SITE_TABLES = {
+  blood: {
+    weapons: ["", "Pitchfork", "Flare Gun", "Shotgun", "Tommy Gun", "Napalm", "Dynamite", "Spray Can", "Tesla", "Life Leech", "Voodoo Doll", "Proximity", "Remote", "Beast"],
+    keys: { 1: ["Skull", "#e9e2cf"], 2: ["Eye", "#6fb3ff"], 3: ["Fire", "#ff8a2b"], 4: ["Dagger", "#c9c9c9"], 5: ["Spider", "#b07be0"], 6: ["Moon", "#f2d34b"], 7: ["Key 7", "#9be37a"] },
+  },
+  duke3d: {
+    weapons: ["", "Mighty Foot", "Pistol", "Shotgun", "Ripper", "RPG", "Pipe Bombs", "Shrinker", "Devastator", "Trip Mines", "Freezethrower", "Detonator", "Expander"],
+    keys: { 1: ["Blue", "#4f8dff"], 2: ["Red", "#ff4a3a"], 3: ["Yellow", "#ffd23a"] },
+  },
+  sw: {
+    weapons: ["", "Fists", "Shurikens", "Riot Gun", "UZI", "Missiles", "Grenades", "Sticky Bombs", "Rail Gun", "Guardian Head", "Ripper Heart"],
+    keys: { 1: ["Red", "#ff4a3a"], 2: ["Blue", "#4f8dff"], 3: ["Green", "#52d16b"], 4: ["Yellow", "#ffd23a"], 5: ["Gold", "#e8b84a"], 6: ["Silver", "#c9c9d2"], 7: ["Bronze", "#c08050"], 8: ["Red skull", "#d02020"] },
+  },
+};
+const WEAPONS = (SITE_TABLES[SITE] || SITE_TABLES.blood).weapons;
+const KEYS = (SITE_TABLES[SITE] || SITE_TABLES.blood).keys;
 
 // ---- settings -------------------------------------------------------------------------------
 
