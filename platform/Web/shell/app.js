@@ -419,7 +419,29 @@ function notbloodLoaded() {
 // Safari only lets a page play sound that started during a tap: the game's audio (SDL) would start
 // later and stay silent, so the tap on Play makes it and SDL uses it. Sound that stopped (another
 // app, a call, the iPad locked) comes back with the next tap or key.
+//
+// iPad/iPhone: web audio counts as "ambient" sound there, which silent mode (the switch, or the bell
+// in Control Center) mutes - the game was silent on most iPads while Android played it. Asking for
+// the "playback" audio session plays it like a video does: iOS 17 has navigator.audioSession for
+// that; older ones switch when an <audio> element plays, so a silent one keeps looping.
+var SILENT_WAV = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
+function playbackAudioSession() {
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* not there */ }
+    if (!isAppleTouch() || playbackAudioSession.el) return;
+    var a = document.createElement('audio');
+    a.setAttribute('x-webkit-airplay', 'deny');
+    a.setAttribute('playsinline', '');
+    a.preload = 'auto';
+    a.loop = true;
+    a.src = SILENT_WAV;
+    a.volume = 0.01;
+    playbackAudioSession.el = a;
+    var p = a.play();
+    if (p && p.catch) p.catch(function () { /* the next tap tries again */ });
+}
+
 function unlockAudio() {
+    playbackAudioSession();
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC || (game.SDL2 && game.SDL2.audioContext)) return;
     var ctx;
@@ -427,7 +449,10 @@ function unlockAudio() {
     game.SDL2 = game.SDL2 || {};
     game.SDL2.audioContext = ctx;
     function wake() {
+        // "interrupted" (Safari: a call, another app) and "suspended" both need a resume in a tap
         if (ctx.state !== 'running') ctx.resume().catch(function () {});
+        var a = playbackAudioSession.el;
+        if (a && a.paused) { var p = a.play(); if (p && p.catch) p.catch(function () {}); }
     }
     // a moment of silence played inside the tap is what unlocks it on older iPads
     try {
